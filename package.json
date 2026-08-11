@@ -1,0 +1,31 @@
+{
+  "name": "@tebin/documentor",
+  "version": "0.1.0",
+  "description": "Re-issue existing documents as well-typeset, themed PDF, Word, Excel and Markdown",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "bin": { "documentor": "./dist/bin/documentor.js" },
+  "files": ["dist", "themes", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "documentor": "tsx src/bin/documentor.ts"
+  },
+  "dependencies": {
+    "@fontsource/arimo": "^5.2.5",
+    "marked": "^15.0.0",
+    "playwright-core": "^1.62.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "pdf-lib": "^1.17.1",
+    "pdf-to-img": "^4.4.0",
+    "pdfjs-dist": "^4.10.38",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

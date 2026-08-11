@@ -3,3 +3,4 @@ dist/
 .cache/
 *.log
 .superpowers/
+test/**/__actual__/
