@@ -171,9 +171,12 @@ running header on later pages: corner mark, document title, `N / M`.
 
 Known trap to design around: Chromium renders `headerTemplate` /
 `footerTemplate` **in a separate context** — no page CSS, no external resources,
-its own scale, a default font size — and `margin.top` must exceed the header's
-height or the header simply does not appear, with no error. The running header
-therefore carries its own inline styles and its own test.
+its own scale, a default font size. The running header therefore carries its own
+inline styles and its own test. Measured on 2026-08-12 (see "Verified by spike"):
+when `margin.top` is smaller than the header, the header does not vanish — it is
+drawn **over the body text**, and text extraction cannot see the collision
+because both PDFs extract identically. Only a raster can. That single fact
+decides the shape of the whole test suite.
 
 The logo SVG is painted **by class through CSS custom properties**, with no
 inline `fill`. The theme then recolours it, and per
@@ -346,3 +349,41 @@ the first one.
 4. **The interview and distribution.** `inspect`, the sidecar format, the Claude
    Code skill, PDF ingest with its honest "this was reconstructed by guesswork"
    warning, `doctor`, npm and plugin publication, README.
+
+## Verified by spike (2026-08-12)
+
+Everything below was measured on this machine, not assumed. Node v26.2.0,
+`playwright-core` 1.62.1, Chromium build 1234 (already installed).
+
+**Reproducibility is achievable and cheap.** Two `page.pdf()` calls a second
+apart differ in exactly two places — `/CreationDate` and `/ModDate` — and the
+timestamps are fixed width, so overwriting them in the raw bytes keeps every
+xref offset valid. Chromium emits no `/ID` array. After that substitution the
+two buffers are byte-identical and `pdf-lib` still parses the result.
+
+```
+/(\/(?:Creation|Mod)Date \(D:)\d{14}(\+00'00'\))/g  →  $1<SOURCE_DATE_EPOCH>$2
+```
+
+**`page.pdf()` margins reject `pt`.** `Failed to parse parameter value: 70pt`.
+Only `px`, `in`, `cm`, `mm` are accepted, so the theme's 48 pt margin is passed
+as `16.9mm`. The theme keeps points; the PDF renderer converts.
+
+**Font coverage.** `@fontsource/arimo` ships per-subset woff2 with the ranges in
+`unicode.json`. Ukrainian is fully inside the `cyrillic` subset (`і` U+0456, `ї`
+U+0457, `ґ` U+0491 all fall in `U+0400-045F` / `U+0490-0491`) and Polish inside
+`latin-ext`. Six files — `latin`, `latin-ext`, `cyrillic` × 400, 700 — total
+~141 KB and cover UA/PL/EN. Inlined as data-URIs with their `unicode-range`,
+Chromium embeds them as subsets: `AAAAAA+Arimo-Bold`, `CAAAAA+Arimo-Regular`, …
+
+**Text in the PDF is glyph indices, not characters.** Because those fonts embed
+as Identity-H subsets, a substring search for a phrase plainly visible on the
+page finds **nothing** — the naive check `verification-harness-traps` §22 warns
+about, reproduced here on the first try. Extraction goes through
+`pdfjs-dist/legacy` (which walks `ToUnicode`), never a regex over the bytes.
+
+**The header trap is a collision, not an absence.** With `margin.top` too small,
+`KITCHEN SINK` was drawn on top of the document's `<h1>`. Both PDFs — good
+margin and bad — extracted *identical text*. The defect exists only in pixels.
+This is §13 in one experiment, and it is why the baseline test rasterises with
+`pdf-to-img` and compares images rather than asserting on strings.
