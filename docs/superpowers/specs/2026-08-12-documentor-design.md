@@ -98,7 +98,7 @@ type Block =
   | { t:'table'; head:Inline[][]; rows:Inline[][]; align:('l'|'r'|'c')[]; landscape?:boolean }
   | { t:'image'; src:string; alt:string; widthPt?:number }
   | { t:'code'; lang?:string; text:string }
-  | { t:'quote'; blocks:Block[] }
+  | { t:'quote'; paras:Inline[][] }
   | { t:'rule' }
   | { t:'pagebreak' }
 
@@ -121,7 +121,7 @@ One JSON resolved into tokens:
   "id": "tebin",
   "colors": {
     "brandOnLight": "#DA291C",
-    "brandOnDark":  "#DA291C",
+    "brandOnDark":  null,
     "ink":   "#1A1A1A",
     "muted": "#898D8D",
     "rule":  "#E6E6E3"
@@ -142,6 +142,9 @@ brand and documents cannot drift. Same discipline as
 prints on white. `accessible-brand-colour` establishes that no single colour
 clears AA on both a light and a dark surface, so a single `brand` token would
 have to be split later, breaking every theme file already in the wild.
+`tebin-style` currently publishes only one `--color-brand`, so `brandOnDark` is
+`null` in the generated TEBIN theme, and a renderer that needs it must fail
+loudly rather than fall back to the light value. Nothing in v1 needs it.
 
 ## Renderers
 
@@ -307,10 +310,39 @@ of the kind; it is OneDrive having turned `dist/` into a cloud placeholder.
 `documentor doctor` names what is missing and the command that fixes it; CI on
 Linux, macOS and Windows; a README with before/after images.
 
-## Open items for the plan, not for this spec
+## Three details settled
 
-- Which reference document serves as the visual baseline (needs one real TEBIN
-  document with prose, a wide table and an image).
-- Whether `inspect` emits its report as Markdown, JSON, or both.
-- Table-too-wide policy beyond landscape: shrink font, or split columns across
-  pages.
+**The visual baseline is a synthetic fixture, not a real document.** The repo is
+public, so no TEBIN document can serve as a test fixture. `test/fixtures/
+kitchen-sink.md` exercises every block type deliberately: all three heading
+levels, a nested ordered list, a five-column table and an eleven-column one, an
+image, a code block, a quote, a forced page break, and text in Ukrainian,
+Polish and English so font coverage is proven rather than assumed. A fixture
+that lacks what the feature is gated on tests nothing
+(`verification-harness-traps` §5).
+
+**`inspect` prints Markdown; `--json` prints the machine form.** The Markdown is
+for the human reading the terminal; the JSON is what the skill parses. Both are
+rendered from one structure, so they cannot disagree.
+
+**A table too wide for the page is handled in three steps, in order:** turn the
+page landscape; if it still overflows, scale the table's font down to a floor of
+7 pt; if it still overflows, refuse the build and name the table and its column
+count. Silently shrinking past legibility is the failure mode worth designing
+out — the point of the tool is that the result can be read.
+
+## Build order
+
+Each phase ends with something usable, and the reproducibility gate applies from
+the first one.
+
+1. **Core and the PDF path.** IR types, Markdown ingest, Markdown and PDF
+   renderers, the `plain` theme, `build`, byte-identical-twice gate, CI on three
+   platforms. This is the whole architecture proven on the shortest path.
+2. **Themes and Word.** The theme resolver, the generator that builds the TEBIN
+   theme from `tebin-style` tokens, the DOCX renderer, the renderers-agree test.
+3. **Spreadsheets and the other ingesters.** XLSX renderer, DOCX and XLSX
+   ingest, the read-the-file-back tests.
+4. **The interview and distribution.** `inspect`, the sidecar format, the Claude
+   Code skill, PDF ingest with its honest "this was reconstructed by guesswork"
+   warning, `doctor`, npm and plugin publication, README.
