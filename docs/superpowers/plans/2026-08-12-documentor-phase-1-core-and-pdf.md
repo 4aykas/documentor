@@ -2486,7 +2486,7 @@ Expected: PASS, 2 tests. If it reports an offender, fix the source — not the t
 
 - [ ] **Step 3: Write `.github/workflows/ci.yml`**
 
-The baseline image comparison is pinned to Linux: PNGs rasterised from the same PDF differ across platforms, so comparing them everywhere would redden CI for its own reasons rather than for a real change.
+The baseline image comparison is pinned to **one** platform: PNGs rasterised from the same PDF differ across platforms, so comparing them everywhere would redden CI for its own reasons rather than for a real change. That platform is `windows-latest`, because the baseline is generated on the developer's Windows machine in Task 8 — pinning it to Linux instead would mean the committed images could never match, which is a check that fails for its own reasons in the other direction.
 
 ```yaml
 name: CI
@@ -2511,20 +2511,22 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run typecheck
       - name: Test (excluding the image baseline)
-        if: matrix.os != 'ubuntu-latest'
-        run: npx vitest run --exclude 'test/baseline/**'
+        if: matrix.os != 'windows-latest'
+        run: npx vitest run --exclude 'test/baseline/kitchen-sink.test.ts'
       - name: Test (with the image baseline)
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'windows-latest'
         run: npx vitest run
       - name: Upload the rendered pages when they differ
-        if: failure() && matrix.os == 'ubuntu-latest'
+        if: failure() && matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
           name: rendered-pages
           path: test/baseline/__actual__/
 ```
 
-Note: the committed baseline must be generated **on Linux** for this to pass in CI. Generate it once inside the workflow (or in a Linux container locally), download the `rendered-pages` artifact, inspect every image by eye, and commit those files as `__baseline__`. A baseline generated on Windows will not match.
+The committed baseline is generated on Windows in Task 8, so `windows-latest` is the job that compares it. The other two platforms still run every other test, including the byte-identical-output gate — which is the check that actually has to hold everywhere.
+
+If `--exclude` is not honoured by the installed vitest version, use `npx vitest run --project` filtering or move the baseline spec behind an environment variable (`BASELINE=1`) that only the Windows job sets. Do not silently let the baseline run unpinned on three platforms.
 
 - [ ] **Step 4: Write `README.md`**
 
