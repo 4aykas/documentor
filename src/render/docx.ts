@@ -509,9 +509,22 @@ export async function renderDocx(doc: Doc, theme: Theme, opts: { epochSeconds: n
 
   const packed = await Packer.toBuffer(new Document({
     styles: styles(theme),
-    // Ask Word to resolve PAGE and NUMPAGES when it opens the file; docx
-    // writes the field instruction but no cached result.
-    features: { updateFields: true },
+    // Deliberately NOT `features: { updateFields: true }`. That flag writes
+    // `<w:updateFields/>` into settings.xml, which is what makes Word greet
+    // every recipient with "This document contains fields that may refer to
+    // other files. Do you want to update the fields in this document?" on
+    // open — a real cost, paid by everyone the file is sent to, every time.
+    // It was added on the belief that PAGE/NUMPAGES (see runningHeader())
+    // would otherwise show as blank, because docx writes the field
+    // instruction with no cached result between `fldChar separate` and
+    // `fldChar end`. Measured 2026-08-12 with Word 365 over COM, opening a
+    // two-page build of the kitchen-sink fixture both with and without the
+    // flag and exporting each to PDF: the running header on page 2 reads
+    // "2 / 2" in both cases, byte-for-byte the same raster. Word recalculates
+    // header/footer page-number fields as part of pagination itself, on
+    // every open, regardless of this setting — the flag was never doing the
+    // work it was added for. See test/render/docx.test.ts, "does not ask
+    // Word to update fields on open".
     sections: [{
       properties: {
         titlePage: true,

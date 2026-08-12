@@ -194,6 +194,17 @@ describe('renderDocx', () => {
     });
   });
 
+  it('does not ask Word to update fields on open', async () => {
+    // Measured over COM (2026-08-12): Word resolves PAGE/NUMPAGES in the
+    // running header on pagination regardless of this setting, so
+    // `<w:updateFields/>` buys nothing — it only costs every recipient the
+    // "update fields?" prompt on open. Pinned here so the flag cannot come
+    // back silently; see the comment beside `features` in docx.ts for the
+    // measurement this asserts.
+    const settings = await docxPart(await render(doc({ t: 'para', text: [{ t: 'text', v: 'x' }] })), 'word/settings.xml');
+    expect(settings).not.toContain('<w:updateFields');
+  });
+
   it('sets the document up for a different first page', async () => {
     const xml = await body(doc({ t: 'para', text: [{ t: 'text', v: 'x' }] }));
     expect(xml).toContain('<w:titlePg/>');
