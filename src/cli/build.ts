@@ -1,6 +1,8 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { ingestMarkdown } from '../ingest/md.js';
+import { ingestDocx } from '../ingest/docx.js';
+import type { Ingested } from '../ir/types.js';
 import { validateDoc, type Doc } from '../ir/validate.js';
 import { renderMarkdown } from '../render/md.js';
 import { renderPdf } from '../render/pdf.js';
@@ -44,6 +46,42 @@ async function renderTo(
       throw new Error(`no renderer for format ${JSON.stringify(unhandled)}`);
     }
   }
+}
+
+/**
+ * One spot for "which ingester, read how". Both ingesters return the same
+ * `{ doc, dropped }` shape, so everything after this call is format-agnostic
+ * — the code downstream never learns which branch ran.
+ *
+ * The read mode is not a separate decision from the ingester choice: a .docx
+ * is a zip, and `readFile(input, 'utf8')` would corrupt it into replacement
+ * characters before ingestDocx ever saw the bytes. Deciding both together,
+ * here, is what keeps that pairing from drifting apart later.
+ */
+async function ingest(
+  ext: '.docx' | '.md' | '.markdown', input: string, args: ReturnType<typeof parseArgs>,
+): Promise<Ingested> {
+  const opts = {
+    ...(args.title === undefined ? {} : { title: args.title }),
+    ...(args.date === undefined ? {} : { date: args.date }),
+    ...(args.entity === undefined ? {} : { entity: args.entity }),
+  };
+  if (ext === '.docx') {
+    const bytes = await readFile(input);
+    const result = await ingestDocx(bytes, opts);
+    // ingestDocx has no way to know the file it came from — it falls back to
+    // the literal string "Untitled" when neither --title nor a body DocTitle
+    // supplied one (see its own "falls back to Untitled" test). The design
+    // doc's rule is that a DOCX's name is its title in that case, so this is
+    // the one place that can fill it in: --title and a body title (checked
+    // above, inside ingestDocx, in that order) both still win over it.
+    if (args.title === undefined && result.doc.meta.title === 'Untitled') {
+      result.doc.meta.title = basename(input, ext);
+    }
+    return result;
+  }
+  const source = await readFile(input, 'utf8');
+  return ingestMarkdown(source, opts);
 }
 
 export function parseArgs(argv: string[]): {
@@ -104,17 +142,12 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
 
   const input = resolve(args.input);
   const ext = extname(input).toLowerCase();
-  if (ext !== '.md' && ext !== '.markdown') {
-    io.err(`documentor: cannot read ${ext || 'a file with no extension'} yet — this build reads .md`);
+  if (ext !== '.md' && ext !== '.markdown' && ext !== '.docx') {
+    io.err(`documentor: cannot read ${ext || 'a file with no extension'} yet — this build reads .md and .docx`);
     return 2;
   }
 
-  const source = await readFile(input, 'utf8');
-  const { doc, dropped } = ingestMarkdown(source, {
-    ...(args.title === undefined ? {} : { title: args.title }),
-    ...(args.date === undefined ? {} : { date: args.date }),
-    ...(args.entity === undefined ? {} : { entity: args.entity }),
-  });
+  const { doc, dropped } = await ingest(ext, input, args);
   // The gate between ingest and render. Every renderer assumes a well-formed
   // Doc — an exhaustive switch over `Block` type-checks but says nothing about
   // what actually arrives at runtime from an ingester, a hand-written IR file
