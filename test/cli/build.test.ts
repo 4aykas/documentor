@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { Doc } from '../../src/ir/types.js';
+import { renderDocx } from '../../src/render/docx.js';
+import { resolveTheme } from '../../src/theme/resolve.js';
 import { FORMATS, parseArgs, runBuild } from '../../src/cli/build.js';
 
 const collect = () => {
@@ -13,6 +16,19 @@ async function fixture(md: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'documentor-cli-'));
   const file = join(dir, 'report.md');
   await writeFile(file, md);
+  return file;
+}
+
+// A .docx fixture the CLI can read, built the same way test/ingest/docx.test.ts
+// builds its round-trip fixture: rendered by this project's own renderer
+// rather than committed as a binary nobody could diff.
+const fixtureTheme = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C', muted: '#898D8D', rule: '#CDCDCE' } });
+
+async function docxFixture(doc: Doc, name = 'report.docx'): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'documentor-cli-docx-'));
+  const file = join(dir, name);
+  const bytes = await renderDocx(doc, fixtureTheme, { epochSeconds: 1_000_000_000 });
+  await writeFile(file, bytes);
   return file;
 }
 
@@ -107,13 +123,62 @@ describe('runBuild', () => {
     }
   });
 
-  it('refuses an input extension it cannot read yet', async () => {
+  it('reads a .docx input and produces a PDF', async () => {
+    const file = await docxFixture({ meta: { title: 'From the body', lang: 'en' }, blocks: [{ t: 'para', text: [{ t: 'text', v: 'Hello.' }] }] });
+    const { io } = collect();
+    expect(await runBuild([file, '--to', 'pdf'], io)).toBe(0);
+    const written = await readdir(join(file, '..'));
+    expect(written.sort()).toEqual(['report.docx', 'report.plain.pdf']);
+  });
+
+  it('titles a .docx from its filename when the body carries none, and lets --title override that', async () => {
+    // renderDocx always writes a DocTitle paragraph, so an empty meta.title is
+    // the only way to build a fixture whose body carries no title — the same
+    // "nothing supplies a title" case ingestDocx's own test exercises, which
+    // is exactly the case the CLI's filename fallback exists for.
+    const file = await docxFixture({ meta: { title: '', lang: 'en' }, blocks: [{ t: 'para', text: [{ t: 'text', v: 'Body.' }] }] }, 'reply-4-2.docx');
+    const out = await mkdtemp(join(tmpdir(), 'documentor-docx-title-'));
+    const { io } = collect();
+
+    expect(await runBuild([file, '--to', 'md', '--out', out], io)).toBe(0);
+    expect((await readFile(join(out, 'reply-4-2.plain.md'), 'utf8')).split('\n')[0]).toBe('# reply-4-2');
+
+    const { io: io2 } = collect();
+    expect(await runBuild([file, '--to', 'md', '--out', out, '--title', 'Given Title'], io2)).toBe(0);
+    expect((await readFile(join(out, 'reply-4-2.plain.md'), 'utf8')).split('\n')[0]).toBe('# Given Title');
+  });
+
+  it('lets --date override the date a .docx header carried', async () => {
+    const file = await docxFixture({
+      meta: { title: 'T', lang: 'en', date: 'July 20, 2026' },
+      blocks: [{ t: 'para', text: [{ t: 'text', v: 'Body.' }] }],
+    });
+    const out = await mkdtemp(join(tmpdir(), 'documentor-docx-date-'));
+    const { io } = collect();
+    const { docxPart } = await import('../helpers/docx-parts.js');
+
+    expect(await runBuild([file, '--to', 'docx', '--out', out, '--date', 'August 12, 2026'], io)).toBe(0);
+    const header = await docxPart(await readFile(join(out, 'report.plain.docx')), 'word/header2.xml');
+    expect(header).toContain('August 12, 2026');
+    expect(header).not.toContain('July 20, 2026');
+  });
+
+  it('does not let a .docx rendered --to docx overwrite its own .docx input', async () => {
+    const file = await docxFixture({ meta: { title: 'T', lang: 'en' }, blocks: [{ t: 'para', text: [{ t: 'text', v: 'Body.' }] }] });
+    const { io } = collect();
+    expect(await runBuild([file, '--to', 'docx'], io)).toBe(0);
+    const written = await readdir(join(file, '..'));
+    expect(written.sort()).toEqual(['report.docx', 'report.plain.docx']);
+  });
+
+  it('refuses an input extension it cannot read yet, naming what it does read', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'documentor-x-'));
-    const file = join(dir, 'a.docx');
-    await writeFile(file, 'not really a docx');
+    const file = join(dir, 'a.xlsx');
+    await writeFile(file, 'not really an xlsx');
     const { io, err } = collect();
     expect(await runBuild([file], io)).toBe(2);
     expect(err.join('\n')).toMatch(/\.md/);
+    expect(err.join('\n')).toMatch(/\.docx/);
   });
 
   it('produces identical bytes on two runs', async () => {
