@@ -35,11 +35,11 @@ by construction, and a fourth by choice:
   kitchen sink through Word as well as PDF and compares bold and italic runs
   against the IR. PDF text extraction still carries no weight or style, so the
   gap remains between PDF and the other two.
-- **Table alignment.** Still open — PDF text extraction carries no alignment
-  either. The cheapest of the remaining gaps to close: DOCX carries alignment
-  as `w:jc`, and the kitchen-sink fixture already has three distinct column
-  alignments, so it needs a small extractor and one comparison. See the
-  phase-2 note.
+- **~~Table alignment.~~** *Closed for DOCX.* `test/agreement/` compares every
+  cell's `w:jc` against the IR's per-column `align`, broadcast down each row so
+  a value landing on the wrong column fails the same way a wrong table cell
+  does. PDF text extraction still carries no alignment, so the gap remains
+  between PDF and the other two — the same shape as inline emphasis above.
 - **~~Link targets.~~** *Closed for DOCX.* `test/agreement/` compares a live
   href between the IR and Word's relationship target, not only the visible
   text. The PDF half of this gap — `test/render/links.test.ts` covers scheme
