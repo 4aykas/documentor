@@ -73,6 +73,9 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
     bad('page.marginPt', `${marginPt}pt margins leave no usable column on ${size}`);
   }
 
+  // Validated although nothing reads it: see the comment on Theme['font']
+  // ['embed']. Rejecting an unknown value now is what keeps a theme that names
+  // a second face from silently printing in the first one later.
   const embed = (font['embed'] ?? 'arimo') as string;
   if (embed !== 'arimo') bad('font.embed', `only 'arimo' is available, got ${JSON.stringify(embed)}`);
 
@@ -93,11 +96,7 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
     if (paint) {
       bad('logo.svg', `inline paint is not allowed; found ${paint.where} (${JSON.stringify(paint.found)}) — paint by class instead`);
     }
-    logo = {
-      svg: l['svg'],
-      heightPt: num(l['heightPt'], 'logo.heightPt', 11),
-      ...(typeof l['cornerMarkSvg'] === 'string' ? { cornerMarkSvg: l['cornerMarkSvg'] } : {}),
-    };
+    logo = { svg: l['svg'], heightPt: num(l['heightPt'], 'logo.heightPt', 11) };
   }
 
   const letterhead = Array.isArray(t['letterhead'])

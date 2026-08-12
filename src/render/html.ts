@@ -86,7 +86,7 @@ function block(b: Block): string {
               .join('')}</tr>`,
         )
         .join('');
-      return `<table class="${b.landscape ? 'landscape' : ''}"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+      return `<table><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
     }
     case 'image':
       return imageMarkup(b.src, b.alt, b.widthPt);

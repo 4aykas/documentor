@@ -19,7 +19,11 @@ export type Block =
   // src/ingest/md.ts), and each fragment after the first must remember where
   // numbering resumes — the fragment itself has no other way to know.
   | { t: 'list'; ordered: boolean; depth: number; items: Inline[][]; start?: number }
-  | { t: 'table'; head: Inline[][]; rows: Inline[][][]; align: Align[]; landscape?: boolean }
+  // No `landscape` flag: turning a page sideways needs a differently-sized
+  // page, which is the wide-table policy's job and arrives with the ingesters
+  // that can actually produce a wide table. A flag both renderers appear to
+  // honour and neither does is worse than no flag at all.
+  | { t: 'table'; head: Inline[][]; rows: Inline[][][]; align: Align[] }
   | { t: 'image'; src: string; alt: string; widthPt?: number }
   | { t: 'code'; lang?: string; text: string }
   | { t: 'quote'; paras: Inline[][] }

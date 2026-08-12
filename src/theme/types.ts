@@ -10,8 +10,9 @@ export type Logo = {
   /** Inline SVG markup. Paints by class, never with an inline fill. */
   svg: string;
   heightPt: number;
-  /** Optional square mark for the running header. */
-  cornerMarkSvg?: string;
+  // No corner mark: the running header draws no mark yet, and a field that is
+  // validated, carried and never read only looks like a feature. It comes back
+  // with the header that draws it.
 };
 
 export type Theme = {
@@ -33,7 +34,12 @@ export type Theme = {
   font: {
     /** The family name written into DOCX, where fonts are not embedded. */
     document: string;
-    /** The family embedded into PDFs. Only 'arimo' exists in phase 1. */
+    /**
+     * The family embedded into PDFs. Only 'arimo' exists, so nothing consults
+     * this yet — it is a forward-compatibility guard, kept and validated so
+     * that adding a second embeddable face does not force every theme file
+     * already in the wild to change shape.
+     */
     embed: 'arimo';
   };
   logo: Logo | null;
