@@ -34,7 +34,10 @@ async function docxFixture(doc: Doc, name = 'report.docx'): Promise<string> {
 
 describe('parseArgs', () => {
   it('defaults to pdf and the plain theme', () => {
-    expect(parseArgs(['a.md'])).toEqual({ input: 'a.md', to: ['pdf'], theme: 'plain' });
+    expect(parseArgs(['a.md'])).toEqual({ input: 'a.md', to: ['pdf'], theme: 'plain', plainNames: false });
+  });
+  it('reads --plain-names', () => {
+    expect(parseArgs(['a.md', '--plain-names']).plainNames).toBe(true);
   });
   it('splits --to on commas', () => {
     expect(parseArgs(['a.md', '--to', 'pdf, md']).to).toEqual(['pdf', 'md']);
@@ -56,6 +59,35 @@ describe('runBuild', () => {
     expect(await runBuild([file, '--to', 'md'], io)).toBe(0);
     const written = await readdir(join(file, '..'));
     expect(written.sort()).toEqual(['report.md', 'report.plain.md']);
+  });
+
+  it('names the output <stem>.<ext> under --plain-names, dropping the theme id', async () => {
+    const file = await fixture('# Report\n\nHello.\n');
+    const { io } = collect();
+    expect(await runBuild([file, '--to', 'pdf', '--plain-names'], io)).toBe(0);
+    const written = await readdir(join(file, '..'));
+    expect(written.sort()).toEqual(['report.md', 'report.pdf']);
+  });
+
+  it('refuses a same-extension --plain-names build that would overwrite the input, and leaves the input untouched', async () => {
+    const file = await fixture('# Report\n\nHello.\n');
+    const before = await readFile(file, 'utf8');
+    const { io, err } = collect();
+    expect(await runBuild([file, '--to', 'md', '--plain-names'], io)).toBe(3);
+    expect(err.join('\n')).toMatch(/refusing to overwrite/);
+    const written = await readdir(join(file, '..'));
+    expect(written).toEqual(['report.md']); // only the input — nothing else was written
+    expect(await readFile(file, 'utf8')).toBe(before);
+  });
+
+  it('when one of several --plain-names formats collides with the input, writes the others and refuses only that one', async () => {
+    const file = await fixture('# Report\n\nHello.\n');
+    const { io, err } = collect();
+    expect(await runBuild([file, '--to', 'pdf,md', '--plain-names'], io)).toBe(3);
+    expect(err.join('\n')).toMatch(/refusing to overwrite/);
+    const written = await readdir(join(file, '..'));
+    // pdf was written (no collision); md was refused (would overwrite report.md, the input)
+    expect(written.sort()).toEqual(['report.md', 'report.pdf']);
   });
 
   it('honours --out', async () => {
@@ -242,5 +274,41 @@ describe('runBuild', () => {
     const beforeChange = await renderPdf(doc, theme, { epochSeconds });
 
     expect(Buffer.compare(afterChange, beforeChange)).toBe(0);
+  });
+
+  it('leaves the default naming and bytes untouched by the --plain-names option existing', async () => {
+    // Same property as the test above, but for --plain-names rather than
+    // --date/--entity: an absent flag must behave exactly as it did before
+    // the flag existed, not merely "look right". Proven by rendering the
+    // same fixture through today's runBuild with no flag at all, and
+    // separately through an explicit --plain-names=false-equivalent (the
+    // theme-id naming, computed directly, bypassing the flag entirely), then
+    // comparing both the file name produced and its bytes.
+    const md = '# Report\n\nHello, world.\n';
+    const file = await fixture(md);
+    const outA = await mkdtemp(join(tmpdir(), 'documentor-default-a-'));
+    const outB = await mkdtemp(join(tmpdir(), 'documentor-default-b-'));
+    const { io: ioA } = collect();
+
+    expect(await runBuild([file, '--to', 'pdf', '--out', outA], ioA)).toBe(0);
+    const withoutFlag = await readFile(join(outA, 'report.plain.pdf'));
+
+    const { ingestMarkdown } = await import('../../src/ingest/md.js');
+    const { validateDoc } = await import('../../src/ir/validate.js');
+    const { renderPdf } = await import('../../src/render/pdf.js');
+    const { loadTheme } = await import('../../src/theme/resolve.js');
+    const { resolveEpoch } = await import('../../src/cli/timestamp.js');
+    const { writeFile: write } = await import('node:fs/promises');
+    const { doc } = ingestMarkdown(md, {});
+    validateDoc(doc);
+    const theme = await loadTheme('plain');
+    const epochSeconds = await resolveEpoch(process.env, file);
+    const computedDirectly = await renderPdf(doc, theme, { epochSeconds });
+    const referenceTarget = join(outB, `report.${theme.id}.pdf`);
+    await write(referenceTarget, computedDirectly);
+
+    expect(await readdir(outA)).toEqual(['report.plain.pdf']);
+    expect(await readdir(outB)).toEqual(['report.plain.pdf']);
+    expect(Buffer.compare(withoutFlag, computedDirectly)).toBe(0);
   });
 });

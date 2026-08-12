@@ -7,10 +7,10 @@ import { runDoctor } from '../cli/doctor.js';
 // here still named only pdf and md.
 const USAGE = `documentor — re-issue an existing document as a well-typeset one
 
-  documentor build <file> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>] [--title <s>] [--date <s>] [--entity <s>]
+  documentor build <file> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>] [--title <s>] [--date <s>] [--entity <s>] [--plain-names]
   documentor doctor
 
-Output lands beside the input as <name>.<theme>.<ext>.`;
+Output lands beside the input as <name>.<theme>.<ext>, or <name>.<ext> with --plain-names.`;
 
 /**
  * The exit code contract, documented in this one place because callers script
