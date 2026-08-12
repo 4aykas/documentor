@@ -21,8 +21,31 @@ representation, then draws that representation with a theme. The look lives in
 one place, so a PDF and a Word file made from the same source cannot drift
 apart.
 
-`documentor` reads Markdown and writes PDF and Word today, and Markdown back
-out for round-tripping. Excel, and reading `.docx` / `.xlsx` / `.pdf`, follow.
+## What it reads and writes
+
+| from ↓ &nbsp; to → | PDF | Word `.docx` | Markdown | Excel `.xlsx` |
+|:--|:--:|:--:|:--:|:--:|
+| **Markdown `.md`** | yes | yes | yes | — |
+| **Word `.docx`** | yes | yes | yes | — |
+| **Excel `.xlsx`** | — | — | — | — |
+| **PDF** | — | — | — | — |
+
+Markdown out is not a second design — it is the intermediate representation in
+a form a human reads, which makes it the cheapest way to see what an ingester
+understood.
+
+Two limits are worth knowing before you rely on them, because both are
+deliberate rather than unfinished:
+
+- **Reading `.docx` carries paragraphs, headings, lists, emphasis, links, page
+  breaks and PNG images. It does not carry tables** — it reports them instead,
+  by size, so a lost table is loud rather than silent. Nothing else is
+  silently dropped either: comments, tracked changes, footnotes, text boxes and
+  the old letterhead are all named in the run's report.
+- **Writing Word embeds a PNG and nothing else.** Word's SVG support is
+  version-dependent and embedding one properly means shipping a raster
+  alongside it, which cannot be produced reproducibly — so an SVG becomes a
+  visible placeholder naming what it was. The PDF path embeds any raster.
 
 ## Reproducible by construction
 
