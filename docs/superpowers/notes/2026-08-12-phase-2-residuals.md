@@ -132,18 +132,11 @@ moment to do this with room to re-approve an image if one moves.
 
 `docs/superpowers/notes/2026-08-12-phase-1-residuals.md` tracks this list;
 phase 2 closed two of its four items for DOCX (inline emphasis, link
-targets) and left two open. Of those two, one changed shape this phase:
-
-**Table alignment is now the cheapest of the open gaps to close.** It was
-already unclosed in phase 1, for the same reason inline emphasis was — PDF
-text extraction carries no styling, only text. DOCX does carry alignment, as
-`w:jc` on each cell's paragraph, and the kitchen-sink fixture already has
-three distinct column alignments (left, center, right) sitting unused by the
-agreement test. Closing it is a small extractor next to the ones the
-emphasis and link comparisons already added, and one comparison against the
-IR's `align` array — smaller than either of the two comparisons phase 2 did
-add. Left open only because it was found late in the phase's review, not
-because it is hard.
+targets), and table alignment was closed for DOCX after phase 2 the same
+way: a small extractor reading `w:jc` off each cell's paragraph, compared
+against the IR's per-column `align`, broadcast down every row so a value on
+the wrong column fails. PDF text extraction still carries no alignment, so
+the PDF half of this gap remains, the same shape as inline emphasis.
 
 **Table cells are still compared as a value sequence, not per cell**, in the
 PDF half of the agreement test — an untagged PDF has no readable cell

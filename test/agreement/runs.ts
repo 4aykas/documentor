@@ -1,6 +1,6 @@
 import { expect } from 'vitest';
 import type { Theme } from '../../src/theme/types.js';
-import type { Block, Doc, Inline } from '../../src/ir/types.js';
+import type { Align, Block, Doc, Inline } from '../../src/ir/types.js';
 import { schemeIsRefused } from '../../src/render/links.js';
 
 // Content lifted out of one renderer's output, in reading order. `kind` is
@@ -166,6 +166,25 @@ export function docTitleFromDocx(xml: string): string | undefined {
 
 export function cellsFromDocx(xml: string): string[] {
   return [...xml.matchAll(/<w:tc>([\s\S]*?)<\/w:tc>/g)].map((m) => norm(textOf(m[1] ?? '')));
+}
+
+/**
+ * Every cell's alignment, in the same `<w:tc>` reading order as
+ * `cellsFromDocx`, read from `<w:jc>` on the cell's paragraph. Probed
+ * directly against this renderer's own output before writing this: it emits
+ * `<w:jc w:val="left"/>` explicitly for a left-aligned cell rather than
+ * omitting the tag and relying on Word's own default, so a missing `<w:jc>`
+ * never occurs in practice today — but the fallback to `'l'` is kept anyway,
+ * matching the `?? 'l'` default `src/render/docx.ts` applies to `b.align[i]`,
+ * so a future renderer that switched to leaving `left` implicit would still
+ * compare correctly instead of silently reporting every cell as unaligned.
+ */
+export function alignFromDocx(xml: string): Align[] {
+  const JC: Record<string, Align> = { left: 'l', right: 'r', center: 'c' };
+  return [...xml.matchAll(/<w:tc>([\s\S]*?)<\/w:tc>/g)].map((m) => {
+    const val = (m[1] ?? '').match(/<w:jc w:val="([^"]+)"\/>/)?.[1];
+    return (val !== undefined ? JC[val] : undefined) ?? 'l';
+  });
 }
 
 /**

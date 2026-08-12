@@ -14,7 +14,7 @@ import { docxPart } from '../helpers/docx-parts.js';
 import type { Block, Doc } from '../../src/ir/types.js';
 import {
   type Run, classify, expectSameSequence, norm, runsFromMarkdown,
-  boldRunsFromDocx, cellsFromDocx, docTitleFromDocx, emphasisFromIr, flattenInline, headingsFromDocx,
+  alignFromDocx, boldRunsFromDocx, cellsFromDocx, docTitleFromDocx, emphasisFromIr, flattenInline, headingsFromDocx,
   italicRunsFromDocx, linkTargetsFromIr, linkTargetsFromRels,
 } from './runs.js';
 
@@ -193,6 +193,32 @@ describe('Word says what the others say', () => {
       ...table!.rows.flatMap((r) => r.map(flattenInline)),
     ];
     expectSameSequence('table cell', { label: 'IR', items: expected }, { label: 'Word', items: cellsFromDocx(xml) });
+  });
+
+  it('aligns each cell the column asked for, which the PDF cannot show', async () => {
+    // Word carries alignment as `<w:jc>` on the cell's own paragraph — same
+    // reasoning as the heading and link-target comparisons above: `align`
+    // is structure the IR defines and Word reproduces, and an untagged PDF's
+    // text extraction has no notion of alignment at all, so there is no third
+    // opinion to reconcile and the IR is the only reference.
+    //
+    // The IR stores `align` once per column (`b.align[i]`), but Word stamps
+    // it on every cell's paragraph, so comparing per column against Word's
+    // header row alone would miss a body cell landing under the wrong
+    // column's alignment. Comparing every cell instead — the column value
+    // broadcast down each row, in the same reading order `cellsFromDocx`
+    // already walks — means a value on the wrong column fails here exactly
+    // the way it would fail the cell-value comparison above.
+    const { doc } = ingestMarkdown(source);
+    const xml = await docxPart(await renderDocx(doc, await loadTheme('plain'), { epochSeconds: EPOCH }), 'word/document.xml');
+    const table = doc.blocks.find((b): b is Extract<Block, { t: 'table' }> => b.t === 'table');
+    expect(table).toBeDefined();
+    const column = (i: number) => table!.align[i] ?? 'l';
+    const expected = [
+      ...table!.head.map((_, i) => column(i)),
+      ...table!.rows.flatMap((r) => r.map((_, i) => column(i))),
+    ];
+    expectSameSequence('cell alignment', { label: 'IR', items: expected }, { label: 'Word', items: alignFromDocx(xml) });
   });
 
   /**
