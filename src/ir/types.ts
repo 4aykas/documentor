@@ -33,7 +33,11 @@ export type Block =
 export type Meta = {
   title: string;
   subtitle?: string;
-  date?: string;   // ISO 8601 date, rendered by the theme's locale rules
+  // Carried verbatim, not parsed or reformatted: this is what the source
+  // document says about itself (e.g. a re-issued Word file's old letterhead
+  // read "July 20, 2026"), and the renderer's job is to print exactly that,
+  // not a locale-shifted or re-parsed version of it.
+  date?: string;
   entity?: string;
   lang: string;    // BCP 47; drives hyphenation and quotation marks
 };

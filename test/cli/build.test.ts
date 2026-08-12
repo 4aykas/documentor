@@ -26,6 +26,11 @@ describe('parseArgs', () => {
   it('rejects an unknown option', () => {
     expect(() => parseArgs(['a.md', '--colour'])).toThrow(/--colour/);
   });
+  it('reads --date and --entity', () => {
+    const args = parseArgs(['a.md', '--date', 'July 20, 2026', '--entity', 'Acme Sp. z o.o.']);
+    expect(args.date).toBe('July 20, 2026');
+    expect(args.entity).toBe('Acme Sp. z o.o.');
+  });
 });
 
 describe('runBuild', () => {
@@ -120,5 +125,57 @@ describe('runBuild', () => {
     await runBuild([file, '--to', 'pdf'], io);
     const second = await readFile(join(file, '..', 'report.plain.pdf'));
     expect(Buffer.compare(first, second)).toBe(0);
+  });
+
+  it('carries --date and --entity all the way into the rendered document', async () => {
+    // How meta.entity/meta.date print under the letterhead is already covered
+    // by test/render/html.test.ts and test/render/docx.test.ts — this only
+    // proves the CLI flags survive parseArgs and actually reach the renderer,
+    // rather than being dropped somewhere between the two. docx is the
+    // cheapest format here to inspect end-to-end, since its header lives in
+    // an inspectable XML part.
+    const { docxPart } = await import('../helpers/docx-parts.js');
+    const file = await fixture('# Report\n\nHello.\n');
+    const out = await mkdtemp(join(tmpdir(), 'documentor-meta-'));
+    const { io } = collect();
+    // The date is passed through verbatim — not a machine date — precisely so
+    // a re-issued document can carry a value like this one, not ISO 8601.
+    expect(await runBuild(
+      [file, '--to', 'docx', '--out', out, '--date', 'July 20, 2026', '--entity', 'Acme Sp. z o.o.'],
+      io,
+    )).toBe(0);
+    const bytes = await readFile(join(out, 'report.plain.docx'));
+    const header = await docxPart(bytes, 'word/header2.xml');
+    expect(header).toContain('July 20, 2026');
+    expect(header).toContain('Acme Sp. z o.o.');
+  });
+
+  it('leaves meta exactly as it was before --date/--entity existed, when neither flag is passed', async () => {
+    // The property under test: a document rendered with no new flags must be
+    // byte-identical to how it rendered before --date/--entity existed. Proven
+    // here by rendering the same fixture twice — once through the exact
+    // pre-change code path (ingestMarkdown called with only a possible
+    // `title`, the way build.ts called it before this change) and once
+    // through today's runBuild with no --date/--entity — and comparing bytes,
+    // rather than assuming an absent option behaves like an absent option.
+    const md = '# Report\n\nHello, world.\n';
+    const file = await fixture(md);
+    const out = await mkdtemp(join(tmpdir(), 'documentor-identity-'));
+    const { io } = collect();
+    expect(await runBuild([file, '--to', 'pdf', '--out', out], io)).toBe(0);
+    const afterChange = await readFile(join(out, 'report.plain.pdf'));
+
+    const { ingestMarkdown } = await import('../../src/ingest/md.js');
+    const { validateDoc } = await import('../../src/ir/validate.js');
+    const { renderPdf } = await import('../../src/render/pdf.js');
+    const { loadTheme } = await import('../../src/theme/resolve.js');
+    const { resolveEpoch } = await import('../../src/cli/timestamp.js');
+    const { doc } = ingestMarkdown(md, {}); // exactly the pre-change call shape
+    validateDoc(doc);
+    const theme = await loadTheme('plain');
+    const epochSeconds = await resolveEpoch(process.env, file);
+    const beforeChange = await renderPdf(doc, theme, { epochSeconds });
+
+    expect(Buffer.compare(afterChange, beforeChange)).toBe(0);
   });
 });

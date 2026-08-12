@@ -47,9 +47,11 @@ async function renderTo(
 }
 
 export function parseArgs(argv: string[]): {
-  input?: string; to: string[]; theme: string; out?: string; title?: string;
+  input?: string; to: string[]; theme: string; out?: string; title?: string; date?: string; entity?: string;
 } {
-  const out: { input?: string; to: string[]; theme: string; out?: string; title?: string } = {
+  const out: {
+    input?: string; to: string[]; theme: string; out?: string; title?: string; date?: string; entity?: string;
+  } = {
     to: ['pdf'], theme: 'plain',
   };
   for (let i = 0; i < argv.length; i++) {
@@ -63,6 +65,13 @@ export function parseArgs(argv: string[]): {
     else if (a === '--theme') out.theme = next();
     else if (a === '--out') out.out = next();
     else if (a === '--title') out.title = next();
+    // --date is carried verbatim into meta.date, never parsed: it is what the
+    // document says about itself (e.g. a re-issued file's old letterhead read
+    // "July 20, 2026"), not a machine date, and this is not SOURCE_DATE_EPOCH
+    // — that controls file timestamps for reproducibility, this controls what
+    // the printed page says.
+    else if (a === '--date') out.date = next();
+    else if (a === '--entity') out.entity = next();
     else if (a.startsWith('-')) throw new Error(`unknown option ${a}`);
     else if (out.input === undefined) out.input = a;
     else throw new Error(`unexpected argument ${a}`);
@@ -79,7 +88,7 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
     return 2;
   }
   if (args.input === undefined) {
-    io.err(`documentor: build needs an input file\n\n  documentor build <file> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>]`);
+    io.err(`documentor: build needs an input file\n\n  documentor build <file> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>] [--title <s>] [--date <s>] [--entity <s>]`);
     return 2;
   }
   // Narrowed here, once, so that everything downstream carries the union type
@@ -101,7 +110,11 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
   }
 
   const source = await readFile(input, 'utf8');
-  const { doc, dropped } = ingestMarkdown(source, args.title === undefined ? {} : { title: args.title });
+  const { doc, dropped } = ingestMarkdown(source, {
+    ...(args.title === undefined ? {} : { title: args.title }),
+    ...(args.date === undefined ? {} : { date: args.date }),
+    ...(args.entity === undefined ? {} : { entity: args.entity }),
+  });
   // The gate between ingest and render. Every renderer assumes a well-formed
   // Doc — an exhaustive switch over `Block` type-checks but says nothing about
   // what actually arrives at runtime from an ingester, a hand-written IR file
