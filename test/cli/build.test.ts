@@ -1,0 +1,81 @@
+import { describe, expect, it } from 'vitest';
+import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { parseArgs, runBuild } from '../../src/cli/build.js';
+
+const collect = () => {
+  const log: string[] = []; const err: string[] = [];
+  return { io: { log: (s: string) => log.push(s), err: (s: string) => err.push(s) }, log, err };
+};
+
+async function fixture(md: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'documentor-cli-'));
+  const file = join(dir, 'report.md');
+  await writeFile(file, md);
+  return file;
+}
+
+describe('parseArgs', () => {
+  it('defaults to pdf and the plain theme', () => {
+    expect(parseArgs(['a.md'])).toEqual({ input: 'a.md', to: ['pdf'], theme: 'plain' });
+  });
+  it('splits --to on commas', () => {
+    expect(parseArgs(['a.md', '--to', 'pdf, md']).to).toEqual(['pdf', 'md']);
+  });
+  it('rejects an unknown option', () => {
+    expect(() => parseArgs(['a.md', '--colour'])).toThrow(/--colour/);
+  });
+});
+
+describe('runBuild', () => {
+  it('writes the output beside the input, named after the theme', async () => {
+    const file = await fixture('# Report\n\nHello.\n');
+    const { io } = collect();
+    expect(await runBuild([file, '--to', 'md'], io)).toBe(0);
+    const written = await readdir(join(file, '..'));
+    expect(written.sort()).toEqual(['report.md', 'report.plain.md']);
+  });
+
+  it('honours --out', async () => {
+    const file = await fixture('# Report\n\nHello.\n');
+    const out = await mkdtemp(join(tmpdir(), 'documentor-out-'));
+    const { io } = collect();
+    expect(await runBuild([file, '--to', 'md', '--out', out], io)).toBe(0);
+    expect(await readdir(out)).toEqual(['report.plain.md']);
+  });
+
+  it('reports what the ingester had to leave out', async () => {
+    const file = await fixture('# Report\n\n<div>raw</div>\n');
+    const { io, err } = collect();
+    await runBuild([file, '--to', 'md'], io);
+    expect(err.join('\n')).toMatch(/html/i);
+  });
+
+  it('refuses a format it cannot write yet, naming the ones it can', async () => {
+    const file = await fixture('# R\n');
+    const { io, err } = collect();
+    expect(await runBuild([file, '--to', 'docx'], io)).toBe(2);
+    expect(err.join('\n')).toMatch(/pdf, md/);
+  });
+
+  it('refuses an input extension it cannot read yet', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'documentor-x-'));
+    const file = join(dir, 'a.docx');
+    await writeFile(file, 'not really a docx');
+    const { io, err } = collect();
+    expect(await runBuild([file], io)).toBe(2);
+    expect(err.join('\n')).toMatch(/\.md/);
+  });
+
+  it('produces identical bytes on two runs', async () => {
+    const file = await fixture('# Report\n\nHello.\n');
+    const { io } = collect();
+    await runBuild([file, '--to', 'pdf'], io);
+    const first = await readFile(join(file, '..', 'report.plain.pdf'));
+    await new Promise((r) => setTimeout(r, 1100));
+    await runBuild([file, '--to', 'pdf'], io);
+    const second = await readFile(join(file, '..', 'report.plain.pdf'));
+    expect(Buffer.compare(first, second)).toBe(0);
+  });
+});
