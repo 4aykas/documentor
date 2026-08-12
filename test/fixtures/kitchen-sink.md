@@ -42,7 +42,7 @@ fixture that referenced a file on disk would be testing the wrong thing.
 |:-----|---------:|-----------:|:--------:|------:|
 | Widget | 12 | 4.50 | EUR | 54.00 |
 | Gadget | 3 | 129.99 | EUR | 389.97 |
-| Sprocket, long name to test wrapping | 140 | 0.35 | EUR | 49.00 |
+| Sprocket, extra-long replacement part name to force the cell to wrap onto two lines | 140 | 0.35 | EUR | 49.00 |
 
 ---
 

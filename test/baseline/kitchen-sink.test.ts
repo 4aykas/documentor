@@ -100,7 +100,13 @@ describe('kitchen sink baseline', () => {
     // Wzorzec", so pdfjs splits it into several items, and only the first of
     // those is a *prefix* of the title — the rest, like "Зразок" on its own,
     // are fragments from the middle. `includes` matches any of them.
-    const isHeaderText = (s: string) => doc.meta.title.includes(s) || /^[\d\s/]+$/.test(s);
+    //
+    // The counter pattern must match only "N / M" — not any bare number —
+    // or it would also exclude the fixture's own Quantity column ("12",
+    // "3", "140") from the check, blinding this test to exactly the kind
+    // of stray body content (a table row stranded at the top of a page)
+    // it exists to catch.
+    const isHeaderText = (s: string) => doc.meta.title.includes(s) || /^\d+\s*\/\s*\d+$/.test(s);
     const bodyItems = items.filter((it) => 'str' in it && !isHeaderText(it.str.trim()));
     for (const it of bodyItems) {
       const y = (it as { transform: number[] }).transform[5]!;
