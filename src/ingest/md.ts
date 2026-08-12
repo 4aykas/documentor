@@ -243,7 +243,9 @@ function plain(nodes: Inline[]): string {
   return nodes.map((n) => (n.t === 'text' ? n.v : plain(n.children))).join('');
 }
 
-export function ingestMarkdown(source: string, opts: { title?: string; date?: string; entity?: string } = {}): Ingested {
+export function ingestMarkdown(
+  source: string, opts: { title?: string; subtitle?: string; date?: string; entity?: string } = {},
+): Ingested {
   const sink: Sink = { blocks: [], dropped: [] };
   for (const tok of marked.lexer(source)) blockOf(tok, sink);
 
@@ -259,16 +261,17 @@ export function ingestMarkdown(source: string, opts: { title?: string; date?: st
     }
   }
 
-  // date/entity have no source in the Markdown itself (unlike title, which
-  // can fall back to an h1) — a document only carries them when the caller
-  // supplies them, so under exactOptionalPropertyTypes they are spread in
-  // rather than assigned, keeping an absent flag indistinguishable from a
-  // document rendered before these options existed.
+  // subtitle/date/entity have no source in the Markdown itself (unlike
+  // title, which can fall back to an h1) — a document only carries them when
+  // the caller supplies them, so under exactOptionalPropertyTypes they are
+  // spread in rather than assigned, keeping an absent flag indistinguishable
+  // from a document rendered before these options existed.
   return {
     doc: {
       meta: {
         title: title ?? 'Untitled',
         lang: 'en',
+        ...(opts.subtitle === undefined ? {} : { subtitle: opts.subtitle }),
         ...(opts.date === undefined ? {} : { date: opts.date }),
         ...(opts.entity === undefined ? {} : { entity: opts.entity }),
       },

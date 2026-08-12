@@ -8,8 +8,8 @@ import { runInspect } from '../cli/inspect.js';
 // here still named only pdf and md.
 const USAGE = `documentor — re-issue an existing document as a well-typeset one
 
-  documentor inspect <file|dir> [--theme plain] [--json] [--recursive] [--title <s>] [--date <s>] [--entity <s>]
-  documentor build <file|dir> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>] [--title <s>] [--date <s>] [--entity <s>] [--plain-names] [--recursive]
+  documentor inspect <file|dir> [--theme plain] [--json] [--recursive] [--title <s>] [--date <s>] [--entity <s>] [--config <file>] [--no-config]
+  documentor build <file|dir> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>] [--title <s>] [--date <s>] [--entity <s>] [--plain-names] [--recursive] [--config <file>] [--no-config]
   documentor doctor
 
 inspect reads a document and reports what it understood, what it had to drop,
@@ -18,7 +18,12 @@ Output lands beside the input as <name>.<theme>.<ext>, or <name>.<ext> with --pl
 A directory input builds (or inspects) every .md/.markdown/.docx file it
 contains (its own top level only, unless --recursive); build reuses one
 browser for the batch and prints a summary of what was written, refused,
-failed, or dropped.`;
+failed, or dropped.
+
+A <stem>.documentor.json sidecar beside an input is found automatically and
+applied — --flag > sidecar > the document's own metadata — and named in the
+output when used. --config <file> names one explicitly (a single input
+only); --no-config ignores any that exist.`;
 
 /**
  * The exit code contract, documented in this one place because callers script

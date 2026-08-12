@@ -66,8 +66,8 @@ function factsOf(value: unknown): string[] {
 }
 
 describe('parseInspectArgs', () => {
-  it('defaults to the plain theme, human output, non-recursive', () => {
-    expect(parseInspectArgs(['a.md'])).toEqual({ input: 'a.md', theme: 'plain', json: false, recursive: false });
+  it('leaves theme unset when not given — the plain default now lives in config.ts\'s resolveConfig, the one place a flag, a sidecar, and a fallback are weighed together', () => {
+    expect(parseInspectArgs(['a.md'])).toEqual({ input: 'a.md', json: false, recursive: false, noConfig: false });
   });
   it('reads --theme, --json and --recursive', () => {
     const args = parseInspectArgs(['a.md', '--theme', 'tebin', '--json', '--recursive']);

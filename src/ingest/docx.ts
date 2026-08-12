@@ -906,7 +906,7 @@ type ListGroup = { ordered: boolean; depth: number; numId: string; start: number
 
 export async function ingestDocx(
   bytes: Uint8Array | Buffer,
-  opts: { title?: string; date?: string; entity?: string } = {},
+  opts: { title?: string; subtitle?: string; date?: string; entity?: string } = {},
 ): Promise<Ingested> {
   const zip = await JSZip.loadAsync(bytes);
   const documentFile = zip.file('word/document.xml');
@@ -1039,13 +1039,18 @@ export async function ingestDocx(
   const foundDate = await scanHeadersAndFooters(zip, sink);
   const date = opts.date ?? foundDate;
   const finalTitle = opts.title ?? title;
+  // opts.subtitle (the sidecar/caller value) wins over the body's own
+  // DocSubtitle, same precedence opts.title already has over the body's
+  // DocTitle above — a caller-supplied subtitle is a more deliberate
+  // decision than whatever paragraph happened to carry the style.
+  const finalSubtitle = opts.subtitle ?? subtitle;
 
   return {
     doc: {
       meta: {
         title: finalTitle && finalTitle !== '' ? finalTitle : 'Untitled',
         lang: 'en',
-        ...(subtitle !== undefined && subtitle !== '' ? { subtitle } : {}),
+        ...(finalSubtitle !== undefined && finalSubtitle !== '' ? { subtitle: finalSubtitle } : {}),
         ...(date !== undefined ? { date } : {}),
         ...(opts.entity !== undefined ? { entity: opts.entity } : {}),
       },
