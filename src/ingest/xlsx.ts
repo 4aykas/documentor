@@ -2,9 +2,11 @@
 // docs/superpowers/specs/2026-08-13-xlsx-ingest-design.md, written from 68
 // real files in a data room. The useful subset there is small tabular
 // registers (a shareholders' list of 12 rows, a legal structure of 41); a
-// 94,309-row sheet or one riddled with merged cells is a working instrument,
-// not a document, and this file refuses those loudly rather than reformat
-// them into uselessness (see MAX_ROWS/MAX_COLS below).
+// 94,309-row sheet is a working instrument, not a document, and this file
+// refuses that loudly rather than reformat it into uselessness (see
+// MAX_ROWS/MAX_COLS below). A merge that spans more than one row gets the
+// same refusal, for the same reason — see readWorksheet's own comment on why
+// a merge confined to a single row is flattened instead.
 //
 // XML, not a DOM parser or ExcelJS — the same choice src/ingest/docx.ts
 // makes, for the same reason: the parts out of the zip with `jszip` (already
@@ -223,6 +225,20 @@ function extractV(content: string): string | undefined {
 const MAX_ROWS = 200;
 const MAX_COLS = 25;
 
+// Above this many single-row merges *in one sheet*, listing each flattened
+// range by name stops being a report and starts being the thing it warns
+// about: one measured file in the corpus carries 38,556 of them, and a line
+// per range there would bury every other sheet's findings — and that file's
+// own findings — under scroll nobody reads. 20 is a screenful: small enough
+// that every range named below it is something a reader can actually go
+// check row by row (the corpus's own small registers rarely clear a handful),
+// large enough that it never triggers for a sheet where the detail is still
+// the point. Above it, one line per sheet: a count and the row span, which
+// still says *where* without saying *which* — the same trade this file's
+// MAX_ROWS/MAX_COLS refusals make between "worth reading" and "technically
+// possible".
+const FLATTEN_REPORT_CAP = 20;
+
 type Cell = { text: string; isNumeric: boolean };
 
 const EMPTY_CELL: Cell = { text: '', isNumeric: false };
@@ -258,6 +274,30 @@ function trimLeading(grid: readonly Cell[][]): Cell[][] {
 }
 
 // ---------------------------------------------------------------------------
+// Merged cells (xl/worksheets/sheetN.xml `<mergeCell ref="A1:B1"/>`)
+// ---------------------------------------------------------------------------
+
+type MergeRange = { r1: number; c1: number; r2: number; c2: number; ref: string };
+
+/** Cheap regex scan over `<mergeCell>` tags, same spirit as the cell-address
+ *  pass below it: enough to classify every merge in the sheet without
+ *  resolving a single cell's value, so a sheet that will be refused anyway is
+ *  refused after reading its merge list, not after building a grid for it. */
+function parseMergeCells(sheetXml: string): MergeRange[] {
+  const out: MergeRange[] = [];
+  for (const m of sheetXml.matchAll(/<mergeCell\b[^>]*\bref="([^"]*)"/g)) {
+    const ref = m[1]!;
+    const [a, b] = ref.split(':');
+    if (a === undefined || b === undefined) continue; // malformed ref — not a real range; skip rather than guess
+    const am = /^([A-Z]+)(\d+)$/.exec(a);
+    const bm = /^([A-Z]+)(\d+)$/.exec(b);
+    if (!am || !bm) continue;
+    out.push({ c1: colLettersToIndex(am[1]!), r1: Number(am[2]), c2: colLettersToIndex(bm[1]!), r2: Number(bm[2]), ref });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // One worksheet
 // ---------------------------------------------------------------------------
 
@@ -277,13 +317,26 @@ type SheetOutcome =
 function readWorksheet(
   sheetXml: string, sheetName: string, sharedStrings: readonly string[], styles: Styles, date1904: boolean, sink: Sink,
 ): SheetOutcome {
-  const mergeCount = (sheetXml.match(/<mergeCell\b/g) ?? []).length;
-  if (mergeCount > 0) {
+  // Measured over the corpus, not assumed (see the design doc's "what it
+  // refuses" section): a merge confined to one row (r1 === r2) is what the
+  // sheet already shows a reader — the value sits in the leftmost cell and
+  // the rest of the span is blank — so flattening it costs only a mention.
+  // A merge spanning more than one row groups the rows it covers; flattening
+  // that deletes which rows belonged to the group while leaving a table that
+  // looks perfectly well-formed, which is the worst available outcome for a
+  // document that is evidence. So only the row-spanning kind still refuses
+  // the sheet outright, with the same message this ingester always gave —
+  // just counting the merges that actually earn it rather than every merge.
+  const merges = parseMergeCells(sheetXml);
+  const rowSpanningMerges = merges.filter((m) => m.r1 !== m.r2);
+  if (rowSpanningMerges.length > 0) {
+    const n = rowSpanningMerges.length;
     return {
       kind: 'refused',
-      message: `sheet "${sheetName}" refused: ${mergeCount} merged cell${mergeCount === 1 ? '' : 's'} — the IR has no way to represent a merged cell, and flattening one would produce a table that looks right and says something different from the source; extract the range that matters into a small sheet, and re-issue that.`,
+      message: `sheet "${sheetName}" refused: ${n} merged cell${n === 1 ? '' : 's'} — the IR has no way to represent a merged cell, and flattening one would produce a table that looks right and says something different from the source; extract the range that matters into a small sheet, and re-issue that.`,
     };
   }
+  const singleRowMerges = merges.filter((m) => m.c1 !== m.c2); // r1 === r2 guaranteed by the filter above; c1 === c2 would be a degenerate 1-cell "merge", not a real span
 
   let minRow = Infinity, maxRow = -Infinity, minCol = Infinity, maxCol = -Infinity, cellCount = 0;
   for (const m of sheetXml.matchAll(/<c\b[^>]*\br="([A-Z]+)(\d+)"/g)) {
@@ -382,6 +435,42 @@ function readWorksheet(
 
   if (sawUnaddressed) {
     sink.dropped.push(`sheet "${sheetName}" contained a cell with no address (a malformed <c> with no r attribute) — it could not be placed and was skipped`);
+  }
+
+  // Flatten each single-row merge: the value already sits in the leftmost
+  // cell (that's how Excel stores it — a merge writes `<c>` only for the
+  // top-left member), so flattening is just clearing the rest of the span so
+  // no stray value left over from a previous edit reappears as a spurious
+  // extra column. Other columns are untouched — this only ever blanks cells
+  // strictly inside a merge's own range.
+  for (const m of singleRowMerges) {
+    const rowIdx = m.r1 - minRow;
+    if (rowIdx < 0 || rowIdx >= rows) continue; // merge outside the used range — malformed workbook, nothing to flatten
+    const colStart = m.c1 - minCol;
+    const colEnd = Math.min(m.c2 - minCol, cols - 1);
+    if (colStart < 0) continue;
+    for (let c = colStart + 1; c <= colEnd; c++) grid[rowIdx]![c] = EMPTY_CELL;
+  }
+
+  if (singleRowMerges.length > 0) {
+    if (singleRowMerges.length <= FLATTEN_REPORT_CAP) {
+      for (const m of singleRowMerges) {
+        sink.dropped.push(`sheet "${sheetName}": merge ${m.ref} flattened — value kept in the leftmost cell, the rest of the span left blank`);
+      }
+    } else {
+      // Above the cap: a count and the span of rows affected, not a range per
+      // line — see FLATTEN_REPORT_CAP's own comment for why a report this
+      // large would drown everything else in `dropped` instead of informing
+      // anyone.
+      let minMergeRow = Infinity, maxMergeRow = -Infinity;
+      for (const m of singleRowMerges) {
+        if (m.r1 < minMergeRow) minMergeRow = m.r1;
+        if (m.r1 > maxMergeRow) maxMergeRow = m.r1;
+      }
+      sink.dropped.push(
+        `sheet "${sheetName}": ${singleRowMerges.length} single-row merges flattened across rows ${minMergeRow}-${maxMergeRow} — too many to list individually; value kept in each span's leftmost cell, the rest left blank`,
+      );
+    }
   }
 
   return { kind: 'ok', grid, hadFormula };
