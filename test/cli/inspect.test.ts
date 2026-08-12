@@ -78,6 +78,11 @@ describe('parseInspectArgs', () => {
   it('rejects an unknown option', () => {
     expect(() => parseInspectArgs(['a.md', '--colour'])).toThrow(/--colour/);
   });
+  it('reads --date and --entity, spelled exactly as build.ts\'s own parseArgs does', () => {
+    const args = parseInspectArgs(['a.md', '--date', 'July 20, 2026', '--entity', 'Acme Sp. z o.o.']);
+    expect(args.date).toBe('July 20, 2026');
+    expect(args.entity).toBe('Acme Sp. z o.o.');
+  });
 });
 
 describe('runInspect: nothing is rendered or written', () => {
@@ -157,11 +162,9 @@ describe('runInspect: single file', () => {
     // ingestDocx recovers `subtitle` from a DocSubtitle body paragraph and
     // `date` from the letterhead's header/footer scan — round-tripped
     // through this project's own renderDocx the same way
-    // test/ingest/docx.test.ts's own fixture is. `entity` has no source
-    // inside a document at all (see DocInspection's own comment: it comes
-    // only from a caller-supplied opts.entity, which inspect never passes),
-    // so it is not exercised here — there is no fixture that could give it a
-    // value through this path today.
+    // test/ingest/docx.test.ts's own fixture is. `entity` is covered
+    // separately below, via --entity, since it has no source inside a
+    // document at all.
     const withMeta: Doc = {
       meta: { title: 'Reply to Request 4.2', subtitle: 'Confidential', date: 'July 20, 2026', lang: 'en' },
       blocks: [{ t: 'para', text: [{ t: 'text', v: 'Body text.' }] }],
@@ -172,6 +175,49 @@ describe('runInspect: single file', () => {
     const human = log.join('\n');
     expect(human).toMatch(/subtitle "Confidential"/);
     expect(human).toMatch(/date "July 20, 2026"/);
+  });
+
+  it('--entity previews what build --entity would print, in both forms', async () => {
+    // entity has no source inside any document — it can only ever come from
+    // a caller-supplied value (see DocInspection's own comment) — so this is
+    // the only way to exercise it at all, and it must behave exactly like
+    // `build --entity` (same flag, same override): see build.ts's own
+    // `ingestOptsFrom`.
+    const file = await fixture('# Report\n\nHello.\n');
+    const { io: ioHuman, log: humanLog } = collect();
+    await runInspect([file, '--entity', 'Acme Sp. z o.o.'], ioHuman);
+    expect(humanLog.join('\n')).toMatch(/entity "Acme Sp\. z o\.o\."/);
+
+    const { io: ioJson, log: jsonLog } = collect();
+    await runInspect([file, '--entity', 'Acme Sp. z o.o.', '--json'], ioJson);
+    const doc = parseJson(jsonLog).documents[0]!;
+    expect(doc.status).toBe('ok');
+    if (doc.status !== 'ok') throw new Error('unreachable');
+    // Not a dedicated JSON assertion beyond this: the parity walk above
+    // already forces `entity` to be rendered the moment it is nonempty, so
+    // this only needs to confirm the structure actually carries the value
+    // `ingest` was given.
+    expect(doc.entity).toBe('Acme Sp. z o.o.');
+  });
+
+  it('--date overrides what the document\'s own header carried, the same way build --date does', async () => {
+    const withDate: Doc = {
+      meta: { title: 'Reply', date: 'July 20, 2026', lang: 'en' },
+      blocks: [{ t: 'para', text: [{ t: 'text', v: 'Body.' }] }],
+    };
+    const file = await docxFixture(withDate, 'dated.docx');
+    const { io, log } = collect();
+    await runInspect([file, '--date', 'Given Date'], io);
+    const human = log.join('\n');
+    // The letterhead date is still named in `dropped` — that is
+    // ingestDocx's own honest report of what the header actually carried,
+    // unrelated to the override, and inspect must not reword it (see
+    // DocInspection's own comment on `dropped`). What --date changes is
+    // what `understood` reports as the document's date: the override, not
+    // the scanned one, exactly matching build.ts's own ingestDocx test
+    // ("lets an explicit title/date override what the header carried").
+    expect(human).toMatch(/understood:.*date "Given Date"/);
+    expect(human).toMatch(/dropped:.*kept the date it carried: "July 20, 2026"/);
   });
 
   it('reports the ingester\'s own dropped entries, unchanged', async () => {

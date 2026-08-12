@@ -8,7 +8,7 @@ import { runInspect } from '../cli/inspect.js';
 // here still named only pdf and md.
 const USAGE = `documentor — re-issue an existing document as a well-typeset one
 
-  documentor inspect <file|dir> [--theme plain] [--json] [--recursive]
+  documentor inspect <file|dir> [--theme plain] [--json] [--recursive] [--date <s>] [--entity <s>]
   documentor build <file|dir> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>] [--title <s>] [--date <s>] [--entity <s>] [--plain-names] [--recursive]
   documentor doctor
 

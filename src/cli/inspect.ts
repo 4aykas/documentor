@@ -20,7 +20,7 @@ import type { Block, Doc, Inline } from '../ir/types.js';
 import { validateDoc } from '../ir/validate.js';
 import { loadTheme, type Theme } from '../theme/resolve.js';
 import { PAGE_PT } from '../theme/types.js';
-import { discoverInputs, ingest, READABLE_EXTS } from './build.js';
+import { discoverInputs, ingest, READABLE_EXTS, type IngestOpts } from './build.js';
 
 type Io = { log: (s: string) => void; err: (s: string) => void };
 
@@ -69,18 +69,35 @@ export type DocInspection =
       status: 'ok';
       title: string;
       // `subtitle`/`date`/`entity` are meta.doc fields verbatim (present only
-      // when the ingester found one — exactOptionalPropertyTypes means an
-      // absent fact is an absent key, never an explicit `undefined`). They
-      // exist here for the same reason `title` does: all four print on the
-      // themed letterhead at build time, so a person deciding whether the
-      // build is ready to run wants to see exactly what will land there —
-      // not just "yes/no, one was found" but the actual text. Every one of
-      // them is rendered in renderUnderstood below; a fact that appeared
-      // only in this structure and never in the human text would be exactly
-      // the disagreement the design's "one structure, two renderings" rule
-      // exists to prevent, and test/cli/inspect.test.ts's parity test walks
-      // this structure at runtime (not a hand-maintained field list) to
-      // catch a future field added here without a renderer for it.
+      // when the document — or, for date/entity, `inspect`'s own --date/
+      // --entity — supplied one; exactOptionalPropertyTypes means an absent
+      // fact is an absent key, never an explicit `undefined`). They exist
+      // here for the same reason `title` does: all four print on the themed
+      // letterhead at build time, so a person deciding whether the build is
+      // ready to run wants to see exactly what will land there — not just
+      // "yes/no, one was found" but the actual text.
+      //
+      // `entity` has no source *inside* a document at all — unlike
+      // `subtitle` (a DocSubtitle body style) or `date` (the DOCX header/
+      // footer scan) it can only ever come from a caller-supplied value —
+      // so `inspect` accepts `--entity` for the one reason a document
+      // itself could never answer it: previewing what `build --entity`
+      // would print, before running `build`. `--date` accepts the same
+      // flag build does and for the same override reason, even though a
+      // DOCX can also supply one on its own — an explicit `--date` must win
+      // over a scanned one at inspect time exactly because it wins at
+      // build time (see ingestDocx's own `opts.date ?? foundDate`); two
+      // commands answering "what will this print" differently for the same
+      // input and the same flags is the exact failure this command exists
+      // to prevent.
+      //
+      // Every one of these three is rendered in renderUnderstood below; a
+      // fact that appeared only in this structure and never in the human
+      // text would be exactly the disagreement the design's "one structure,
+      // two renderings" rule exists to prevent, and test/cli/inspect.test.ts's
+      // parity test walks this structure at runtime (not a hand-maintained
+      // field list) to catch a future field added here without a renderer
+      // for it.
       subtitle?: string;
       date?: string;
       entity?: string;
@@ -227,12 +244,12 @@ function computeWarnings(doc: Doc, theme: Theme): string[] {
  * exit code.
  */
 async function inspectDoc(
-  file: string, ext: '.docx' | '.md' | '.markdown', theme: Theme,
+  file: string, ext: '.docx' | '.md' | '.markdown', theme: Theme, opts: IngestOpts,
 ): Promise<DocInspection> {
   let doc: Doc;
   let dropped: string[];
   try {
-    ({ doc, dropped } = await ingest(ext, file, {}));
+    ({ doc, dropped } = await ingest(ext, file, opts));
   } catch (e) {
     return { file, status: 'failed', reason: (e as Error).message };
   }
@@ -311,9 +328,11 @@ export function renderHuman(result: InspectResult): string {
 }
 
 export function parseInspectArgs(argv: string[]): {
-  input?: string; theme: string; json: boolean; recursive: boolean;
+  input?: string; theme: string; json: boolean; recursive: boolean; date?: string; entity?: string;
 } {
-  const out: { input?: string; theme: string; json: boolean; recursive: boolean } = {
+  const out: {
+    input?: string; theme: string; json: boolean; recursive: boolean; date?: string; entity?: string;
+  } = {
     theme: 'plain', json: false, recursive: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -329,6 +348,13 @@ export function parseInspectArgs(argv: string[]): {
     // InspectResult built once, below.
     else if (a === '--json') out.json = true;
     else if (a === '--recursive') out.recursive = true;
+    // Same spelling, same semantics as build.ts's own --date/--entity (see
+    // parseArgs there) — not a second convention for the same flag. See
+    // DocInspection's own comment on why inspect needs these at all: it is
+    // the one place a caller can preview what `build --date`/`--entity`
+    // would actually print before running `build`.
+    else if (a === '--date') out.date = next();
+    else if (a === '--entity') out.entity = next();
     else if (a.startsWith('-')) throw new Error(`unknown option ${a}`);
     else if (out.input === undefined) out.input = a;
     else throw new Error(`unexpected argument ${a}`);
@@ -363,13 +389,20 @@ export async function runInspect(argv: string[], io: Io): Promise<number> {
     return 2;
   }
   if (args.input === undefined) {
-    io.err('documentor: inspect needs an input file or directory\n\n  documentor inspect <file|dir> [--theme plain] [--json] [--recursive]');
+    io.err('documentor: inspect needs an input file or directory\n\n  documentor inspect <file|dir> [--theme plain] [--json] [--recursive] [--date <s>] [--entity <s>]');
     return 2;
   }
 
   const theme = await loadTheme(args.theme);
   const inputArg = resolve(args.input);
   const inputStat = await stat(inputArg).catch(() => undefined);
+  // Same construction build.ts's own ingestOptsFrom does — kept inline here
+  // rather than shared, since it is two conditional spreads, not logic
+  // either command owns more of than the other.
+  const opts: IngestOpts = {
+    ...(args.date === undefined ? {} : { date: args.date }),
+    ...(args.entity === undefined ? {} : { entity: args.entity }),
+  };
 
   let documents: DocInspection[];
   let batchFailed = false;
@@ -382,7 +415,7 @@ export async function runInspect(argv: string[], io: Io): Promise<number> {
     documents = [];
     for (const file of discovered.inputs) {
       const ext = extname(file).toLowerCase() as '.md' | '.markdown' | '.docx';
-      documents.push(await inspectDoc(file, ext, theme));
+      documents.push(await inspectDoc(file, ext, theme, opts));
     }
     batchFailed = discovered.unreadableDirs.length > 0;
   } else {
@@ -391,7 +424,7 @@ export async function runInspect(argv: string[], io: Io): Promise<number> {
       io.err(`documentor: cannot read ${ext || 'a file with no extension'} yet — inspect reads .md and .docx`);
       return 2;
     }
-    documents = [await inspectDoc(inputArg, ext, theme)];
+    documents = [await inspectDoc(inputArg, ext, theme, opts)];
   }
 
   const result: InspectResult = { theme: theme.id, documents };
