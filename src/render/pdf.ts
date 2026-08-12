@@ -39,12 +39,83 @@ export async function blockNonDataRequests(page: Page): Promise<void> {
  * body). The header template is still just HTML+CSS though, so embedding the
  * same @font-face data URIs used in the body fixes it the same way.
  */
+/**
+ * Two lines, hard-clamped, ellipsis on the rest — a title long enough to need
+ * a third line is truncated instead of being handed the room to grow into.
+ *
+ * The comment on `margin` below already establishes why this has to exist:
+ * Chromium does not clip an oversized header template, it paints straight
+ * through the body's own ink, and no margin value changes that — the header
+ * grows downward from a fixed point near the page's physical top no matter
+ * how much room the margin gives it. The only guard left is bounding the
+ * title itself.
+ *
+ * Two is not an arbitrary number. Measured on this machine (kitchen-sink
+ * fixture, a synthetic ~1000-character title, raster decoded for real ink,
+ * not pdfjs text — see docs/superpowers/notes/2026-08-13-header-bound-repro.md):
+ * a single wrapped header line is ~7.5pt tall, a one-line header's own ink
+ * already sits 15.75–22.25pt from the page's physical top (the sweep behind
+ * `margin` below), and the body's first line starts at ~55.25pt on this
+ * project's default 48pt page margin — a 33pt gap for one line. A second
+ * line adds one more ~7.5pt row (ink to ~29.75pt), leaving ~25.5pt of gap —
+ * still well clear of the 12pt legibility floor that sweep was judged
+ * against. A third line would leave ~18pt, a fourth ~10.5pt — under the
+ * floor — so two lines is the most this header can safely claim without the
+ * margin doing any of the work: it holds even on a page whose own content
+ * starts closer to the top than this project's default.
+ *
+ * `-webkit-line-clamp` was tried first and rejected by measurement, not by
+ * taste: in Chromium's header-template sub-document it added the ellipsis
+ * glyph to line two but did not actually clip the box — a third line of
+ * ink still painted below it, raster-confirmed
+ * (docs/superpowers/notes/2026-08-13-header-bound-repro.md). A plain fixed
+ * `max-height` + `overflow:hidden` has no such box-model surprise: it clips
+ * at an exact pixel height regardless of how many lines the text wanted, so
+ * that is what this uses instead — a title that needs a third line loses it
+ * outright (mid-glyph on whatever partial line peeks through), rather than
+ * an ellipsis, but "clipped" is the property that matters here, not "tidy."
+ *
+ * Even `overflow:hidden` + `max-height` on their own, applied unconditionally,
+ * were not free: giving the title `<span>` any non-`visible` overflow value
+ * changes how Chromium's flexbox layout stretches it — `align-items:stretch`
+ * is the flex row's default, and a flex item with `overflow: hidden` no
+ * longer stretches to the row's cross-size the way a plain `visible` one
+ * does, which nudged the whole running header a fraction of a point and
+ * failed test/baseline/local-only-pixels.test.ts on the kitchen-sink
+ * fixture's own, perfectly ordinary, single-line title (caught by running
+ * that file, exactly as it exists to catch — see
+ * docs/superpowers/notes/2026-08-13-header-bound-repro.md). Explicit
+ * `line-height` was tried and rejected for the same reason first.
+ *
+ * The fix is to never hand a normal title this styling at all: the clamp
+ * only gets added once the title is long enough that it could plausibly
+ * need it, so a title that never comes near the limit — every title this
+ * project has rendered before this, including the kitchen-sink fixture's —
+ * gets the exact unstyled `<span>` it always got, byte-for-byte. Measured
+ * on this machine (kitchen-sink theme/margins, `Word `-repeated titles of
+ * increasing length, page 2's own text bucketed by y-coordinate — a cheap
+ * proxy for line count, good enough to place a threshold well clear of any
+ * boundary, not to prove the boundary's exact value): a title wraps to a
+ * second header line somewhere around 105-110 characters and a third
+ * somewhere around 135-140. `HEADER_TITLE_CLAMP_THRESHOLD_CHARS` (100) sits
+ * comfortably below both — a handful of titles between 100 and ~135
+ * characters that would actually still have fit on two lines unclamped get
+ * the styling anyway, which is harmless (the clamp only clips what doesn't
+ * already fit), while nothing anywhere near an ordinary title's length ever
+ * reaches it.
+ */
+const HEADER_TITLE_LINE_HEIGHT_PT = 7.5;
+const HEADER_TITLE_MAX_LINES = 2;
+const HEADER_TITLE_CLAMP_THRESHOLD_CHARS = 100;
+
 async function runningHeader(doc: Doc, theme: Theme): Promise<string> {
   const faces = await arimoFaceCss();
   const pad = `${(theme.page.marginPt * 1.333).toFixed(0)}px`;
+  const maxHeight = `${HEADER_TITLE_LINE_HEIGHT_PT * HEADER_TITLE_MAX_LINES}pt`;
+  const titleStyle = doc.meta.title.length > HEADER_TITLE_CLAMP_THRESHOLD_CHARS ? ` style="max-height:${maxHeight};overflow:hidden;"` : '';
   return `<style>${faces}</style>
 <div style="width:100%;padding:0 ${pad};font-family:Arimo,Arial,sans-serif;font-size:7pt;color:${theme.colors.muted};display:flex;justify-content:space-between;">
-<span>${escapeHtml(doc.meta.title)}</span>
+<span${titleStyle}>${escapeHtml(doc.meta.title)}</span>
 <span><span class="pageNumber"></span> / <span class="totalPages"></span></span>
 </div>`;
 }

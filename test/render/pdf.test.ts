@@ -5,9 +5,23 @@ import { blockNonDataRequests, renderPdf } from '../../src/render/pdf.js';
 import { resolveTheme } from '../../src/theme/resolve.js';
 import { ingestMarkdown } from '../../src/ingest/md.js';
 import { pdfText } from '../helpers/pdf-text.js';
+import { rasterPages } from '../helpers/raster.js';
+import { inkRowsFromPng } from '../helpers/png-ink.js';
 
 const EPOCH = 1_000_000_000;
 const theme = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C' } });
+
+/**
+ * `pdf-to-img` (used by rasterPages) bundles its own pdfjs-dist, pinned
+ * independently of this project's own pdfjs-dist — see the identical
+ * comment in test/baseline/local-only-pixels.test.ts, which this is copied
+ * from verbatim (already flagged there as duplicated three times over; see
+ * docs/superpowers/notes/2026-08-12-phase-2-residuals.md's "small things
+ * worth naming"). This file is now the fourth copy.
+ */
+function resetPdfjsWorkerGlobal(): void {
+  delete (globalThis as { pdfjsWorker?: unknown }).pdfjsWorker;
+}
 
 let browser: Browser;
 beforeAll(async () => { browser = await chromium.launch(); });
@@ -198,5 +212,76 @@ describe('renderPdf', () => {
     const pages = await pdfText(await render(long));
     expect(pages.length).toBeGreaterThan(2);
     expect(pages[pages.length - 1]).toMatch(new RegExp(`${pages.length} / ${pages.length}`));
+  });
+
+  it("keeps a pathologically long title's running header above a later page's own first line, checked in real ink — not text coordinates", async () => {
+    // pdfjs text extraction cannot see this defect: a good render and a
+    // broken one extract the same text at the same coordinates either way,
+    // because the header text is still *there*, just painted through the
+    // page's own content underneath it. Only a decoded raster shows two
+    // things sharing the same pixels — see
+    // docs/superpowers/notes/2026-08-13-header-bound-repro.md, where this
+    // exact test failed against the unclamped header (three "Word Word…"
+    // lines merging into a single ink band with "Heading on page two").
+    //
+    // The title below is ~1000 characters of short space-separated words —
+    // guaranteed to wrap past HEADER_TITLE_MAX_LINES if nothing clamps it,
+    // the same shape of input the phase-2 residuals note recorded the
+    // defect against (a ~1000-character title wrapping onto 7 lines).
+    const longTitle = 'Word '.repeat(200).trim();
+    const md =
+      `# ${longTitle}\n\nFirst page paragraph.\n\n` +
+      `${'Paragraph text that flows and pushes content onto a later page.\n\n'.repeat(40)}` +
+      `# Heading on a later page\n\nBody text right after that heading.\n`;
+
+    const buf = await render(md);
+    const textPages = await pdfText(buf);
+    const targetIndex = textPages.findIndex((t) => t.includes('Heading on a later page'));
+    expect(targetIndex, 'fixture did not paginate the way this test assumes — the heading never landed on its own page').toBeGreaterThan(0);
+
+    resetPdfjsWorkerGlobal();
+    const pages = await rasterPages(buf, 2);
+    const png = pages[targetIndex]!;
+
+    // Scan the top of the page — comfortably past where even an unclamped
+    // 7-line header would end, comfortably short of where unrelated body
+    // text further down the page would start. Group ink into contiguous
+    // bands, merging gaps up to 15 raster px (~7.5pt at scale 2): the
+    // header's own title and its "N / M" counter don't share one exact
+    // baseline (measured — the counter's "/" and second digit sit 1-2pt
+    // off the title's own two lines), which without a merge this small
+    // would fragment a *single*, correctly-clamped header into two or three
+    // bands of its own and make the very next comparison meaningless. 15px
+    // absorbs that intra-header noise (the largest internal gap measured
+    // was 6px) while staying well under the ~39px real gap this test found
+    // between the header and the heading once the fix landed — so it still
+    // reports one merged band, not two, when a header and the page's own
+    // heading genuinely overlap or sit flush with no white space between
+    // them, which is the failure this test exists to catch.
+    const rows = inkRowsFromPng(png);
+    const scanEnd = Math.min(rows.length, 400);
+    const bands: { start: number; end: number }[] = [];
+    for (let y = 0; y < scanEnd; y++) {
+      if (rows[y]! >= 200) continue;
+      const last = bands[bands.length - 1];
+      if (last && y - last.end <= 15) last.end = y;
+      else bands.push({ start: y, end: y });
+    }
+
+    // A merged header+heading is invisible to a "2 bands, some gap"
+    // assertion on its own: the very first version of this test asserted
+    // exactly that and still passed against the broken renderer, because
+    // the swallowed heading left the *next* element (the paragraph below
+    // it) as band two, with a real gap ahead of *that*. What actually
+    // distinguishes "clamped" from "overprinting" is the height of the
+    // first band itself: measured on this machine, a correctly clamped
+    // 2-line header's own ink band is 71-32=39 raster px (19.5pt) tall; an
+    // unclamped header that has swallowed "Heading on a later page" into
+    // the same band measures 147-32=115 raster px (57.5pt) — see
+    // docs/superpowers/notes/2026-08-13-header-bound-repro.md. 60px (30pt)
+    // sits between the two with headroom on both sides.
+    expect(bands.length, `expected at least the header, the heading, and the paragraph below it as separate ink bands; got ${JSON.stringify(bands)}`).toBeGreaterThanOrEqual(2);
+    const headerBand = bands[0]!;
+    expect(headerBand.end - headerBand.start, `the header's own ink band is ${headerBand.end - headerBand.start}px tall — that is wide enough to have swallowed the page's own first heading rather than staying clamped to it own two lines; got bands ${JSON.stringify(bands)}`).toBeLessThan(60);
   });
 });
