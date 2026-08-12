@@ -48,9 +48,17 @@ Markdown out is not a second design — it is the intermediate representation in
 a form a human reads, which makes it the cheapest way to see what an ingester
 understood.
 
-Two limits are worth knowing before you rely on them, because both are
+Three limits are worth knowing before you rely on them, because all three are
 deliberate rather than unfinished:
 
+- **Reading `.xlsx` serves small tabular registers, and refuses the rest.** A
+  sheet holding any merged cell is refused by name, because a table has no way
+  to express a span and flattening one would look right while saying something
+  the source did not; so is a sheet past 200 rows or 25 columns, which is a
+  limit on what a person reads on paper rather than on what the code can build.
+  Expect this to refuse most working spreadsheets — over a real set of 68, it
+  read 11. The message names the sheet and the number, so it tells you which
+  range to extract and re-issue instead.
 - **Reading `.docx` carries paragraphs, headings, lists, emphasis, links, page
   breaks and PNG images. It does not carry tables** — it reports them instead,
   by size, so a lost table is loud rather than silent. Nothing else is
