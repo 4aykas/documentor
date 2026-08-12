@@ -89,7 +89,7 @@ describe('the renderers agree', () => {
     // one renderer and not the other lands here.
     const headings = (rs: Run[]) =>
       rs.filter((r) => r.kind.startsWith('heading')).map((r) => `h${r.kind.slice(-1)} ${r.text}`);
-    expectSameSequence('heading', headings(md), headings(pdf));
+    expectSameSequence('heading', { label: 'Markdown', items: headings(md) }, { label: 'PDF', items: headings(pdf) });
 
     // Table cell values, in row-major order, compared word by word rather than
     // cell by cell. A PDF has no cell boundaries to read back — a wrapped cell
@@ -98,7 +98,7 @@ describe('the renderers agree', () => {
     // dropped or a number changed. Where the *boundaries* land is geometry,
     // and the baseline image already answers that.
     const cellWords = (rs: Run[]) => rs.filter((r) => r.kind === 'cell').map((r) => r.text).join(' ').split(' ').filter(Boolean);
-    expectSameSequence('table word', cellWords(md), cellWords(pdf));
+    expectSameSequence('table word', { label: 'Markdown', items: cellWords(md) }, { label: 'PDF', items: cellWords(pdf) });
 
     // List numbering. This is exactly where `list.start` drift lands: a
     // fragment after a nested list resuming at 4 in one renderer and at 1 in
@@ -111,7 +111,7 @@ describe('the renderers agree', () => {
           ? [...r.text.matchAll(/(?:^|\s)(\d+)\.(?=\s)/g)].map((m) => m[1]!)
           : [],
       );
-    expectSameSequence('list number', numbering(md), numbering(pdf));
+    expectSameSequence('list number', { label: 'Markdown', items: numbering(md) }, { label: 'PDF', items: numbering(pdf) });
 
     // Finally the whole body text, whitespace-normalised, as one sequence of
     // words. A block type one renderer has learned and the other has not shows
@@ -165,7 +165,7 @@ describe('Word says what the others say', () => {
     const fromIr = doc.blocks
       .filter((b): b is Extract<Block, { t: 'heading' }> => b.t === 'heading')
       .map((b) => `h${b.level} ${flattenInline(b.text)}`);
-    expectSameSequence('heading', fromIr, fromDocx);
+    expectSameSequence('heading', { label: 'IR', items: fromIr }, { label: 'Word', items: fromDocx });
 
     // Narrowing the comparison above to real heading blocks must not open a
     // hole where the title itself could silently vanish from the Word
@@ -187,7 +187,7 @@ describe('Word says what the others say', () => {
       ...table!.head.map(flattenInline),
       ...table!.rows.flatMap((r) => r.map(flattenInline)),
     ];
-    expectSameSequence('table cell', expected, cellsFromDocx(xml));
+    expectSameSequence('table cell', { label: 'IR', items: expected }, { label: 'Word', items: cellsFromDocx(xml) });
   });
 
   it('carries the emphasis the IR asked for, which the PDF cannot show', async () => {
@@ -196,14 +196,14 @@ describe('Word says what the others say', () => {
     // no weight or style at all, so there is no third opinion to reconcile.
     const { doc } = ingestMarkdown(source);
     const xml = await docxPart(await renderDocx(doc, await loadTheme('plain'), { epochSeconds: EPOCH }), 'word/document.xml');
-    expectSameSequence('bold run', emphasisFromIr(doc, 'strong'), boldRunsFromDocx(xml));
-    expectSameSequence('italic run', emphasisFromIr(doc, 'em'), italicRunsFromDocx(xml));
+    expectSameSequence('bold run', { label: 'IR', items: emphasisFromIr(doc, 'strong') }, { label: 'Word', items: boldRunsFromDocx(xml) });
+    expectSameSequence('italic run', { label: 'IR', items: emphasisFromIr(doc, 'em') }, { label: 'Word', items: italicRunsFromDocx(xml) });
   });
 
   it('points every link where the IR points it, which the PDF cannot show', async () => {
     const { doc } = ingestMarkdown(source);
     const buf = await renderDocx(doc, await loadTheme('plain'), { epochSeconds: EPOCH });
     const rels = await docxPart(buf, 'word/_rels/document.xml.rels');
-    expectSameSequence('link target', linkTargetsFromIr(doc), linkTargetsFromRels(rels));
+    expectSameSequence('link target', { label: 'IR', items: linkTargetsFromIr(doc) }, { label: 'Word', items: linkTargetsFromRels(rels) });
   });
 });

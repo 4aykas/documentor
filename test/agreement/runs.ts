@@ -103,20 +103,28 @@ export function classify(sizePt: number, theme: Theme): Run['kind'] | 'chrome' {
   return 'text';
 }
 
+/** One side of a comparison: what to call it, and what it produced. */
+export type Side = { label: string; items: string[] };
+
 /**
  * A sequence comparison that says what went wrong. `toEqual` on two long
  * arrays prints both and leaves the reader to diff them by eye, which is
- * exactly the moment a failing test stops being read.
+ * exactly the moment a failing test stops being read — and naming the wrong
+ * two sides in that message defeats the point just as badly as not naming
+ * them at all, so the label is not a fixed "Markdown"/"PDF": it travels with
+ * its array in one object per side, which is why this takes two `Side`
+ * values rather than four positional arguments — a label cannot end up
+ * paired with the wrong array by accident of argument order.
  */
-export function expectSameSequence(what: string, fromMd: string[], fromPdf: string[]): void {
-  for (let i = 0; i < Math.max(fromMd.length, fromPdf.length); i++) {
-    if (fromMd[i] === fromPdf[i]) continue;
+export function expectSameSequence(what: string, left: Side, right: Side): void {
+  for (let i = 0; i < Math.max(left.items.length, right.items.length); i++) {
+    if (left.items[i] === right.items[i]) continue;
     const detail =
-      fromPdf[i] === undefined
-        ? `the PDF renderer is missing ${what} #${i + 1}: ${JSON.stringify(fromMd[i])}`
-        : fromMd[i] === undefined
-          ? `the Markdown renderer is missing ${what} #${i + 1}: ${JSON.stringify(fromPdf[i])}`
-          : `${what} #${i + 1} differs — Markdown: ${JSON.stringify(fromMd[i])} · PDF: ${JSON.stringify(fromPdf[i])}`;
+      right.items[i] === undefined
+        ? `${right.label} is missing ${what} #${i + 1}: ${JSON.stringify(left.items[i])}`
+        : left.items[i] === undefined
+          ? `${left.label} is missing ${what} #${i + 1}: ${JSON.stringify(right.items[i])}`
+          : `${what} #${i + 1} differs — ${left.label}: ${JSON.stringify(left.items[i])} · ${right.label}: ${JSON.stringify(right.items[i])}`;
     expect.fail(`the renderers disagree: ${detail}`);
   }
 }
