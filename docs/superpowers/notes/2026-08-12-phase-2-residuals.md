@@ -116,6 +116,18 @@ ingester that does not make that promise, or for hand-built IR that skips
   offending zip entry by its array index in a failure message
   (`` `entry ${i} carries …` ``), not by the entry's own name. A failure
   points at "entry 4," which a reader then has to go look up.
+- The per-cell agreement test compares only the first `table` block against
+  every `<w:tc>` in the document. That's fine as long as a fixture has one
+  table — it fails loudly, not silently, the day a second one is added and
+  the counts stop lining up — but the test itself doesn't say that's the
+  assumption, so the next reader has to work it out from the failure rather
+  than being told up front.
+- The link-target comparison in the agreement test carries no comment
+  explaining why the IR is its reference point — unlike its two sibling
+  comparisons (emphasis, table alignment), which do say why. The one
+  comparison whose reasoning is least obvious — a live href, not just text,
+  compared against a relationship target — is the one that doesn't explain
+  itself.
 - Several minors surfaced in task reviews and were judged not worth a fix
   this phase: `styles.xml` gives every custom style `basedOn: 'Normal'`
   though no `Normal` style is defined, making that inheritance a no-op;
