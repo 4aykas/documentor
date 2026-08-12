@@ -178,13 +178,56 @@ in the wrong DOCX column with unchanged reading order would still pass.
 
 ## Coverage the DOCX fixtures leave thin
 
-**Emphasis and link coverage in the kitchen-sink fixture is thin**: one bold
-run, one italic run, and one link, all inside a single paragraph.
-`emphasisFromIr`'s recursion — the part of the renderer that walks nested
-inline spans — is exercised on exactly that one shallow case. Emphasis
-inside a table cell, inside a heading, inside a list item, and a document
-carrying more than one link, are all unexercised. None of these are known to
-be broken; none of them have been checked either.
+**~~Emphasis and link coverage in the kitchen-sink fixture is thin~~.**
+*Closed by dedicated cases in `test/render/docx.test.ts`, not by growing the
+fixture.* The original claim: one bold run, one italic run, and one link, all
+inside a single paragraph, meant `inline()`'s recursion — the part of the
+renderer in `src/render/docx.ts` that walks nested inline spans (the function
+was misnamed `emphasisFromIr` in this note; it is `inline()`) — was exercised
+on exactly that one shallow case, with emphasis inside a table cell, inside a
+heading, inside a list item, and a document carrying more than one link, all
+unexercised and unknown.
+
+Six cases now cover what was unexercised, each asserting on the actual
+`w:b`/`w:i` run properties or `w:hyperlink`/relationship XML rather than on
+text alone. All six passed on the first attempt against the renderer as it
+stood — the two apparent failures during this work were both wrong tests, not
+a wrong renderer, and are worth recording so the distinction doesn't blur:
+
+- Emphasis inside a table cell (header and body) and inside a heading needed
+  nothing beyond straightforward assertions — `inline()` doesn't care what
+  calls it.
+- Emphasis inside a list item, including a nested one (two `list` blocks, one
+  per depth, matching how an ingester splits nesting), first "failed" because
+  the test read the indent as `<w:ind .../></w:pPr>` immediately followed by
+  the emphasis run. The actual paragraph is `<w:ind/></w:pPr>`, then the
+  hand-written bullet run (`• `), *then* the emphasis run — `blocks()`'s
+  `case 'list'` writes the marker as its own leading run, which the original
+  regex didn't account for. Not a renderer defect; the test's assumption
+  about run order was wrong.
+- Nesting bold inside italic and italic inside bold both land every `rPr` on
+  a single run carrying both `<w:b/>` and `<w:i/>`, and produce the same
+  result regardless of which is outermost — `inline()`'s `fmt` is merged by
+  key, not by nesting order, so this was expected rather than discovered.
+- A document with three links first "failed" because the test's regex
+  assumed `r:id` was the first attribute on `<w:hyperlink>`; docx emits
+  `<w:hyperlink w:history="1" r:id="…">`, `w:history` first. Once the regex
+  stopped assuming attribute order, three links produced three distinct
+  `rIdLink*` relationship ids, each resolving to its own `Target`, plural
+  and correct. Not a renderer defect; the test's assumption about attribute
+  order was wrong.
+- Emphasis inside a link's text is flattened away, as already documented
+  below ("Emphasis inside a link is flattened in Word") — the new case pins
+  the flattening as the observed behaviour rather than treating it as a bug
+  to fix, and says so in its own name and comment.
+
+No defect was found in `inline()`, `flatten()`, or the table/heading/list
+paths it's reached from. What both "failures" actually were is the finding
+worth keeping: over-specific regexes written against an assumed OOXML shape
+rather than the shape docx actually emits — the same trap the existing
+suite's comments already warn about elsewhere in this file (see the
+attribute-order and run-order notes above), now paid twice more while writing
+these six cases.
 
 **The `DocH1` branch of `headingsFromDocx` is dead in practice.**
 `ingestMarkdown` lifts the document's one `h1` into `meta.title` before any
