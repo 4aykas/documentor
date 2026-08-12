@@ -61,10 +61,37 @@ Three things, none of which the design anticipated:
   rule at the first row that looks like a row. That also gives the register its
   real header back.
 
-The second is a judgement about what a sheet means and deserves its own
-measurement across the corpus before it is written — how many sheets have a
-preamble, how many rows deep it goes, and whether "fewer than two filled cells"
-separates preamble from data everywhere or only here.
+The second is a judgement about what a sheet means, so it was measured before
+being written. Across all 112 worksheets in the corpus, counting rows before
+the first row holding two or more filled cells:
+
+| preamble depth | sheets |
+|:--|--:|
+| 0 rows | 48 |
+| 1 row | 44 |
+| 2 rows | 3 |
+| 3 rows | 15 |
+| 25 rows | 1 |
+| 51 rows | 1 |
+
+**Sixty-four of 112 sheets — 57% — have something above their table**, and one
+row is by far the commonest shape. So the rule is worth having, and "fewer than
+two filled cells" does separate preamble from data on all but two sheets.
+
+Those two are the warning. A sheet that is genuinely a single-column list has
+*no* row with two filled cells, so the rule would consume the entire sheet and
+leave an empty table. **A preamble that swallows every row is not a preamble** —
+the rule has to stop and treat the sheet as one column of data instead. The 25-
+and 51-row cases are the same shape caught early; both eventually find a wide
+row, but a reader would want to know that much was lifted out, so the count
+belongs in the report rather than passing silently.
+
+The empty-column trim was measured too: **62 of 112 sheets carry at least one
+column that is empty in every row, 642 such columns in total.** This is not an
+edge case in the corpus; it is the majority of sheets.
+
+Neither rule may discard what it removes. A preamble row is a title or a
+caption — it becomes text above the table, not a deletion.
 
 ## Why this is here
 
