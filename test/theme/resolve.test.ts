@@ -72,4 +72,28 @@ describe('resolveTheme', () => {
       }),
     ).toThrow(/logo\.svg/);
   });
+
+  const PNG_1x1 =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+  it('carries a raster logo beside the vector one', () => {
+    const t = resolveTheme({
+      id: 't',
+      logo: { svg: '<svg><path class="c-brand" d="M0 0"/></svg>', heightPt: 11, png: PNG_1x1 },
+    });
+    expect(t.logo?.png).toBe(PNG_1x1);
+  });
+
+  it('defaults the raster logo to null rather than undefined', () => {
+    const t = resolveTheme({ id: 't', logo: { svg: '<svg></svg>', heightPt: 11 } });
+    expect(t.logo?.png).toBeNull();
+  });
+
+  it('refuses a logo.png that is not an inline PNG data uri', () => {
+    for (const png of ['./logo.png', 'https://example.com/logo.png', 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=']) {
+      expect(() => resolveTheme({ id: 't', logo: { svg: '<svg></svg>', heightPt: 11, png } })).toThrow(
+        /logo\.png/,
+      );
+    }
+  });
 });
