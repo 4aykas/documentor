@@ -55,8 +55,30 @@ describe('runBuild', () => {
   it('refuses a format it cannot write yet, naming the ones it can', async () => {
     const file = await fixture('# R\n');
     const { io, err } = collect();
-    expect(await runBuild([file, '--to', 'docx'], io)).toBe(2);
-    expect(err.join('\n')).toMatch(/pdf, md/);
+    expect(await runBuild([file, '--to', 'xlsx'], io)).toBe(2);
+    expect(err.join('\n')).toMatch(/pdf, md, docx/);
+  });
+
+  it('writes a Word document, named for the theme', async () => {
+    const file = await fixture('# Report\n\nHello.\n');
+    const { io } = collect();
+    expect(await runBuild([file, '--to', 'docx'], io)).toBe(0);
+    const written = await readdir(join(file, '..'));
+    expect(written.sort()).toEqual(['report.md', 'report.plain.docx']);
+  });
+
+  it('produces identical Word bytes on two runs', async () => {
+    const file = await fixture('# Report\n\nHello, [a link](https://example.com).\n');
+    const a = await mkdtemp(join(tmpdir(), 'documentor-docx-a-'));
+    const b = await mkdtemp(join(tmpdir(), 'documentor-docx-b-'));
+    const { io } = collect();
+    await runBuild([file, '--to', 'docx', '--out', a], io);
+    await runBuild([file, '--to', 'docx', '--out', b], io);
+    const [first, second] = await Promise.all([
+      readFile(join(a, 'report.plain.docx')),
+      readFile(join(b, 'report.plain.docx')),
+    ]);
+    expect(Buffer.compare(first, second)).toBe(0);
   });
 
   it('refuses an input extension it cannot read yet', async () => {

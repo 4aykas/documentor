@@ -4,11 +4,12 @@ import { ingestMarkdown } from '../ingest/md.js';
 import { validateDoc } from '../ir/validate.js';
 import { renderMarkdown } from '../render/md.js';
 import { renderPdf } from '../render/pdf.js';
+import { renderDocx } from '../render/docx.js';
 import { loadTheme } from '../theme/resolve.js';
 import { resolveEpoch } from './timestamp.js';
 
 type Io = { log: (s: string) => void; err: (s: string) => void };
-const FORMATS = new Set(['pdf', 'md']); // phase 1; docx and xlsx arrive in phases 2 and 3
+const FORMATS = new Set(['pdf', 'md', 'docx']); // xlsx arrives in phase 3
 
 export function parseArgs(argv: string[]): {
   input?: string; to: string[]; theme: string; out?: string; title?: string;
@@ -43,7 +44,7 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
     return 2;
   }
   if (args.input === undefined) {
-    io.err('documentor: build needs an input file\n\n  documentor build <file> [--to pdf,md] [--theme plain] [--out <dir>]');
+    io.err('documentor: build needs an input file\n\n  documentor build <file> [--to pdf,docx,md] [--theme plain] [--out <dir>]');
     return 2;
   }
   for (const f of args.to) {
@@ -106,8 +107,9 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
       io.err(`documentor: refusing to overwrite the input file ${input}`);
       return 3; // refused — see the exit code contract in src/bin/documentor.ts
     }
-    const bytes = format === 'pdf'
-      ? await renderPdf(doc, theme, { epochSeconds })
+    const bytes =
+      format === 'pdf' ? await renderPdf(doc, theme, { epochSeconds })
+      : format === 'docx' ? await renderDocx(doc, theme, { epochSeconds })
       : Buffer.from(renderMarkdown(doc), 'utf8');
     await writeFile(target, bytes);
     io.log(`${target}  (${bytes.length.toLocaleString('en-US')} bytes)`);
