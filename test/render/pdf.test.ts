@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { chromium, type Browser } from 'playwright-core';
 import { blockNonDataRequests, renderPdf } from '../../src/render/pdf.js';
 import { resolveTheme } from '../../src/theme/resolve.js';
@@ -73,6 +73,29 @@ describe('renderPdf', () => {
     const text = (await pdfText(await render('# T\n\n![A chart](https://example.invalid/chart.png)\n'))).join(' ');
     expect(text).toContain('A chart');
     expect(text).toContain('example.invalid');
+  });
+
+  it('closes the page even when the render throws, on a caller-owned browser', async () => {
+    // renderPdf never owns this browser (the whole suite shares it via
+    // `render`, exactly like a CLI batching many documents through one
+    // browser process would), so the only thing that can stop a failed
+    // render from leaking a page is renderPdf closing its own page on the
+    // error path. Force the failure inside page.pdf(), after the page
+    // exists, so a leak here would actually be observable.
+    const pagesOf = () => browser.contexts().flatMap((c) => c.pages());
+    const before = pagesOf().length;
+
+    const originalNewPage = browser.newPage.bind(browser);
+    const spy = vi.spyOn(browser, 'newPage').mockImplementation(async (...args) => {
+      const page = await originalNewPage(...args);
+      vi.spyOn(page, 'pdf').mockRejectedValue(new Error('forced render failure'));
+      return page;
+    });
+
+    await expect(render('# T\n\nBody.\n')).rejects.toThrow('forced render failure');
+    spy.mockRestore();
+
+    expect(pagesOf().length).toBe(before);
   });
 
   it('paginates a long document and numbers every page', async () => {

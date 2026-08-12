@@ -68,35 +68,44 @@ export async function renderPdf(
   const ownsBrowser = opts.browser === undefined;
   try {
     const page = await browser.newPage();
-    await blockNonDataRequests(page);
-    // 'load' is safe with the route guard active: an aborted request fires
-    // 'requestfailed' rather than hanging the load event, since Chromium
-    // treats an aborted request as a completed (failed) one, not a pending
-    // one. What load does NOT guarantee is that @font-face has finished
-    // decoding, so the explicit document.fonts.ready wait below is what
-    // actually keeps the first page from rasterising with a fallback face.
-    await page.setContent(html, { waitUntil: 'load' });
-    // A string, not a closure: this project's tsconfig has no "dom" lib (it's
-    // a Node CLI), so `document` is not a type it knows about. Playwright
-    // evaluates a string in the page's own context regardless.
-    await page.evaluate('document.fonts.ready');
-    const raw = await page.pdf({
-      format: theme.page.size === 'A4' ? 'A4' : 'Letter',
-      printBackground: true,
-      preferCSSPageSize: false,
-      displayHeaderFooter: true,
-      headerTemplate: await runningHeader(doc, theme),
-      footerTemplate: '<span></span>',
-      margin: {
-        // page.pdf() rejects `pt`; mm is the unit the theme converts into.
-        top: toMm(theme.page.marginPt + RUNNING_HEADER_PT),
-        bottom: toMm(theme.page.marginPt),
-        left: toMm(theme.page.marginPt),
-        right: toMm(theme.page.marginPt),
-      },
-    });
-    await page.close();
-    return normalizePdfDates(Buffer.from(raw), opts.epochSeconds);
+    // Own try/finally around the page, nested inside the browser's: when the
+    // caller supplies the browser (every test file, and how a CLI would
+    // batch many documents through one browser process), the outer finally
+    // only closes what this call opened — the browser survives on purpose.
+    // Without closing the page here too, a thrown setContent/pdf() leaves
+    // that page and its renderer process alive for the browser's lifetime.
+    try {
+      await blockNonDataRequests(page);
+      // 'load' is safe with the route guard active: an aborted request fires
+      // 'requestfailed' rather than hanging the load event, since Chromium
+      // treats an aborted request as a completed (failed) one, not a pending
+      // one. What load does NOT guarantee is that @font-face has finished
+      // decoding, so the explicit document.fonts.ready wait below is what
+      // actually keeps the first page from rasterising with a fallback face.
+      await page.setContent(html, { waitUntil: 'load' });
+      // A string, not a closure: this project's tsconfig has no "dom" lib
+      // (it's a Node CLI), so `document` is not a type it knows about.
+      // Playwright evaluates a string in the page's own context regardless.
+      await page.evaluate('document.fonts.ready');
+      const raw = await page.pdf({
+        format: theme.page.size === 'A4' ? 'A4' : 'Letter',
+        printBackground: true,
+        preferCSSPageSize: false,
+        displayHeaderFooter: true,
+        headerTemplate: await runningHeader(doc, theme),
+        footerTemplate: '<span></span>',
+        margin: {
+          // page.pdf() rejects `pt`; mm is the unit the theme converts into.
+          top: toMm(theme.page.marginPt + RUNNING_HEADER_PT),
+          bottom: toMm(theme.page.marginPt),
+          left: toMm(theme.page.marginPt),
+          right: toMm(theme.page.marginPt),
+        },
+      });
+      return normalizePdfDates(Buffer.from(raw), opts.epochSeconds);
+    } finally {
+      await page.close();
+    }
   } finally {
     if (ownsBrowser) await browser.close();
   }

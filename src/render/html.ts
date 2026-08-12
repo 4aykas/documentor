@@ -134,6 +134,12 @@ export async function buildHtml(
   --muted: ${c.muted};
   --rule: ${c.rule};
 }
+/* This @page rule only governs a browser's own print preview of the raw
+   HTML — useful for eyeballing the document standalone. The PDF that
+   render/pdf.ts actually produces gets its margins from the page.pdf()
+   call's own margin option, which Chromium honours instead of this rule
+   once preferCSSPageSize is false; the two are computed the same way on
+   purpose, but this one is not what ships. */
 @page{ size: ${page.size}; margin: ${toMm(page.marginPt + opts.headerHeightPt)} ${toMm(page.marginPt)} ${toMm(page.marginPt)} ${toMm(page.marginPt)}; }
 *{ box-sizing: border-box; }
 html,body{ margin:0; padding:0; }

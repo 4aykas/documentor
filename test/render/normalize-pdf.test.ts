@@ -32,4 +32,27 @@ describe('normalizePdfDates', () => {
   it('refuses an epoch it cannot render in fourteen digits', () => {
     expect(() => normalizePdfDates(sample('20260811233915'), -1)).toThrow(/epoch/);
   });
+
+  it('refuses an epoch past the representable Date range', () => {
+    // ~8.64e12s is roughly the upper bound of what `new Date` can represent;
+    // beyond it getTime() is NaN and, unguarded, every String(NaN) field
+    // still produces a fourteen-character-looking stamp made of "NaN"s that
+    // is actually the wrong width once padStart is accounted for.
+    expect(() => normalizePdfDates(sample('20260811233915'), 1e13)).toThrow(/epoch/);
+  });
+
+  it('refuses a non-integer epoch', () => {
+    expect(() => normalizePdfDates(sample('20260811233915'), 1_000_000_000.5)).toThrow(/epoch/);
+  });
+
+  it('never changes the byte length, for every epoch it accepts', () => {
+    // The one-happy-path length check above is a spot check; this is the
+    // property itself, stated directly rather than inferred from a single
+    // epoch. If any accepted epoch ever produced a stamp of the wrong width,
+    // every xref offset after it would be silently wrong.
+    for (const epoch of [0, 1, 59, 1_000_000_000, 4_102_444_800, 253_402_300_799]) {
+      const input = sample('20260811233915');
+      expect(normalizePdfDates(input, epoch).length).toBe(input.length);
+    }
+  });
 });
