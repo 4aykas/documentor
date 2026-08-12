@@ -65,9 +65,7 @@ function inlinesOf(tokens: Token[] | undefined, sink: Sink, images?: Tokens.Imag
         break;
       }
       default:
-        if ('raw' in tok && typeof tok.raw === 'string' && tok.raw.trim() !== '') {
-          sink.dropped.push(`inline ${tok.type}: ${truncate(tok.raw)}`);
-        }
+        if (!carriesNothing(tok)) sink.dropped.push(`inline ${tok.type}: ${rawOf(tok)}`);
     }
   }
   return out;
@@ -76,6 +74,27 @@ function inlinesOf(tokens: Token[] | undefined, sink: Sink, images?: Tokens.Imag
 function truncate(s: string, n = 40): string {
   const one = s.replace(/\s+/g, ' ').trim();
   return one.length > n ? `${one.slice(0, n)}…` : one;
+}
+
+/**
+ * The source text a token came from, ready to put in a `dropped` message.
+ *
+ * `raw` is optional on marked's `Token` union, so every call site has to test
+ * for it; four of them did, with three different fallbacks — including an empty
+ * string, which produced entries that trailed off after a colon. One fallback,
+ * the token's own type name, so a message is never a dead end.
+ */
+function rawOf(tok: Token): string {
+  const raw = 'raw' in tok && typeof tok.raw === 'string' ? tok.raw : '';
+  return raw.trim() === '' ? tok.type : truncate(raw);
+}
+
+/**
+ * True for a token that carries no source text worth reporting — marked's
+ * blank-line noise. Nothing was lost, so nothing should be announced as lost.
+ */
+function carriesNothing(tok: Token): boolean {
+  return !('raw' in tok) || typeof tok.raw !== 'string' || tok.raw.trim() === '';
 }
 
 const ALIGN_OF: Record<string, Align> = { left: 'l', right: 'r', center: 'c' };
@@ -144,8 +163,7 @@ function pushList(tok: Tokens.List, depth: number, sink: Sink, start = 1): void 
           const childStart = typeof d.list.start === 'number' ? d.list.start : 1;
           pushList(d.list, d.depth, sink, childStart);
         } else {
-          const raw = 'raw' in d.token && typeof d.token.raw === 'string' ? truncate(d.token.raw) : d.token.type;
-          sink.dropped.push(`list item membership: a ${d.token.type} moved out of its list item and became a sibling block: ${raw}`);
+          sink.dropped.push(`list item membership: a ${d.token.type} moved out of its list item and became a sibling block: ${rawOf(d.token)}`);
           blockOf(d.token, sink);
         }
       }
@@ -205,10 +223,7 @@ function blockOf(tok: Token, sink: Sink): void {
       const paras: Inline[][] = [];
       for (const child of q.tokens) {
         if (child.type === 'paragraph') paras.push(inlinesOf((child as Tokens.Paragraph).tokens, sink));
-        else if (child.type !== 'space') {
-          const raw = 'raw' in child && typeof child.raw === 'string' ? truncate(child.raw) : '';
-          sink.dropped.push(`inside a quote: ${child.type}: ${raw}`);
-        }
+        else if (child.type !== 'space') sink.dropped.push(`inside a quote: ${child.type}: ${rawOf(child)}`);
       }
       sink.blocks.push({ t: 'quote', paras });
       return;
@@ -220,9 +235,7 @@ function blockOf(tok: Token, sink: Sink): void {
       sink.dropped.push(`block html: ${truncate((tok as Tokens.HTML).text)}`);
       return;
     default:
-      if ('raw' in tok && typeof tok.raw === 'string' && tok.raw.trim() !== '') {
-        sink.dropped.push(`${tok.type}: ${truncate(tok.raw)}`);
-      }
+      if (!carriesNothing(tok)) sink.dropped.push(`${tok.type}: ${rawOf(tok)}`);
   }
 }
 
