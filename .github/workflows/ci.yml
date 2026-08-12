@@ -1,0 +1,37 @@
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run typecheck
+      # Built before the tests so test/guardrails/dist-smoke.test.ts runs
+      # rather than skipping — it is the only check that touches the artefact
+      # users actually install.
+      - run: npm run build
+      - name: Test (excluding the image baseline)
+        if: matrix.os != 'windows-latest'
+        run: npx vitest run --exclude 'test/baseline/kitchen-sink.test.ts'
+      - name: Test (with the image baseline)
+        if: matrix.os == 'windows-latest'
+        run: npx vitest run
+      - name: Upload the rendered pages when they differ
+        if: failure() && matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rendered-pages
+          path: test/baseline/__actual__/
