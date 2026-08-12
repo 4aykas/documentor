@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Doc } from '../../src/ir/types.js';
-import { renderDocx } from '../../src/render/docx.js';
+import { columnDxa, renderDocx } from '../../src/render/docx.js';
 import { loadTheme, resolveTheme } from '../../src/theme/resolve.js';
 import { docxEntries, docxPart } from '../helpers/docx-parts.js';
 
@@ -84,6 +84,114 @@ describe('renderDocx', () => {
     for (const m of margins) {
       expect(m.slice(1)).toEqual(['80', '120', '80', '120']);
     }
+  });
+
+  const gridWidths = (xml: string): number[] =>
+    [...xml.matchAll(/<w:gridCol w:w="(\d+)"\/>/g)].map((m) => Number(m[1]));
+
+  it('gives columns unequal widths when their content plainly differs', async () => {
+    // A narrow "#" column beside a column carrying full sentences — the
+    // shape that motivated content-proportional widths in the first place.
+    const xml = await body(doc({
+      t: 'table',
+      head: [[{ t: 'text', v: '#' }], [{ t: 'text', v: 'Description' }]],
+      rows: [
+        [[{ t: 'text', v: '1' }], [{ t: 'text', v: 'A short sentence describing the first item in some detail.' }]],
+        [[{ t: 'text', v: '2' }], [{ t: 'text', v: 'A second, similarly long sentence describing another item.' }]],
+        [[{ t: 'text', v: '3' }], [{ t: 'text', v: 'A third sentence, also long, rounding out the table nicely.' }]],
+      ],
+      align: ['l', 'l'],
+    }));
+    const [narrow, wide] = gridWidths(xml);
+    expect(narrow).toBeDefined();
+    expect(wide).toBeDefined();
+    expect(wide!).toBeGreaterThan(narrow!);
+  });
+
+  it('gives columns equal widths when the content genuinely is', async () => {
+    const xml = await body(doc({
+      t: 'table',
+      head: [[{ t: 'text', v: 'Aaa' }], [{ t: 'text', v: 'Bbb' }], [{ t: 'text', v: 'Ccc' }]],
+      rows: [
+        [[{ t: 'text', v: 'ddd' }], [{ t: 'text', v: 'eee' }], [{ t: 'text', v: 'fff' }]],
+        [[{ t: 'text', v: 'ggg' }], [{ t: 'text', v: 'hhh' }], [{ t: 'text', v: 'iii' }]],
+      ],
+      align: ['l', 'l', 'l'],
+    }));
+    const widths = gridWidths(xml);
+    expect(widths).toHaveLength(3);
+    // Not necessarily bit-for-bit identical: the text column doesn't always
+    // divide evenly, and the largest-remainder rounding that keeps the sum
+    // exact can leave columns a single DXA (1/20pt) apart. "Equal" here means
+    // no column visibly differs from another, not floating-point equality.
+    expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(1);
+  });
+
+  it('sums column widths to exactly the text column, for a table with one column', async () => {
+    const xml = await body(doc({
+      t: 'table',
+      head: [[{ t: 'text', v: 'Solo' }]],
+      rows: [[[{ t: 'text', v: 'A single value' }]]],
+      align: ['l'],
+    }));
+    const widths = gridWidths(xml);
+    expect(widths).toHaveLength(1);
+    expect(widths[0]).toBe(columnDxa(theme));
+  });
+
+  it('sums column widths to exactly the text column, for a table with zero data rows', async () => {
+    const xml = await body(doc({
+      t: 'table',
+      head: [[{ t: 'text', v: 'Item' }], [{ t: 'text', v: 'Quantity in stock' }]],
+      rows: [],
+      align: ['l', 'l'],
+    }));
+    const widths = gridWidths(xml);
+    expect(widths).toHaveLength(2);
+    expect(widths.reduce((a, w) => a + w, 0)).toBe(columnDxa(theme));
+  });
+
+  it('sums column widths to exactly the text column when one column is entirely empty', async () => {
+    const xml = await body(doc({
+      t: 'table',
+      head: [[{ t: 'text', v: 'Item' }], [{ t: 'text', v: '' }], [{ t: 'text', v: 'Notes, a fairly long column of prose' }]],
+      rows: [
+        [[{ t: 'text', v: 'Widget' }], [], [{ t: 'text', v: 'Some notes about the widget go here.' }]],
+        [[{ t: 'text', v: 'Gadget' }], [], [{ t: 'text', v: 'And some notes about the gadget too.' }]],
+      ],
+      align: ['l', 'l', 'l'],
+    }));
+    const widths = gridWidths(xml);
+    expect(widths).toHaveLength(3);
+    expect(widths.reduce((a, w) => a + w, 0)).toBe(columnDxa(theme));
+    // The empty column still gets at least the floor, not zero.
+    expect(widths[1]!).toBeGreaterThan(0);
+  });
+
+  it('sums column widths to exactly the text column for a table wider than the page', async () => {
+    const cols = 40;
+    const xml = await body(doc({
+      t: 'table',
+      head: Array.from({ length: cols }, (_, i) => [{ t: 'text' as const, v: `H${i}` }]),
+      rows: [Array.from({ length: cols }, (_, i) => [{ t: 'text' as const, v: `v${i}` }])],
+      align: Array.from({ length: cols }, () => 'l' as const),
+    }));
+    const widths = gridWidths(xml);
+    expect(widths).toHaveLength(cols);
+    expect(widths.reduce((a, w) => a + w, 0)).toBe(columnDxa(theme));
+    expect(widths.every((w) => w > 0)).toBe(true);
+  });
+
+  it('produces identical table widths on two runs', async () => {
+    const d = doc({
+      t: 'table',
+      head: [[{ t: 'text', v: '#' }], [{ t: 'text', v: 'Item' }], [{ t: 'text', v: 'Description' }]],
+      rows: [
+        [[{ t: 'text', v: '1' }], [{ t: 'text', v: 'Widget' }], [{ t: 'text', v: 'A moderately long descriptive sentence.' }]],
+      ],
+      align: ['l', 'l', 'l'],
+    });
+    expect(gridWidths(await body(d))).toEqual(gridWidths(await body(d)));
   });
 
   it('refuses a table with no columns rather than writing an empty grid', async () => {
