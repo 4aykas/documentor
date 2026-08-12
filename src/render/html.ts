@@ -5,6 +5,7 @@
 import type { Block, Doc, Inline } from '../ir/types.js';
 import { PAGE_PT, toMm, type Theme } from '../theme/types.js';
 import { arimoFaceCss } from './fonts.js';
+import { refusedLinkTarget, schemeIsRefused } from './links.js';
 
 export function escapeHtml(s: string): string {
   return s
@@ -16,51 +17,18 @@ export function escapeHtml(s: string): string {
 }
 
 /**
- * Schemes a link may not carry.
- *
- * A link is not the same thing as an image source: nothing here is *loaded*
- * when the page renders, so `http:`, `https:`, `mailto:` and relative paths all
- * stay live — they are things a reader may choose to follow, and refusing them
- * would cost the reader information for no gain. What cannot stay live is a URL
- * that executes (`javascript:`, `vbscript:`) or that carries its own payload
- * (`data:`, the shape phishing takes in a PDF). The source document is
- * untrusted input; a rendered PDF is a thing people click.
- *
- * Matched after stripping whitespace and control characters, because
- * `java\tscript:` and a leading newline are both accepted by browsers as the
- * scheme they spell.
- */
-const EXECUTABLE_SCHEME = /^(?:javascript|vbscript|data):/i;
-
-function schemeIsRefused(href: string): boolean {
-  // Whitespace and C0 controls are ignored by browsers when they read a
-  // scheme, so they are removed before the test rather than after it.
-  return EXECUTABLE_SCHEME.test(stripControls(href));
-}
-
-/** Every character a browser skips over while reading a URL scheme. */
-function stripControls(s: string): string {
-  return [...s].filter((ch) => ch.charCodeAt(0) > 0x20 && ch.charCodeAt(0) !== 0x7f).join('');
-}
-
-/**
  * What a refused link shows instead: the link's own text, then where it pointed,
  * in the muted style — the same shape as the image placeholder, for the same
- * reason. Nothing is silently lost; the reader can see there was a link and see
- * what it aimed at, and can decide for themselves.
+ * reason. The rule about which schemes get here, and how the target is named,
+ * lives in links.ts, because the Markdown renderer refuses the same set.
  *
- * A `javascript:` or `data:` URL has no host, so the scheme is named instead —
- * "javascript:" is more informative to a reader than an empty box.
+ * The text keeps no class of its own. It is ordinary prose once the link is
+ * gone, and the muted target beside it is already the whole visible signal that
+ * a link was refused; a hook with no rule behind it is the promise that
+ * `table.landscape` was, and it goes the same way.
  */
 function refusedLinkMarkup(href: string, text: string): string {
-  let target = '';
-  try {
-    const u = new URL(href);
-    target = u.host || u.protocol;
-  } catch {
-    target = href.split(':')[0] ?? '';
-  }
-  return `<span class="link-refused">${text}<span class="link-refused-target">${escapeHtml(target)}</span></span>`;
+  return `${text}<span class="link-refused-target">${escapeHtml(refusedLinkTarget(href))}</span>`;
 }
 
 function inline(nodes: Inline[]): string {

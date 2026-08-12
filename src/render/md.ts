@@ -2,6 +2,22 @@
 // `--to md` is "show me the IR in a form a human reads".
 
 import type { Block, Doc, Inline } from '../ir/types.js';
+import { refusedLinkTarget, schemeIsRefused } from './links.js';
+
+/**
+ * A refused link, written the way the HTML renderer writes it: the link's own
+ * text, then where it pointed. Markdown has no muted style to set the target
+ * apart, so parentheses do that work.
+ *
+ * Markdown output is inert until something else renders it — which is the whole
+ * reason this is easy to forget, and the whole reason it matters. A `--to md`
+ * file is an input to some other tool as often as it is a thing a human reads,
+ * and the second renderer must not hand on a `javascript:` URL that the first
+ * one refused.
+ */
+function refusedLinkText(href: string, text: string): string {
+  return `${text} (${refusedLinkTarget(href)})`;
+}
 
 function inline(nodes: Inline[]): string {
   return nodes
@@ -11,7 +27,10 @@ function inline(nodes: Inline[]): string {
         case 'strong': return `**${inline(n.children)}**`;
         case 'em': return `*${inline(n.children)}*`;
         case 'code': return `\`${inline(n.children)}\``;
-        case 'link': return `[${inline(n.children)}](${n.href})`;
+        case 'link':
+          return schemeIsRefused(n.href)
+            ? refusedLinkText(n.href, inline(n.children))
+            : `[${inline(n.children)}](${n.href})`;
       }
     })
     .join('');

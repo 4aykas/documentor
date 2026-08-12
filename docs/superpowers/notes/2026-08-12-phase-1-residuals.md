@@ -3,24 +3,21 @@
 What phase 1 knowingly left open, and why. Written when the branch was
 finished so the reasoning survives the working notes, which are not committed.
 
-Nothing here blocks phase 2. The first two are worth doing early in it.
+Nothing here blocks phase 2. The first two were done at the start of it.
 
 ## Parked findings
 
-**A refused link carries a class with no rule.** `src/render/html.ts` wraps a
-link whose scheme was refused in `class="link-refused"`, but only
-`.link-refused-target` has a CSS rule. This is the same shape as the
-`table.landscape` class that phase 1 deleted for being a promise nothing kept —
-either style the wrapper or drop the class.
+**~~A refused link carries a class with no rule.~~** *Closed.* The wrapper is
+gone: a refused link's text is ordinary prose once the link is removed, and the
+muted target beside it was already the whole visible signal, so the class went
+the way `table.landscape` did.
 
-**The link scheme filter is HTML-only.** `src/render/html.ts` refuses
-`javascript:`, `vbscript:` and `data:` in a link and renders the text plus host
-instead. `src/render/md.ts` still writes `[text](javascript:…)` verbatim. So the
-two renderers disagree about the same document, which is exactly the drift the
-agreement test exists to catch — and cannot, because link *targets* are outside
-its reach. Markdown output is inert until something else renders it, which is
-why this is small rather than urgent, but the asymmetry should not outlive
-phase 2's first week.
+**~~The link scheme filter is HTML-only.~~** *Closed.* The rule moved to
+`src/render/links.ts` and both renderers now ask it. Markdown writes
+`text (javascript:)` where it used to write `[text](javascript:…)`.
+`test/render/links.test.ts` puts the same document through both renderers and
+requires the same answer, which is the blind spot below that the agreement test
+cannot cover.
 
 **`validateDoc` runs before the `dropped` report.** A document that both loses
 content at ingest and fails validation tells the user only about the refusal.
@@ -37,7 +34,9 @@ by construction, and a fourth by choice:
 - **Inline emphasis.** PDF text extraction carries no weight or style, so
   dropping `<strong>` from the HTML renderer would not fail it.
 - **Table alignment.** Same reason.
-- **Link targets.** Only the visible text is compared.
+- **Link targets.** Only the visible text is compared. `test/render/links.test.ts`
+  covers the one property that matters most here — that both renderers refuse
+  the same schemes — but nothing compares a *live* href across renderers.
 - **Table cells are compared as a value sequence**, not per cell, because an
   untagged PDF has no readable cell boundaries. A value landing in the wrong
   column with unchanged reading order would pass. The baseline image answers
