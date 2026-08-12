@@ -34,6 +34,15 @@ const README = readFileSync(join(ROOT, 'README.md'), 'utf8');
 // to be reworded. Each data cell must be exactly "yes" or "—" — no other
 // phrasing is understood, and an unrecognised cell fails loudly rather than
 // being silently skipped.
+//
+// Two checks live here, and both are needed — a cell-by-cell comparison
+// alone only ever walks rows/columns the table *already has*. A wholly new
+// capability (a format FORMATS gains, an extension READABLE_EXTS gains)
+// that the README never mentions produces no cell at all, so the cell walk
+// stays silent about exactly the incident this guard exists to catch (.docx
+// reading landed with no README row for it). The second check below closes
+// that gap by iterating FORMATS and READABLE_EXTS themselves and demanding
+// a matching column/row exists, independent of what cells already say.
 // ---------------------------------------------------------------------------
 
 type Cell = { row: string; col: string; text: string };
@@ -128,6 +137,47 @@ describe('README format matrix agrees with FORMATS and READABLE_EXTS', () => {
   });
 });
 
+// The coverage check the cell walk above cannot do: iterate FORMATS and
+// READABLE_EXTS on their own, not just as the right-hand side of a
+// per-cell comparison, and demand every member has a matching column/row.
+// Reproduced without this: adding 'xlsx' to FORMATS with no README column
+// for it, or '.txt' to READABLE_EXTS with no README row for it, produced
+// zero failures — the cell walk has nothing to iterate when the table
+// itself never mentions the new capability.
+describe('every FORMATS/READABLE_EXTS member has a matching column/row in the README table', () => {
+  it('every writable format has a column', () => {
+    const columnFormats = new Set(
+      matrix.headers.map(formatFromLabel).filter((f): f is string => f !== undefined),
+    );
+    const missing = [...FORMATS].filter((f) => !columnFormats.has(f));
+    expect(
+      missing,
+      missing
+        .map((f) => `FORMATS gained ${JSON.stringify(f)} and the README's table has no column for it`)
+        .join('; '),
+    ).toEqual([]);
+  });
+
+  it('every readable extension has a row', () => {
+    const rowExts = new Set(
+      matrix.rows.map((r) => extFromLabel(r.label)).filter((e): e is string => e !== undefined),
+    );
+    // .md and .markdown are not two capabilities — build.ts's own ingest()
+    // sends both through ingestMarkdown, the same branch — so the row
+    // "Markdown `.md`" already covers .markdown too; folding it in here
+    // stops this check from demanding a second row for an alternate
+    // spelling of a capability the table already names.
+    const family = (ext: string): string => (ext === '.markdown' ? '.md' : ext);
+    const missing = [...new Set([...READABLE_EXTS].map(family))].filter((e) => !rowExts.has(e));
+    expect(
+      missing,
+      missing
+        .map((e) => `READABLE_EXTS gained ${JSON.stringify(e)} and the README's table has no row for it`)
+        .join('; '),
+    ).toEqual([]);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // 2. Every --flag the README mentions must be a flag the CLI parsers accept,
 //    and every --flag the CLI's own --help text advertises must likewise be
@@ -144,6 +194,14 @@ describe('README format matrix agrees with FORMATS and READABLE_EXTS', () => {
 // does not throw "unknown option <flag>" for it; both parsers are checked
 // because README and --help between them describe both `build` and
 // `inspect`, and a flag need only belong to one to be legitimate.
+//
+// Deliberately not checked, and left as known future scope rather than
+// silent: the reverse direction, a flag a parser accepts that appears in
+// neither README nor --help. That's the same "code moved, docs silent"
+// family as everything else in this file, but an undocumented flag is
+// inert rather than misleading — nobody reads a paragraph that promises a
+// capability the flag doesn't have — so it was left out of this pass
+// rather than guessed at with a hand-maintained flag inventory.
 // ---------------------------------------------------------------------------
 
 function extractFlags(text: string): string[] {
