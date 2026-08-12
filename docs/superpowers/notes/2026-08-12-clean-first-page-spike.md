@@ -399,6 +399,58 @@ the actual rendered output clips the letterhead, tick and hairline instead
 of raising them. The mechanism for reclaiming the header band on page one is
 still an open question; it is not the negative margin.
 
+## 7. `@page :first` — measured, not used
+
+A follow-up question after the negative-margin correction above: is there a
+single-render way to give page one a smaller top margin than the rest,
+instead of narrowing the band for every page? The candidate was
+`@page :first { margin-top: … }` together with `preferCSSPageSize: true` on
+`page.pdf()`.
+
+Measured on the kitchen-sink fixture, TEBIN theme, in all four combinations
+of {`@page :first` override present/absent} × {`preferCSSPageSize`
+true/false}, with `page.pdf()`'s own `margin` option held at the production
+value throughout:
+
+- Chromium honours `@page :first`'s `margin-top` and raises page one's body
+  content by exactly the overridden amount (~26.2pt in this test) —
+  **regardless of `preferCSSPageSize`**. Measured five separate times
+  (different scratch scripts, real header template and empty header
+  template both tried), consistent every time.
+- This contradicts the premise already recorded in `src/render/html.ts`'s
+  comment on its own `@page` rule — "Chromium honours [the margin option]
+  instead of this rule once preferCSSPageSize is false" — which this
+  project wrote down earlier, presumably from Puppeteer/Playwright's
+  documented behaviour that `preferCSSPageSize` governs page *size* only.
+  Measured margin behaviour does not match that documented behaviour.
+- Rasterised and inspected by eye (not just by coordinate, learning from
+  section 4's mistake): with an empty header template on page 1, the
+  letterhead, tick and hairline all render raised and unclipped, under both
+  `preferCSSPageSize` settings.
+- Pages 2..N are unaffected: page count stayed 2 in every combination, and
+  page 2's table-header y-position moved by ≤1pt across all four
+  combinations — inside the trim-size rounding noise below, not a real
+  change to the reserved band.
+- `preferCSSPageSize: true` does change trim size measurably —
+  594.96×841.92pt vs 595.92×842.88pt with it off, under 1pt either
+  dimension — and nothing else measured (page count, left margin/body
+  width, page-2 header band) beyond that same sub-point rounding.
+
+**Set aside, not implemented.** The owner's decision: a mechanism that
+contradicts what this project had already measured and recorded, and that
+nobody has independently re-verified, is not what a document's whole page
+geometry should rest on — however clean it looked on this one fixture. The
+project instead narrowed `RUNNING_HEADER_PT` for every page (26 → 14; see
+`src/render/pdf.ts`). If `@page :first` is revisited later, what it still
+needs before being trusted: an independent re-check of the margin-honouring
+behaviour above (it is surprising enough, and contrary enough to documented
+Puppeteer/Playwright behaviour, to want a second measurement rather than
+one script's word for it), and the two open items already listed under "Not
+measured" for the negative-margin approach — a document whose first heading
+sits close to the fold, and confirmation across Chromium builds — apply
+here too, since `@page :first` shares the same "identical layout, different
+header box" premise as the rest of this design.
+
 ## Not measured
 
 - Byte identity or timing on a non-Windows platform, or under a different

@@ -14,8 +14,20 @@ import { arimoFaceCss } from './fonts.js';
  * extraction cannot see the collision because both PDFs extract identically.
  * Measured 2026-08-12; it is why this constant exists rather than a guess at
  * the call site, and why the baseline test rasterises.
+ *
+ * Narrowed from 26 to 14 on 2026-08-12, after `@page :first` (a
+ * single-render way to shrink only page one's band) was measured but set
+ * aside — see the spike note's "measured, not used" entry — in favour of
+ * narrowing the band for every page instead. 14 is not a round-number
+ * guess: it is bounded below by the running header's own drawn height (7pt
+ * text, muted colour, one line) plus enough clearance that the header and
+ * the body text nearest the margin never touch — measured on the
+ * kitchen-sink fixture's mixed-script title, the tallest/widest header text
+ * this project renders, and checked by the same rasterising baseline test
+ * this comment already points to for the 26pt figure. Do not shrink this
+ * further without re-running that measurement.
  */
-export const RUNNING_HEADER_PT = 26;
+export const RUNNING_HEADER_PT = 14;
 
 /**
  * The second guard on "this renderer fetches nothing".
