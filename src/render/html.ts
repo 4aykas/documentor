@@ -184,18 +184,7 @@ body{
 .logo .c-brand{ fill: var(--brand); }
 .logo .c-muted{ fill: var(--muted); }
 .logo .c-ink{ fill: var(--ink); }
-/* page.pdf() reserves opts.headerHeightPt of top margin on every page — see
-   RUNNING_HEADER_PT in pdf.ts — because that is the only granularity a single
-   margin option offers; it cannot vary per page. Page one prints no running
-   header (pdf.ts stitches it in from a second, header-less render), so that
-   band is dead space for page one alone. Pulling the letterhead block up by
-   exactly that amount reclaims it; deriving the value from the same option
-   the caller already passes, rather than repeating the 26pt constant here,
-   is what keeps this rule and RUNNING_HEADER_PT from being able to drift
-   apart. Nothing is clipped: the band was margin, not content, so raising
-   the block into it only removes blank space above the letterhead.
-*/
-.sheet-head{ display:flex; align-items:flex-start; justify-content:space-between; gap: 24pt; margin-top: -${opts.headerHeightPt}pt; }
+.sheet-head{ display:flex; align-items:flex-start; justify-content:space-between; gap: 24pt; }
 .letterhead{ text-align: right; color: var(--muted); }
 .lh-name{ font-size: ${ty.smallPt + 0.5}pt; font-weight: 700; }
 .lh-line{ font-size: ${ty.smallPt - 0.5}pt; }

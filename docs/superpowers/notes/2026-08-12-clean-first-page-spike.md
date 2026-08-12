@@ -190,6 +190,37 @@ not committed anywhere).
 
 ## 4. What does the negative margin actually do?
 
+**Correction, added after implementation and owner review (2026-08-12): the
+"no clipping" conclusion below is wrong, and wrong because of the
+instrument, not the mechanism.** In paged media the body is clipped to the
+page's content box; the top margin belongs to the header/footer boxes, not
+to the body. A negative `margin-top` on an element inside the body does not
+reclaim that band — it pushes the element into a region Chromium's printer
+never paints. The actual rendered output (both themes, checked by eye after
+implementing this) confirms it: on the TEBIN theme the logo and the first
+two letterhead lines are gone and `www.tebin.pro` is clipped mid-glyph; on
+the plain theme (no logo, no letterhead lines) the brand tick and its
+hairline are gone too, because those were the only elements left in the
+pushed-up block to lose.
+
+The check below ("no clipping") only read text items' baseline `y` back
+through `pdfjs-dist` and confirmed they had shifted by the expected 26.2pt.
+That is true, and it is the wrong question: **a clipped element still has a
+layout position and pdfjs still reports its coordinates** — clipping is a
+paint-time decision, not a layout-time one, so a coordinate-only read cannot
+see it at all. The right check would have been rasterising the page and
+looking at it, which is exactly what the two `__actual__` baseline images
+did once this was actually wired into `html.ts` and run through the real
+renderer. Recorded here rather than deleted, because a claim that was
+checked by the wrong instrument and left standing is worse than one that was
+never checked — the next reader needs to see both what was measured and why
+it didn't answer the real question.
+
+**Conclusion: negative top margin on `.sheet-head` is not a viable way to
+raise the letterhead into the reserved header band.** The rest of this
+section is preserved as originally written, for the record of what was
+actually measured (and what it didn't cover).
+
 Built the kitchen-sink and the DD-report fixture's HTML the normal way, then
 produced a second copy with one extra rule appended before `</head>`:
 
@@ -355,12 +386,18 @@ stitching is deterministic with one option (`updateMetadata: false` on
 every `pdf-lib` document object in the stitch — not the existing
 `normalize-pdf.ts` instrument, which does not reach `pdf-lib`'s output),
 the result survives text extraction, font embedding, and rasterisation
-checks (Q3), the negative margin does exactly what it's meant to with no
-clipping (Q4), and the cost is a second render (~340–380ms) plus a stitch
+checks (Q3), and the cost is a second render (~340–380ms) plus a stitch
 (~40ms) per document, with `pdf-lib` adding ~23M to `node_modules` if
 promoted to a runtime dependency and no new audit findings. Nothing here
-argues for a cheaper alternative; the design is not over-engineered for
-what it buys.
+argues for a cheaper alternative for the stitch itself; the design is not
+over-engineered for what it buys.
+
+**Q4's negative-margin recommendation does not stand — see the correction at
+the top of section 4.** Reading text coordinates back through `pdfjs-dist`
+cannot detect clipping (clipped content still has a layout position), and
+the actual rendered output clips the letterhead, tick and hairline instead
+of raising them. The mechanism for reclaiming the header band on page one is
+still an open question; it is not the negative margin.
 
 ## Not measured
 
