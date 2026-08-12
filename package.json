@@ -36,6 +36,7 @@
   "dependencies": {
     "@fontsource/arimo": "^5.2.5",
     "docx": "^9.7.1",
+    "jszip": "^3.10.1",
     "marked": "^15.0.0",
     "playwright-core": "^1.62.1"
   },
