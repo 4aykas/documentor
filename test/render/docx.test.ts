@@ -135,20 +135,31 @@ describe('renderDocx', () => {
     expect(xml.match(/<w:cantSplit\/>/g)).toHaveLength(2);
   });
 
-  it('leaves space after a table so the next paragraph does not sit flush against it', async () => {
+  it('leaves exactly 12pt after a table, not the ~24pt an empty paragraph would default to', async () => {
     // html.ts: `table{ margin: 0 0 12pt }`. Invisible in the kitchen-sink
     // fixture because a rule with its own spacing follows the table there;
     // visible immediately with a paragraph right after, which is what a real
-    // document had. A table itself has no spacing to give it — the assertion
-    // below is on the paragraph docx.ts inserts to carry it, and it would
-    // fail if that paragraph (or its spacing) were dropped: with neither, the
-    // xml between `</w:tbl>` and "after" is a bare paragraph opening tag with
-    // no `<w:spacing>` at all, which does not match.
+    // document had. A table itself has no spacing to give it, so docx.ts
+    // inserts a spacer paragraph after every table — but a *default* empty
+    // paragraph is not a 12pt gap, it is close to 24pt, because it still
+    // occupies a full line at the document's own body size before
+    // `spacing.after` is even added (measured over COM: ~23.6pt without the
+    // fix below, ~12.1pt with it). So the assertion pins all three emitted
+    // values that make the total 12pt rather than ~24pt: the line pinned to
+    // a near-zero height with `w:lineRule="exact"` (dropping either the line
+    // value or the exact rule lets the line grow back to automatic), the
+    // shortened `w:after`, and the run size that keeps the paragraph mark's
+    // own properties explicit. Losing any one of the three would pass a test
+    // that only checked for *a* `<w:spacing>` element, which is exactly the
+    // gap between the html.ts citation and the actual gap that this test
+    // exists to catch.
     const xml = await body(doc(
       { t: 'table', head: [[{ t: 'text', v: 'Item' }]], rows: [[[{ t: 'text', v: 'Widget' }]]], align: ['l'] },
       { t: 'para', text: [{ t: 'text', v: 'after' }] },
     ));
-    expect(xml).toMatch(/<\/w:tbl><w:p><w:pPr><w:spacing w:after="240"\/><\/w:pPr><\/w:p>/);
+    expect(xml).toMatch(
+      /<\/w:tbl><w:p><w:pPr><w:spacing w:after="200" w:line="40" w:lineRule="exact"\/><\/w:pPr><w:r><w:rPr><w:sz w:val="4"\/><w:szCs w:val="4"\/><\/w:rPr><w:t xml:space="preserve"><\/w:t><\/w:r><\/w:p>/,
+    );
   });
 
   it('sets inline code smaller than the prose around it, as the stylesheet does', async () => {

@@ -8,9 +8,9 @@
 // in points until the moment it stops being.
 
 import {
-  AlignmentType, BorderStyle, Document, ExternalHyperlink, Header, ImageRun, Packer, PageBreak,
-  PageNumber, Paragraph, ShadingType, Table, TableCell, TableLayoutType, TableRow, TextRun,
-  WidthType, type IParagraphOptions, type ParagraphChild,
+  AlignmentType, BorderStyle, Document, ExternalHyperlink, Header, ImageRun, LineRuleType, Packer,
+  PageBreak, PageNumber, Paragraph, ShadingType, Table, TableCell, TableLayoutType, TableRow,
+  TextRun, WidthType, type IParagraphOptions, type ParagraphChild,
 } from 'docx';
 import type { Block, Doc, Inline } from '../ir/types.js';
 import { PAGE_PT, type Theme } from '../theme/types.js';
@@ -22,6 +22,13 @@ const dxa = (pt: number): number => Math.round(pt * 20);
 const eighthPt = (pt: number): number => Math.round(pt * 8);
 /** Word takes a colour as six hex digits with no leading hash. */
 const hex = (colour: string): string => colour.replace('#', '').toUpperCase();
+
+// html.ts: `table{ margin: 0 0 12pt }` — the gap a table's own spacer
+// paragraph (see blocks()'s `case 'table'`) has to add up to. Split across
+// two constants, not one, because both numbers are emitted separately and
+// have to be read back separately by the test that pins them.
+const TABLE_GAP_LINE_PT = 2;
+const TABLE_GAP_AFTER_PT = 10;
 
 const NO_BORDER = { style: BorderStyle.NONE, size: 0, color: 'auto' } as const;
 /** A borderless table is not the default: every edge has to be named. */
@@ -263,17 +270,36 @@ function blocks(b: Block, theme: Theme): (Paragraph | Table)[] {
     }
     // html.ts: `table{ margin: 0 0 12pt }`. `<w:tbl>` has no spacing property
     // of its own in OOXML — unlike a paragraph, a table cannot carry
-    // `w:spacing` — so the space has to come from a paragraph instead, and
-    // there is no existing paragraph to hang it on: what follows a table in
-    // the IR is an independent sibling block, rendered with no knowledge of
-    // what came before it. A zero-text paragraph carrying the 12pt as its own
-    // `after` stands in for the table's missing bottom margin. Whatever
-    // follows keeps whatever `before` its own style already calls for — a
-    // heading's `before` and this paragraph's `after` both apply, the same as
-    // any other adjacent pair here (see the note on Word not collapsing
-    // margins in styles()) — so the gap after a table-then-heading is not
-    // smaller than after a table-then-paragraph.
-    case 'table': return [table(b, theme), new Paragraph({ spacing: { after: dxa(12) } })];
+    // `w:spacing` — so the space has to come from a paragraph instead.
+    // `blocks()` maps one IR block to Word nodes at a time, with no view of
+    // the sibling before or after it — that is a property of this function's
+    // per-block mapping, not of the IR itself, which has no trouble saying
+    // "the block before this one was a table." Threading that fact through
+    // every other case just for this one gap would be a bigger change than
+    // the gap is worth, so a standalone spacer paragraph carries it instead,
+    // keeping this the only case that has to know about it.
+    //
+    // A default empty paragraph is not a 12pt gap — it is close to 24pt,
+    // because an empty paragraph still occupies a full line at the
+    // document's own body size before any `spacing.after` is even added
+    // (measured over COM: ~23.6pt from the table's bottom edge to the next
+    // paragraph's first line, with `spacing: { after: dxa(12) }` and nothing
+    // else, on this file's 10pt document default). Citing html.ts's 12pt and
+    // then emitting something else is exactly the gap between comment and
+    // code this file exists not to have. So the paragraph's own line is
+    // pinned to a fixed, near-zero height with `lineRule: EXACT` instead of
+    // Word's automatic (font-derived) one, and `after` is shortened by the
+    // same amount, so the two add back up to what html.ts asks for:
+    // TABLE_GAP_LINE_PT (the line) + TABLE_GAP_AFTER_PT (`after`) === 12.
+    // Re-measured the same way with this paragraph: ~12.0pt.
+    case 'table': return [table(b, theme), new Paragraph({
+      // The run carries no text — it exists only to make the paragraph
+      // mark's own size explicit rather than inherited from `Normal`, in
+      // case some reader takes the run's font size into account for the
+      // mark's height the way Word itself does not once `lineRule` is EXACT.
+      children: [new TextRun({ text: '', size: halfPt(TABLE_GAP_LINE_PT) })],
+      spacing: { line: dxa(TABLE_GAP_LINE_PT), lineRule: LineRuleType.EXACT, after: dxa(TABLE_GAP_AFTER_PT) },
+    })];
     case 'code': {
       // One paragraph per line: a single paragraph with soft breaks would
       // shade as one block in Word but wrap differently from the PDF.
