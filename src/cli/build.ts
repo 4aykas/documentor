@@ -3,6 +3,7 @@ import { basename, dirname, extname, join, resolve } from 'node:path';
 import { chromium, type Browser } from 'playwright-core';
 import { ingestMarkdown } from '../ingest/md.js';
 import { ingestDocx } from '../ingest/docx.js';
+import { ingestXlsx } from '../ingest/xlsx.js';
 import type { Ingested } from '../ir/types.js';
 import { validateDoc, type Doc } from '../ir/validate.js';
 import { renderMarkdown } from '../render/md.js';
@@ -107,17 +108,19 @@ export type IngestOpts = { title?: string; subtitle?: string; date?: string; ent
  * `build` rendering a different one from the same input.
  */
 export async function ingest(
-  ext: '.docx' | '.md' | '.markdown', input: string, opts: IngestOpts,
+  ext: '.docx' | '.xlsx' | '.md' | '.markdown', input: string, opts: IngestOpts,
 ): Promise<Ingested> {
-  if (ext === '.docx') {
+  if (ext === '.docx' || ext === '.xlsx') {
     const bytes = await readFile(input);
-    const result = await ingestDocx(bytes, opts);
-    // ingestDocx has no way to know the file it came from — it falls back to
-    // the literal string "Untitled" when neither --title nor a body DocTitle
-    // supplied one (see its own "falls back to Untitled" test). The design
-    // doc's rule is that a DOCX's name is its title in that case, so this is
-    // the one place that can fill it in: --title and a body title (checked
-    // above, inside ingestDocx, in that order) both still win over it.
+    const result = ext === '.docx' ? await ingestDocx(bytes, opts) : await ingestXlsx(bytes, opts);
+    // Neither ingester has a way to know the file it came from. ingestDocx
+    // falls back to the literal string "Untitled" when neither --title nor a
+    // body DocTitle supplied one, and ingestXlsx does the same — a workbook's
+    // sheet names are not a document title — when neither --title nor a
+    // sidecar supplied one. The design's rule (first drawn for DOCX, applying
+    // just as well here) is that the file's own name is its title in that
+    // case, so this is the one place that can fill it in: --title still wins
+    // over it, checked above inside each ingester.
     if (opts.title === undefined && result.doc.meta.title === 'Untitled') {
       result.doc.meta.title = basename(input, ext);
     }
@@ -242,8 +245,8 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
 
   const input = resolve(args.input);
   const ext = extname(input).toLowerCase();
-  if (ext !== '.md' && ext !== '.markdown' && ext !== '.docx') {
-    io.err(`documentor: cannot read ${ext || 'a file with no extension'} yet — this build reads .md and .docx`);
+  if (ext !== '.md' && ext !== '.markdown' && ext !== '.docx' && ext !== '.xlsx') {
+    io.err(`documentor: cannot read ${ext || 'a file with no extension'} yet — this build reads .md, .docx and .xlsx`);
     return 2;
   }
 
@@ -329,7 +332,7 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
 // requirement that both commands agree on what a batch contains), and a
 // second copy of this set would only ever be a second place for the two to
 // drift apart the day a fifth ingester arrives.
-export const READABLE_EXTS = new Set(['.md', '.markdown', '.docx']);
+export const READABLE_EXTS = new Set(['.md', '.markdown', '.docx', '.xlsx']);
 
 export type Discovered = {
   inputs: string[];
@@ -463,12 +466,12 @@ async function processFile(
 ): Promise<FileResult> {
   try {
     const ext = extname(input).toLowerCase();
-    if (ext !== '.md' && ext !== '.markdown' && ext !== '.docx') {
-      // Unreachable via discoverInputs, which only ever returns these three
+    if (ext !== '.md' && ext !== '.markdown' && ext !== '.docx' && ext !== '.xlsx') {
+      // Unreachable via discoverInputs, which only ever returns these four
       // extensions — kept as a live check anyway rather than an
       // unenforced assumption, in case this function ever gets a caller
       // that doesn't go through that filter.
-      throw new Error(`cannot read ${ext || 'a file with no extension'} yet — this build reads .md and .docx`);
+      throw new Error(`cannot read ${ext || 'a file with no extension'} yet — this build reads .md, .docx and .xlsx`);
     }
     const epochSeconds = await resolveEpoch(process.env, input);
     const { doc, dropped } = await ingest(ext, input, cfg.ingestOpts);

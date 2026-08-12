@@ -27,7 +27,7 @@ apart.
 |:--|:--:|:--:|:--:|:--:|
 | **Markdown `.md`** | yes | yes | yes | — |
 | **Word `.docx`** | yes | yes | yes | — |
-| **Excel `.xlsx`** | — | — | — | — |
+| **Excel `.xlsx`** | yes | yes | yes | — |
 | **PDF** | — | — | — | — |
 
 Markdown out is not a second design — it is the intermediate representation in

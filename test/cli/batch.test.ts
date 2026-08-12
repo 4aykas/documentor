@@ -38,15 +38,18 @@ describe('directory input', () => {
     const dir = await tmp('documentor-batch-mixed-');
     await writeFile(join(dir, 'report.md'), '# Report\n\nHello.\n');
     await writeFile(join(dir, 'notes.txt'), 'not a document this build reads');
-    await writeFile(join(dir, 'ledger.xlsx'), 'pretend spreadsheet bytes');
+    // .csv, not .xlsx: this build reads .xlsx now (see src/ingest/xlsx.ts),
+    // so it is a discovered input, not one of the extensions this test means
+    // to exercise (a genuinely unreadable one, skipped without comment).
+    await writeFile(join(dir, 'ledger.csv'), 'pretend spreadsheet bytes');
     const { io, log } = collect();
 
     expect(await runBuild([dir, '--to', 'md'], io)).toBe(0);
     const written = await readdir(dir);
-    expect(written.sort()).toEqual(['ledger.xlsx', 'notes.txt', 'report.md', 'report.plain.md']);
+    expect(written.sort()).toEqual(['ledger.csv', 'notes.txt', 'report.md', 'report.plain.md']);
     // Nothing was said about the two files that were never inputs at all —
     // "skipped silently" means no per-file noise, not a quiet mention.
-    expect(log.join('\n')).not.toMatch(/notes\.txt|ledger\.xlsx/);
+    expect(log.join('\n')).not.toMatch(/notes\.txt|ledger\.csv/);
   });
 
   it('stays at the top level by default, and descends only with --recursive', async () => {
