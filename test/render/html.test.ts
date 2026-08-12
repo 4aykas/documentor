@@ -138,6 +138,66 @@ describe('buildHtml', () => {
     const html = await buildHtml(mixed, theme, { headerHeightPt: 40 });
     assertNoExternalResource(html);
   });
+
+  it('prints the entity and the date beside the letterhead when meta carries them', async () => {
+    const withMeta: Doc = {
+      meta: { title: 'T', lang: 'en', entity: 'Acme Sp. z o.o.', date: '2026-08-12' },
+      blocks: [],
+    };
+    const html = await buildHtml(withMeta, theme, { headerHeightPt: 40 });
+    expect(html).toContain('Acme Sp. z o.o.');
+    expect(html).toContain('2026-08-12');
+    // Inside the muted letterhead column, not floating somewhere else.
+    expect(html).toMatch(/<div class="letterhead">[\s\S]*Acme Sp\. z o\.o\.[\s\S]*<\/div><\/header>/);
+  });
+
+  it('adds nothing to the header when meta carries neither entity nor date', async () => {
+    // The committed baseline images are rendered from a fixture that sets
+    // neither, so this is what keeps them from moving.
+    expect(await build()).not.toContain('class="lh-doc');
+    expect(await build()).toContain('<div class="letterhead"></div>');
+  });
+});
+
+describe('link schemes', () => {
+  const linked = async (href: string) => {
+    const d: Doc = {
+      meta: { title: 'T', lang: 'en' },
+      blocks: [{ t: 'para', text: [{ t: 'link', href, children: [{ t: 'text', v: 'Click me' }] }] }],
+    };
+    return buildHtml(d, theme, { headerHeightPt: 40 });
+  };
+
+  // A link is followed by a reader, not loaded by the renderer, so the bar is
+  // "can this execute or carry a payload", not "is this local".
+  for (const href of ['https://example.com/a', 'http://example.com/a', 'mailto:a@example.com', './other.md', '/absolute/path']) {
+    it(`keeps ${href} live`, async () => {
+      expect(await linked(href)).toContain(`<a href="${href.replace(/&/g, '&amp;')}">Click me</a>`);
+    });
+  }
+
+  for (const href of [
+    'javascript:alert(1)',
+    'JavaScript:alert(1)',
+    'java\tscript:alert(1)',
+    ' javascript:alert(1)',
+    'vbscript:MsgBox(1)',
+    'data:text/html;base64,PHNjcmlwdD4=',
+  ]) {
+    it(`refuses ${JSON.stringify(href)} and shows where it pointed`, async () => {
+      const html = await linked(href);
+      expect(html).not.toContain('<a href');
+      expect(html).toContain('Click me');
+      expect(html).toContain('link-refused-target');
+    });
+  }
+
+  it('names the host of a refused link that has one', async () => {
+    // Not reachable through the Markdown ingester today, but the IR is not
+    // only ever filled by it — the check belongs to the renderer.
+    const html = await linked('data:text/html,<b>x</b>');
+    expect(html).toContain('data:');
+  });
 });
 
 describe('escapeHtml', () => {

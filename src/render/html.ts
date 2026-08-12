@@ -15,6 +15,54 @@ export function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
+/**
+ * Schemes a link may not carry.
+ *
+ * A link is not the same thing as an image source: nothing here is *loaded*
+ * when the page renders, so `http:`, `https:`, `mailto:` and relative paths all
+ * stay live — they are things a reader may choose to follow, and refusing them
+ * would cost the reader information for no gain. What cannot stay live is a URL
+ * that executes (`javascript:`, `vbscript:`) or that carries its own payload
+ * (`data:`, the shape phishing takes in a PDF). The source document is
+ * untrusted input; a rendered PDF is a thing people click.
+ *
+ * Matched after stripping whitespace and control characters, because
+ * `java\tscript:` and a leading newline are both accepted by browsers as the
+ * scheme they spell.
+ */
+const EXECUTABLE_SCHEME = /^(?:javascript|vbscript|data):/i;
+
+function schemeIsRefused(href: string): boolean {
+  // Whitespace and C0 controls are ignored by browsers when they read a
+  // scheme, so they are removed before the test rather than after it.
+  return EXECUTABLE_SCHEME.test(stripControls(href));
+}
+
+/** Every character a browser skips over while reading a URL scheme. */
+function stripControls(s: string): string {
+  return [...s].filter((ch) => ch.charCodeAt(0) > 0x20 && ch.charCodeAt(0) !== 0x7f).join('');
+}
+
+/**
+ * What a refused link shows instead: the link's own text, then where it pointed,
+ * in the muted style — the same shape as the image placeholder, for the same
+ * reason. Nothing is silently lost; the reader can see there was a link and see
+ * what it aimed at, and can decide for themselves.
+ *
+ * A `javascript:` or `data:` URL has no host, so the scheme is named instead —
+ * "javascript:" is more informative to a reader than an empty box.
+ */
+function refusedLinkMarkup(href: string, text: string): string {
+  let target = '';
+  try {
+    const u = new URL(href);
+    target = u.host || u.protocol;
+  } catch {
+    target = href.split(':')[0] ?? '';
+  }
+  return `<span class="link-refused">${text}<span class="link-refused-target">${escapeHtml(target)}</span></span>`;
+}
+
 function inline(nodes: Inline[]): string {
   return nodes
     .map((n) => {
@@ -23,7 +71,10 @@ function inline(nodes: Inline[]): string {
         case 'strong': return `<strong>${inline(n.children)}</strong>`;
         case 'em': return `<em>${inline(n.children)}</em>`;
         case 'code': return `<code>${inline(n.children)}</code>`;
-        case 'link': return `<a href="${escapeHtml(n.href)}">${inline(n.children)}</a>`;
+        case 'link':
+          return schemeIsRefused(n.href)
+            ? refusedLinkMarkup(n.href, inline(n.children))
+            : `<a href="${escapeHtml(n.href)}">${inline(n.children)}</a>`;
       }
     })
     .join('');
@@ -110,7 +161,16 @@ function firstPageHeader(doc: Doc, theme: Theme): string {
   const lines = theme.letterhead
     .map((l, i) => `<div class="${i === 0 ? 'lh-name' : 'lh-line'}">${escapeHtml(l)}</div>`)
     .join('');
-  return `<header class="sheet-head">${logo}<div class="letterhead">${lines}</div></header>
+  // The document's own entity and date sit under the letterhead, in the same
+  // muted column: they answer the same two questions a letterhead does — who,
+  // and when — so they belong beside it rather than competing with the title.
+  // Both are optional, and emitting nothing for an absent one keeps a document
+  // that sets neither byte-identical to one rendered before they existed.
+  const docLines = [doc.meta.entity, doc.meta.date]
+    .filter((v): v is string => v !== undefined && v !== '')
+    .map((v, i) => `<div class="lh-doc${i === 0 ? ' lh-doc-first' : ''}">${escapeHtml(v)}</div>`)
+    .join('');
+  return `<header class="sheet-head">${logo}<div class="letterhead">${lines}${docLines}</div></header>
 <div class="tick-row"><span class="tick"></span><span class="hair"></span></div>
 <h1 class="doc-title">${escapeHtml(doc.meta.title)}</h1>${
     doc.meta.subtitle ? `<p class="doc-subtitle">${escapeHtml(doc.meta.subtitle)}</p>` : ''
@@ -159,6 +219,8 @@ body{
 .letterhead{ text-align: right; color: var(--muted); }
 .lh-name{ font-size: ${ty.smallPt + 0.5}pt; font-weight: 700; }
 .lh-line{ font-size: ${ty.smallPt - 0.5}pt; }
+.lh-doc{ font-size: ${ty.smallPt - 0.5}pt; }
+.lh-doc-first{ margin-top: 5pt; }
 .tick-row{ display:flex; align-items:center; gap: 6pt; margin: 14pt 0 0; }
 .tick{ display:block; width: 28pt; height: 3pt; background: var(--brand); }
 .hair{ display:block; flex:1; height: 0.75pt; background: var(--rule); }
@@ -191,7 +253,8 @@ thead{ display: table-header-group; }
 th{ text-align: left; font-weight: 700; border-bottom: 1pt solid var(--rule); padding: 4pt 6pt; }
 td{ border-bottom: 0.5pt solid var(--rule); padding: 4pt 6pt; vertical-align: top; }
 .pagebreak{ break-after: page; page-break-after: always; }
-a{ color: var(--ink); text-decoration: underline; text-decoration-color: var(--rule); }`;
+a{ color: var(--ink); text-decoration: underline; text-decoration-color: var(--rule); }
+.link-refused-target{ color: var(--muted); font-size: ${(ty.bodyPt * 0.85).toFixed(1)}pt; margin-left: 3pt; }`;
 
   const body = doc.blocks.map(block).join('\n');
 
