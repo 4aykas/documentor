@@ -14,6 +14,7 @@ import {
 } from 'docx';
 import type { Block, Doc, Inline } from '../ir/types.js';
 import { PAGE_PT, type Theme } from '../theme/types.js';
+import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
 import { normalizeDocx } from './normalize-docx.js';
 
@@ -464,15 +465,15 @@ function firstPageHeader(doc: Doc, theme: Theme): Header {
 
   const lines = theme.letterhead.map((l, i) =>
     new Paragraph({ style: i === 0 ? 'DocLetterheadName' : 'DocLetterheadLine', children: [new TextRun({ text: l })] }));
-  // The document's own entity and date answer the same two questions the
-  // letterhead does — who, and when — so they sit in the same muted column.
-  const docLines = [doc.meta.entity, doc.meta.date]
-    .filter((v): v is string => v !== undefined && v !== '')
-    .map((v, i) => new Paragraph({
-      style: 'DocLetterheadLine',
-      spacing: i === 0 ? { before: dxa(5) } : {},
-      children: [new TextRun({ text: v })],
-    }));
+  // Which lines these are, in what order, and which get dropped: a decision
+  // shared with html.ts, see letterhead.ts. What's left here is only the
+  // drawing — one paragraph per line, with the first pushed down from the
+  // letterhead lines above it by that shared gap.
+  const docLines = letterheadDocLines(doc).map((v, i) => new Paragraph({
+    style: 'DocLetterheadLine',
+    spacing: i === 0 ? { before: dxa(LETTERHEAD_ENTITY_DATE_GAP_PT) } : {},
+    children: [new TextRun({ text: v })],
+  }));
 
   return new Header({
     children: [

@@ -106,27 +106,33 @@ comment points here; this is that promise kept.)
 
 ## Named work for phase 3
 
-**Extract the letterhead's entity/date construction, the way `links.ts` was
-extracted.** `src/render/docx.ts`'s `firstPageHeader` and
-`src/render/html.ts`'s `firstPageHeader` build the document's own entity and
-date identically: the same `[entity, date]` pair, the same filter for absent
-and empty values, the same "the first line gets 5pt above it" rule, and the
-same comment explaining why the two sit in the muted column beside the
-letterhead. It was copied byte-for-byte from one file to the other.
+**~~Extract the letterhead's entity/date construction, the way `links.ts` was
+extracted.~~** *Found and closed before phase 3 needed it.* `src/render/docx.ts`'s
+`firstPageHeader` and `src/render/html.ts`'s `firstPageHeader` built the
+document's own entity and date identically: the same `[entity, date]` pair,
+the same filter for absent and empty values, the same "the first line gets
+5pt above it" rule, and the same comment explaining why the two sit in the
+muted column beside the letterhead. It was copied byte-for-byte from one
+file to the other.
 
-This is precisely the class of shared decision `src/render/links.ts` exists
+This was precisely the class of shared decision `src/render/links.ts` exists
 for — a rule about *what a document means* that every renderer must answer
 the same way, as opposed to a rule about how one format draws it. Two copies
-of it is two places for the answer to drift, and the drift would be invisible
-until someone compared a PDF and a .docx of the same document side by side.
+of it was two places for the answer to drift, and the drift would have been
+invisible until someone compared a PDF and a .docx of the same document side
+by side.
 
-It is not done here because it touches a rendering path pinned by baseline
-images a human approved, and a refactor of an approved rendering path on the
-eve of a merge is how baselines break — the change is behaviour-preserving by
-intent, and "by intent" is exactly the claim a moved baseline would disprove
-after the fact. Phase 3 adds a fourth renderer over the same IR, which is
-both the moment the third copy would otherwise be written and the natural
-moment to do this with room to re-approve an image if one moves.
+The decision now lives in `src/render/letterhead.ts`: `letterheadDocLines`
+(the filtered, ordered `[entity, date]` pair) and
+`LETTERHEAD_ENTITY_DATE_GAP_PT` (the 5pt figure both renderers spend in
+their own unit). Each renderer kept only its own drawing — html.ts a `<div>`
+per line reading the shared gap into its CSS, docx.ts a `Paragraph` per line
+reading the same constant into a DXA `spacing.before`. Both were byte-checked
+unchanged against a pre-refactor build of the kitchen-sink fixture, PDF and
+DOCX, `plain` and `tebin` themes, before this was called done; the
+human-approved baseline images in `test/baseline/local-only-pixels.test.ts`
+did not move. `test/render/letterhead.test.ts` now covers the shared rule on
+its own, the way `test/render/links.test.ts` covers `links.ts`'s.
 
 ## What the agreement test still cannot see
 

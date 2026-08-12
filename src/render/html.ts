@@ -5,6 +5,7 @@
 import type { Block, Doc, Inline } from '../ir/types.js';
 import { PAGE_PT, toMm, type Theme } from '../theme/types.js';
 import { arimoFaceCss } from './fonts.js';
+import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
 
 export function escapeHtml(s: string): string {
@@ -129,13 +130,11 @@ function firstPageHeader(doc: Doc, theme: Theme): string {
   const lines = theme.letterhead
     .map((l, i) => `<div class="${i === 0 ? 'lh-name' : 'lh-line'}">${escapeHtml(l)}</div>`)
     .join('');
-  // The document's own entity and date sit under the letterhead, in the same
-  // muted column: they answer the same two questions a letterhead does — who,
-  // and when — so they belong beside it rather than competing with the title.
-  // Both are optional, and emitting nothing for an absent one keeps a document
-  // that sets neither byte-identical to one rendered before they existed.
-  const docLines = [doc.meta.entity, doc.meta.date]
-    .filter((v): v is string => v !== undefined && v !== '')
+  // Which lines these are, in what order, and which get dropped: a decision
+  // shared with docx.ts, see letterhead.ts. What's left here is only the
+  // drawing — a <div> per line, marked on the first so the `.lh-doc-first`
+  // rule below can open the gap above it.
+  const docLines = letterheadDocLines(doc)
     .map((v, i) => `<div class="lh-doc${i === 0 ? ' lh-doc-first' : ''}">${escapeHtml(v)}</div>`)
     .join('');
   return `<header class="sheet-head">${logo}<div class="letterhead">${lines}${docLines}</div></header>
@@ -185,7 +184,7 @@ body{
 .lh-name{ font-size: ${ty.smallPt + 0.5}pt; font-weight: 700; }
 .lh-line{ font-size: ${ty.smallPt - 0.5}pt; }
 .lh-doc{ font-size: ${ty.smallPt - 0.5}pt; }
-.lh-doc-first{ margin-top: 5pt; }
+.lh-doc-first{ margin-top: ${LETTERHEAD_ENTITY_DATE_GAP_PT}pt; }
 .tick-row{ display:flex; align-items:center; gap: 6pt; margin: 14pt 0 0; }
 .tick{ display:block; width: 28pt; height: 3pt; background: var(--brand); }
 .hair{ display:block; flex:1; height: 0.75pt; background: var(--rule); }
