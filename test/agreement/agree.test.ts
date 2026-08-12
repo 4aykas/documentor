@@ -9,7 +9,14 @@ import { renderMarkdown } from '../../src/render/md.js';
 import { loadTheme } from '../../src/theme/resolve.js';
 import { pdfText } from '../helpers/pdf-text.js';
 import { pdfRuns } from '../helpers/pdf-runs.js';
-import { type Run, classify, expectSameSequence, norm, runsFromMarkdown } from './runs.js';
+import { renderDocx } from '../../src/render/docx.js';
+import { docxPart } from '../helpers/docx-parts.js';
+import type { Block } from '../../src/ir/types.js';
+import {
+  type Run, classify, expectSameSequence, norm, runsFromMarkdown,
+  boldRunsFromDocx, cellsFromDocx, docTitleFromDocx, emphasisFromIr, flattenInline, headingsFromDocx,
+  italicRunsFromDocx, linkTargetsFromIr, linkTargetsFromRels,
+} from './runs.js';
 
 // The brief's plain `new URL('.', import.meta.url).pathname` strips the
 // leading slash off a Windows drive path but leaves the rest of the
@@ -134,5 +141,69 @@ describe('the renderers agree', () => {
     // fragments, and every fragment after the first has to remember where the
     // numbering had got to.
     await expectRenderersAgree('# Numbering\n\n1. First\n2. Second\n   - a nested aside\n3. Third\n4. Fourth\n');
+  });
+});
+
+describe('Word says what the others say', () => {
+  it('carries every heading, in order and at its level', async () => {
+    // Compared against the IR, not against Markdown, and for the same reason
+    // emphasis and link targets are: `ingestMarkdown` lifts the document's
+    // first `h1` out of `blocks` entirely into `meta.title` (the theme's
+    // header prints the title, so leaving it in the body would set it
+    // twice), yet all three renderers still print that title somewhere in
+    // the body at heading size. Markdown can't tell the difference — its `#`
+    // syntax looks the same whether it came from a real heading block or was
+    // synthesised from `meta.title` — and an untagged PDF only has type size,
+    // which the title shares with a real h1. Word is the only renderer that
+    // can say structurally "this is the title, not a body heading": it gives
+    // the title its own `DocTitle` style, distinct from `DocH1`. Going
+    // through Markdown here would compare two sequences that were never the
+    // same set — the title was never a `heading` block to begin with.
+    const { doc } = ingestMarkdown(source);
+    const xml = await docxPart(await renderDocx(doc, await loadTheme('plain'), { epochSeconds: EPOCH }), 'word/document.xml');
+    const fromDocx = headingsFromDocx(xml);
+    const fromIr = doc.blocks
+      .filter((b): b is Extract<Block, { t: 'heading' }> => b.t === 'heading')
+      .map((b) => `h${b.level} ${flattenInline(b.text)}`);
+    expectSameSequence('heading', fromIr, fromDocx);
+
+    // Narrowing the comparison above to real heading blocks must not open a
+    // hole where the title itself could silently vanish from the Word
+    // document. It still has to be there, carrying the style that told the
+    // heading comparison to leave it out.
+    expect(docTitleFromDocx(xml), 'the title is missing its DocTitle style').toBe(doc.meta.title);
+  });
+
+  it('puts each table value in its own cell, which the PDF cannot show', async () => {
+    // The PDF comparison flattens a table to a sequence of words because an
+    // untagged PDF has no cell boundaries to read. Word has <w:tc>, so this is
+    // the renderer that can catch a value landing in the wrong column with the
+    // reading order unchanged.
+    const { doc } = ingestMarkdown(source);
+    const xml = await docxPart(await renderDocx(doc, await loadTheme('plain'), { epochSeconds: EPOCH }), 'word/document.xml');
+    const table = doc.blocks.find((b) => b.t === 'table');
+    expect(table).toBeDefined();
+    const expected = [
+      ...table!.head.map(flattenInline),
+      ...table!.rows.flatMap((r) => r.map(flattenInline)),
+    ];
+    expectSameSequence('table cell', expected, cellsFromDocx(xml));
+  });
+
+  it('carries the emphasis the IR asked for, which the PDF cannot show', async () => {
+    // Compared against the IR rather than against Markdown: the IR is the
+    // contract a renderer is meant to honour, and PDF text extraction reports
+    // no weight or style at all, so there is no third opinion to reconcile.
+    const { doc } = ingestMarkdown(source);
+    const xml = await docxPart(await renderDocx(doc, await loadTheme('plain'), { epochSeconds: EPOCH }), 'word/document.xml');
+    expectSameSequence('bold run', emphasisFromIr(doc, 'strong'), boldRunsFromDocx(xml));
+    expectSameSequence('italic run', emphasisFromIr(doc, 'em'), italicRunsFromDocx(xml));
+  });
+
+  it('points every link where the IR points it, which the PDF cannot show', async () => {
+    const { doc } = ingestMarkdown(source);
+    const buf = await renderDocx(doc, await loadTheme('plain'), { epochSeconds: EPOCH });
+    const rels = await docxPart(buf, 'word/_rels/document.xml.rels');
+    expectSameSequence('link target', linkTargetsFromIr(doc), linkTargetsFromRels(rels));
   });
 });
