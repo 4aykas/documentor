@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseArgs } from '../../src/cli/build.js';
+import { READABLE_EXTS, parseArgs } from '../../src/cli/build.js';
 import { parseInspectArgs } from '../../src/cli/inspect.js';
 import { SIDECAR_KEYS } from '../../src/cli/sidecar.js';
 
@@ -197,5 +197,65 @@ describe('SKILL.md tells the assistant to read fields inspect --json actually em
       `SKILL.md names documents[].${missing.join(', documents[].')}, but a real inspect --json "ok" document `
       + `has keys ${[...realKeys].join(', ')} — the field was renamed or removed and the skill was not updated`,
     ).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 3. What the skill tells the assistant documentor can read
+//
+// This one is here because it already failed in production, in the direction
+// this project keeps being caught by: `.xlsx` became readable and the skill
+// went on saying "documentor cannot read either format yet" in four places,
+// including its own frontmatter description — the line that decides whether
+// the skill is offered at all. Nothing went red. A skill that declines a file
+// the tool handles is worse than no skill, because the refusal sounds
+// authoritative.
+//
+// The dependency, so an editor knows what may be reworded: the bullet
+// beginning `- **Reads` in "What documentor refuses to do". Extensions before
+// the word "No" are what it claims to read; extensions after it are what it
+// claims it cannot. Both are compared against READABLE_EXTS, so either
+// direction of drift fails — a format the code gained, and a format the
+// skill still disowns.
+// ---------------------------------------------------------------------------
+
+describe("the skill's account of what documentor reads", () => {
+  it('matches READABLE_EXTS in both directions', () => {
+    const line = SKILL.split('\n').find((l) => l.startsWith('- **Reads'));
+    expect(
+      line,
+      'SKILL.md has no "- **Reads" bullet — the sentence this test reads formats from moved or was reworded; update the anchor along with it',
+    ).toBeDefined();
+
+    const [claimsRead, claimsUnread = ''] = line!.split(/\bNo\b/);
+    const exts = (s: string): Set<string> => new Set([...s.matchAll(/`(\.[a-z]+)`/g)].map((m) => m[1]!));
+
+    // A readable extension the skill does not name is the failure that
+    // happened; every one of them must be in the "reads" half.
+    const named = exts(claimsRead!);
+    const unnamed = [...READABLE_EXTS].filter((e) => !named.has(e));
+    expect(
+      unnamed,
+      `SKILL.md's "Reads" bullet does not name ${unnamed.join(', ')}, which the CLI reads — `
+      + 'the skill will tell the assistant to decline a file documentor handles',
+    ).toEqual([]);
+
+    // And nothing it disowns may be something the code reads.
+    const disowned = [...exts(claimsUnread)].filter((e) => READABLE_EXTS.has(e));
+    expect(
+      disowned,
+      `SKILL.md's "Reads" bullet says documentor cannot read ${disowned.join(', ')}, but it can`,
+    ).toEqual([]);
+
+    // The frontmatter description is what a loader shows and what decides
+    // whether this skill is offered at all, so it carries the same claim and
+    // must not contradict the body. Checked for the disowning direction only:
+    // a one-line description is not obliged to enumerate every format, but it
+    // must not name a readable one as unreadable.
+    const description = /^description:(.*)$/m.exec(SKILL)?.[1] ?? '';
+    for (const e of READABLE_EXTS) {
+      const claimsCannot = new RegExp(`${e.replace('.', '\\.')}[^.]{0,80}cannot read`).test(description);
+      expect(claimsCannot, `the skill's description says it cannot read ${e}, but it can`).toBe(false);
+    }
   });
 });

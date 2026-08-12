@@ -1,6 +1,6 @@
 ---
 name: documentor
-description: Re-issue an existing Markdown or Word document as a well-typeset PDF, Word, or Markdown file using the documentor CLI. Use when the user has a written .md or .docx document and wants it re-typeset, branded, or exported to PDF/Word — not for writing new documents from scratch, not for .xlsx or .pdf sources (documentor cannot read either), and not for changing what a document says.
+description: Re-issue an existing Markdown, Word or Excel document as a well-typeset PDF, Word, or Markdown file using the documentor CLI. Use when the user has a written .md, .docx or .xlsx file and wants it re-typeset, branded, or exported to PDF/Word — not for writing new documents from scratch, not for .pdf sources (documentor cannot read PDF), and not for changing what a document says.
 ---
 
 # documentor
@@ -13,14 +13,17 @@ human request; do not fold it into a documentor run.
 
 ## When to use this skill
 
-Use it when the user hands you (or names) an existing `.md` or `.docx` file
-and wants a polished PDF, Word, or Markdown re-issue of it — a report, a memo,
-a proposal, something already written that needs to look better or come out
-in another format.
+Use it when the user hands you (or names) an existing `.md`, `.docx` or
+`.xlsx` file and wants a polished PDF, Word, or Markdown re-issue of it — a
+report, a memo, a proposal, a small register, something already written that
+needs to look better or come out in another format.
 
 Do **not** use it when:
 - the document doesn't exist yet — write it first, with no theming;
-- the source is `.xlsx` or `.pdf` — documentor cannot read either format yet;
+- the source is `.pdf` — documentor cannot read PDF;
+- the source is a working spreadsheet rather than a register — see the
+  spreadsheet limit below; most `.xlsx` files are refused, and offering to
+  re-issue one before inspecting it sets up a promise that will not hold;
 - the ask is to change wording, structure, or content — documentor carries
   content through verbatim; rewriting is a separate, explicit task;
 - the ask is just "make a document" with no re-typesetting angle — invoking
@@ -34,7 +37,13 @@ Know these before promising anything to the user:
 - **Appearance only, never text.** Content is carried through verbatim. If a
   sentence looks weak, that is not this skill's call to fix — propose it to
   the user as a separate, visible edit; never silently rewrite.
-- **Reads only `.md` and `.docx`.** No `.xlsx`, no `.pdf` in.
+- **Reads `.md`, `.markdown`, `.docx` and `.xlsx`.** No `.pdf` in.
+- **A spreadsheet has to be a register, not a workbook.** A sheet holding a
+  merged cell is refused by name, and so is one past 200 rows or 25 columns.
+  Over a real set of 68 spreadsheets, 11 were read. Run
+  `inspect` before promising anything, and when a sheet is refused, relay the
+  message rather than working around it — it names the sheet and the number so
+  the user knows which range to extract and re-issue instead.
 - **Writes PDF, Word (`.docx`), and Markdown.** No `.xlsx` out (a table
   renderer exists in the design but has not shipped).
 - **Word gets no table from a `.docx` source.** Reading a `.docx`, tables are
