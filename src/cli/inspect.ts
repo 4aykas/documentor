@@ -68,30 +68,38 @@ export type DocInspection =
       file: string;
       status: 'ok';
       title: string;
-      // `subtitle`/`date`/`entity` are meta.doc fields verbatim (present only
-      // when the document — or, for date/entity, `inspect`'s own --date/
-      // --entity — supplied one; exactOptionalPropertyTypes means an absent
-      // fact is an absent key, never an explicit `undefined`). They exist
-      // here for the same reason `title` does: all four print on the themed
-      // letterhead at build time, so a person deciding whether the build is
-      // ready to run wants to see exactly what will land there — not just
-      // "yes/no, one was found" but the actual text.
+      // `title`/`subtitle`/`date`/`entity` are meta.doc fields verbatim
+      // (subtitle/date/entity present only when the document — or
+      // `inspect`'s own --date/--entity — supplied one; exactOptional
+      // PropertyTypes means an absent fact is an absent key, never an
+      // explicit `undefined`). They exist here because all four print on
+      // the themed letterhead at build time, so a person deciding whether
+      // the build is ready to run wants to see exactly what will land
+      // there — not just "yes/no, one was found" but the actual text.
       //
-      // `entity` has no source *inside* a document at all — unlike
-      // `subtitle` (a DocSubtitle body style) or `date` (the DOCX header/
-      // footer scan) it can only ever come from a caller-supplied value —
-      // so `inspect` accepts `--entity` for the one reason a document
-      // itself could never answer it: previewing what `build --entity`
-      // would print, before running `build`. `--date` accepts the same
-      // flag build does and for the same override reason, even though a
-      // DOCX can also supply one on its own — an explicit `--date` must win
-      // over a scanned one at inspect time exactly because it wins at
-      // build time (see ingestDocx's own `opts.date ?? foundDate`); two
-      // commands answering "what will this print" differently for the same
-      // input and the same flags is the exact failure this command exists
-      // to prevent.
+      // `inspect` accepts `--title`/`--date`/`--entity`, spelled and
+      // behaving exactly like `build`'s own flags, because each one changes
+      // what `build` would print and `inspect`'s whole purpose is to
+      // preview that before `build` runs:
+      //   - `entity` has no source *inside* a document at all — it can
+      //     only ever come from a caller-supplied value.
+      //   - `date` can come from a document (the DOCX header/footer scan),
+      //     but an explicit `--date` must win over a scanned one at
+      //     inspect time exactly because it wins at build time (see
+      //     ingestDocx's own `opts.date ?? foundDate`).
+      //   - `title` can also come from a document — Markdown's h1, or a
+      //     DOCX's own DocTitle body style — but a titleless `.docx` has
+      //     *no* body title at all; `build.ts`'s own `ingest()` wrapper
+      //     falls back to the file's name in that case, and an explicit
+      //     `--title` must outrank that fallback the same way it does at
+      //     build time. Without this, `inspect report.docx` would report
+      //     the filename-derived title while `build report.docx --title
+      //     "…"` produced a different one for the same input.
+      // Two commands answering "what will this print" differently for the
+      // same input and the same intended flags is the exact failure this
+      // command exists to prevent.
       //
-      // Every one of these three is rendered in renderUnderstood below; a
+      // Every one of these facts is rendered in renderUnderstood below; a
       // fact that appeared only in this structure and never in the human
       // text would be exactly the disagreement the design's "one structure,
       // two renderings" rule exists to prevent, and test/cli/inspect.test.ts's
@@ -328,10 +336,10 @@ export function renderHuman(result: InspectResult): string {
 }
 
 export function parseInspectArgs(argv: string[]): {
-  input?: string; theme: string; json: boolean; recursive: boolean; date?: string; entity?: string;
+  input?: string; theme: string; json: boolean; recursive: boolean; title?: string; date?: string; entity?: string;
 } {
   const out: {
-    input?: string; theme: string; json: boolean; recursive: boolean; date?: string; entity?: string;
+    input?: string; theme: string; json: boolean; recursive: boolean; title?: string; date?: string; entity?: string;
   } = {
     theme: 'plain', json: false, recursive: false,
   };
@@ -348,11 +356,17 @@ export function parseInspectArgs(argv: string[]): {
     // InspectResult built once, below.
     else if (a === '--json') out.json = true;
     else if (a === '--recursive') out.recursive = true;
-    // Same spelling, same semantics as build.ts's own --date/--entity (see
-    // parseArgs there) — not a second convention for the same flag. See
-    // DocInspection's own comment on why inspect needs these at all: it is
-    // the one place a caller can preview what `build --date`/`--entity`
-    // would actually print before running `build`.
+    // Same spelling, same semantics as build.ts's own --title/--date/
+    // --entity (see parseArgs there) — not a second convention for the same
+    // flag. See DocInspection's own comment on why inspect needs these at
+    // all: it is the one place a caller can preview what `build --title`/
+    // `--date`/`--entity` would actually print before running `build`.
+    // --title matters most for a .docx input: that ingester has no title in
+    // the body at all (unlike Markdown's h1), so without this flag
+    // `inspect report.docx` and `build report.docx --title "…"` would name
+    // two different titles for the same input — the same disagreement
+    // --date closed for a scanned header date.
+    else if (a === '--title') out.title = next();
     else if (a === '--date') out.date = next();
     else if (a === '--entity') out.entity = next();
     else if (a.startsWith('-')) throw new Error(`unknown option ${a}`);
@@ -389,7 +403,7 @@ export async function runInspect(argv: string[], io: Io): Promise<number> {
     return 2;
   }
   if (args.input === undefined) {
-    io.err('documentor: inspect needs an input file or directory\n\n  documentor inspect <file|dir> [--theme plain] [--json] [--recursive] [--date <s>] [--entity <s>]');
+    io.err('documentor: inspect needs an input file or directory\n\n  documentor inspect <file|dir> [--theme plain] [--json] [--recursive] [--title <s>] [--date <s>] [--entity <s>]');
     return 2;
   }
 
@@ -397,9 +411,10 @@ export async function runInspect(argv: string[], io: Io): Promise<number> {
   const inputArg = resolve(args.input);
   const inputStat = await stat(inputArg).catch(() => undefined);
   // Same construction build.ts's own ingestOptsFrom does — kept inline here
-  // rather than shared, since it is two conditional spreads, not logic
+  // rather than shared, since it is three conditional spreads, not logic
   // either command owns more of than the other.
   const opts: IngestOpts = {
+    ...(args.title === undefined ? {} : { title: args.title }),
     ...(args.date === undefined ? {} : { date: args.date }),
     ...(args.entity === undefined ? {} : { entity: args.entity }),
   };

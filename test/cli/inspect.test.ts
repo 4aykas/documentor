@@ -78,8 +78,9 @@ describe('parseInspectArgs', () => {
   it('rejects an unknown option', () => {
     expect(() => parseInspectArgs(['a.md', '--colour'])).toThrow(/--colour/);
   });
-  it('reads --date and --entity, spelled exactly as build.ts\'s own parseArgs does', () => {
-    const args = parseInspectArgs(['a.md', '--date', 'July 20, 2026', '--entity', 'Acme Sp. z o.o.']);
+  it('reads --title, --date and --entity, spelled exactly as build.ts\'s own parseArgs does', () => {
+    const args = parseInspectArgs(['a.md', '--title', 'Q3 Review', '--date', 'July 20, 2026', '--entity', 'Acme Sp. z o.o.']);
+    expect(args.title).toBe('Q3 Review');
     expect(args.date).toBe('July 20, 2026');
     expect(args.entity).toBe('Acme Sp. z o.o.');
   });
@@ -218,6 +219,40 @@ describe('runInspect: single file', () => {
     // ("lets an explicit title/date override what the header carried").
     expect(human).toMatch(/understood:.*date "Given Date"/);
     expect(human).toMatch(/dropped:.*kept the date it carried: "July 20, 2026"/);
+  });
+
+  it('--title wins over the filename-derived title for a titleless .docx, the same way build --title does', async () => {
+    // A .docx has no title in its body at all when neither a DocTitle style
+    // nor --title supplied one — build.ts's own ingest() wrapper then falls
+    // back to the file's own name (see its comment: "the design doc's rule
+    // is that a DOCX's name is its title in that case"). Without --title,
+    // inspect must show that same fallback; with --title, it must show the
+    // override instead — exactly the disagreement the coordinator's review
+    // named: `inspect quarterly.docx` reporting "quarterly" while `build
+    // quarterly.docx --title "Q3 Review"` produced a document titled
+    // "Q3 Review" for the same input.
+    // renderDocx always writes a DocTitle paragraph, so a "no title at all"
+    // .docx can't be produced by feeding it an empty string — but feeding it
+    // the literal sentinel 'Untitled' reaches the same downstream state:
+    // ingestDocx reads that DocTitle text back as the (non-empty) string
+    // "Untitled", which is exactly the condition build.ts's own ingest()
+    // wrapper checks for before substituting the filename, so this fixture
+    // exercises the real fallback path rather than a hand-picked shortcut.
+    const titleless: Doc = {
+      meta: { lang: 'en', title: 'Untitled' },
+      blocks: [{ t: 'para', text: [{ t: 'text', v: 'Body.' }] }],
+    };
+    const file = await docxFixture(titleless, 'quarterly.docx');
+
+    const { io: ioNoFlag, log: noFlagLog } = collect();
+    await runInspect([file], ioNoFlag);
+    expect(noFlagLog.join('\n')).toMatch(/title "quarterly"/);
+
+    const { io: ioTitled, log: titledLog } = collect();
+    await runInspect([file, '--title', 'Q3 Review'], ioTitled);
+    const human = titledLog.join('\n');
+    expect(human).toMatch(/title "Q3 Review"/);
+    expect(human).not.toMatch(/title "quarterly"/);
   });
 
   it('reports the ingester\'s own dropped entries, unchanged', async () => {
