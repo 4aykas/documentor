@@ -52,10 +52,36 @@ and the IR's `start` — what a reader checks when they look at item 4 — is th
 thing that has to survive. The cost is that a reader cannot continue the list
 by pressing Enter at its end; it is prose that looks like a list, not one.
 
-**Word tables have equal columns.** The HTML renderer lets the browser lay a
-table out; there is no Word equivalent reproducible across versions, and a
-width computed from the text would need font metrics this renderer does not
-have. Every DOCX table column is the same width regardless of content.
+**~~Word tables have equal columns.~~** *Narrowed after this note was
+written.* The original reasoning was half true and got over-applied: an
+*exact* width needs font metrics this renderer doesn't have, but a
+*proportion* doesn't — knowing that one column carries more text than
+another needs nothing more than counting characters. `src/render/docx.ts`'s
+`table()` now gives each column a share of the text column weighted by
+`columnDemand()`: the 75th percentile of a column's cell lengths, floored by
+its header's own length so a short-but-labelled column (`Currency` over
+three-letter codes) doesn't collapse to its data's width. `distribute()`
+turns that demand into DXA subject to a floor (~4 characters, so a
+one-character column still fits its header) and a 45% ceiling (so one
+long-prose column can't flatten every sibling to its floor), water-filling
+whichever columns hit a bound and re-sharing the remainder among the rest,
+then rounds to whole DXA by largest remainder so the widths still sum to
+the text column exactly, byte-identically, on every machine.
+
+This still does two things badly, both left as the next residual rather
+than chased further here. A table with only one or two data rows has too
+few points for a percentile to smooth anything — a single long cell in a
+short table dominates its column just as the rejected longest-cell measure
+would have. And the ceiling is a no-op on any two-column table: two columns
+each capped below 50% can never sum back to 100%, so `distribute()` drops
+the cap there rather than force it onto one column by tie-break, which
+means a two-column table with one verbose column has no ceiling at all,
+only the other column's floor to keep it from disappearing. Measured on the
+kitchen-sink fixture's `Item/Quantity/Unit price/Currency/Total` table (A4,
+499.3pt text column): equal split put every column at 99.85pt and wrapped
+`Item`'s "Sprocket, extra-long…" cell onto five lines; content-proportional
+gives `Item` 224.7pt, `Quantity` 69.75pt, `Unit price` 87.15pt, `Currency`
+69.75pt, `Total` 47.95pt, and the same cell wraps onto two.
 
 **Word embeds a PNG and nothing else, where HTML and PDF embed any
 raster.** `src/render/docx.ts` reads a picture's natural dimensions from
