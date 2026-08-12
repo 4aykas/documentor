@@ -4,12 +4,26 @@
   "description": "Re-issue existing documents as well-typeset, themed PDF, Word, Excel and Markdown",
   "license": "MIT",
   "author": "TEBIN",
-  "repository": { "type": "git", "url": "git+https://github.com/4aykas/documentor.git" },
-  "bugs": { "url": "https://github.com/4aykas/documentor/issues" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/4aykas/documentor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/4aykas/documentor/issues"
+  },
   "type": "module",
-  "engines": { "node": ">=22" },
-  "bin": { "documentor": "./dist/bin/documentor.js" },
-  "files": ["dist", "themes", "README.md", "LICENSE"],
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "documentor": "./dist/bin/documentor.js"
+  },
+  "files": [
+    "dist",
+    "themes",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
@@ -19,6 +33,7 @@
   },
   "dependencies": {
     "@fontsource/arimo": "^5.2.5",
+    "docx": "^9.7.1",
     "marked": "^15.0.0",
     "playwright-core": "^1.62.1"
   },
