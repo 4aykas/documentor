@@ -118,8 +118,13 @@ describe('the renderers agree', () => {
     // up here as a run that only one side has.
     const pages = await pdfText(buf);
     const stripHeader = (page: string, i: number) => {
-      // Built from what the header is supposed to say, so a header that stops
-      // saying it fails here rather than being quietly tolerated.
+      // Page one is stitched in from the empty-header render (see pdf.ts) —
+      // it carries no running-header chrome at all, on purpose, which is the
+      // whole point of this change. Every later page still gets the chrome
+      // the running header always printed, built from what it is supposed to
+      // say, so a header that stops saying it fails here rather than being
+      // quietly tolerated.
+      if (i === 0) return page;
       const chrome = `${doc.meta.title} ${i + 1} / ${pages.length}`;
       expect(page.endsWith(chrome), `page ${i + 1} does not end with its running header`).toBe(true);
       return page.slice(0, -chrome.length);

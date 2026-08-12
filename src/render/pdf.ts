@@ -1,21 +1,9 @@
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
+import { PDFDocument } from 'pdf-lib';
 import type { Doc } from '../ir/types.js';
 import { toMm, type Theme } from '../theme/types.js';
 import { buildHtml, escapeHtml } from './html.js';
 import { arimoFaceCss } from './fonts.js';
-import { normalizePdfDates } from './normalize-pdf.js';
-
-/**
- * How much of the top margin the running header occupies.
- *
- * Chromium draws header and footer templates in the page margin, in a context
- * that has none of the page's CSS. If the margin is smaller than the header,
- * the header is not dropped — it is drawn **over the body text**, and text
- * extraction cannot see the collision because both PDFs extract identically.
- * Measured 2026-08-12; it is why this constant exists rather than a guess at
- * the call site, and why the baseline test rasterises.
- */
-export const RUNNING_HEADER_PT = 26;
 
 /**
  * The second guard on "this renderer fetches nothing".
@@ -62,6 +50,68 @@ async function runningHeader(doc: Doc, theme: Theme): Promise<string> {
 }
 
 /**
+ * Turns an epoch into the `Date` pdf-lib's `setCreationDate`/`setModificationDate`
+ * want, with the same guards `normalize-pdf.ts`'s `stampOf` applies for the
+ * same reason: an out-of-range or non-integer epoch produces an Invalid Date
+ * silently rather than a thrown error, and pdf-lib would happily encode that
+ * as a literal "D:NaNNaN…" string into the saved file. `resolveEpoch` already
+ * keeps normal callers inside range; this is the backstop for a caller that
+ * doesn't go through it (SOURCE_DATE_EPOCH, tests).
+ */
+function dateFromEpoch(epochSeconds: number): Date {
+  if (!Number.isInteger(epochSeconds) || epochSeconds < 0) {
+    throw new Error(`epoch must be a non-negative whole number of seconds, got ${epochSeconds}`);
+  }
+  const d = new Date(epochSeconds * 1000);
+  if (Number.isNaN(d.getTime())) {
+    throw new Error(`epoch ${epochSeconds} does not fall within the representable Date range`);
+  }
+  return d;
+}
+
+/**
+ * Page 1 from `withoutHeader`, pages 2..N from `withHeader` — both renders of
+ * the same HTML at the same margins (see the pagination-equality measurement
+ * in docs/superpowers/notes/2026-08-12-clean-first-page-spike.md), so "page 2
+ * onward" means the same content either way.
+ *
+ * `updateMetadata: false` on every `PDFDocument.create()`/`.load()` call is
+ * load-bearing, not cosmetic: pdf-lib's default writes `new Date()` into a
+ * fresh document's `/Info` dict at construction time, which would make this
+ * function — and therefore renderPdf — non-deterministic on every call. The
+ * option only exists on `create`/`load`; passing it to `.save()` instead
+ * compiles but does nothing, which is how the spike caught it. With the
+ * option, the merged document carries no `/Info` dict at all, so the date
+ * this project promises (SOURCE_DATE_EPOCH or the input's mtime, never the
+ * wall clock) has to be written back in explicitly — hence the two
+ * `set*Date` calls below, rather than trusting pdf-lib's own default.
+ */
+async function stitchCleanFirstPage(withHeader: Buffer, withoutHeader: Buffer, epochSeconds: number): Promise<Buffer> {
+  const empty = await PDFDocument.load(withoutHeader, { updateMetadata: false });
+  const real = await PDFDocument.load(withHeader, { updateMetadata: false });
+  const out = await PDFDocument.create({ updateMetadata: false });
+
+  const [firstPage] = await out.copyPages(empty, [0]);
+  if (firstPage === undefined) throw new Error('the empty-header render produced no page 1 to stitch');
+  out.addPage(firstPage);
+
+  // A single-page document has no "pages 2..N" — copyPages with an empty
+  // index array is a no-op, but skipping the call entirely says so directly
+  // rather than relying on that being true of an edge case nobody asked for.
+  const pageCount = real.getPageCount();
+  if (pageCount > 1) {
+    const rest = await out.copyPages(real, Array.from({ length: pageCount - 1 }, (_, i) => i + 1));
+    for (const p of rest) out.addPage(p);
+  }
+
+  const date = dateFromEpoch(epochSeconds);
+  out.setCreationDate(date);
+  out.setModificationDate(date);
+
+  return Buffer.from(await out.save());
+}
+
+/**
  * `browser` and `context` are both ways for a caller to supply the Chromium it
  * already has, rather than paying a launch per document — the CLI will batch
  * that way, and every test file already does. `context` is the more specific
@@ -76,7 +126,7 @@ export async function renderPdf(
   theme: Theme,
   opts: { epochSeconds: number; browser?: Browser; context?: BrowserContext },
 ): Promise<Buffer> {
-  const html = await buildHtml(doc, theme, { headerHeightPt: RUNNING_HEADER_PT });
+  const html = await buildHtml(doc, theme);
   const browser = opts.context !== undefined ? undefined : opts.browser ?? (await chromium.launch());
   const ownsBrowser = opts.context === undefined && opts.browser === undefined;
   try {
@@ -100,22 +150,60 @@ export async function renderPdf(
       // (it's a Node CLI), so `document` is not a type it knows about.
       // Playwright evaluates a string in the page's own context regardless.
       await page.evaluate('document.fonts.ready');
-      const raw = await page.pdf({
+      // The top margin is the theme's own — no extra band reserved for the
+      // running header, and none is needed. Chromium draws the header
+      // template from a fixed offset near the page's *physical* top edge,
+      // independent of the margin passed here: a sweep over 0, 4, 8 and
+      // 12pt of extra band (2026-08-12, kitchen-sink fixture, TEBIN theme,
+      // page 2 rasterised and decoded by hand for real ink) found the
+      // header's own ink holding at 15.75–22.25pt from the top at every
+      // value, while the body's first ink already started at 55.25pt with
+      // no extra band at all — a 33pt gap, comfortably past the 12pt
+      // legibility floor the sweep was judged against. That is why this is
+      // just `theme.page.marginPt`, on all four sides, rather than a
+      // constant added to top alone.
+      //
+      // What no margin value can fix: an oversized header is not clipped,
+      // it **overprints the body** — proved by forcing a ~1000-character
+      // mixed-script title to wrap onto 7 lines and watching it overlap a
+      // later page's own heading. Text extraction cannot see this collision
+      // (a good and a broken file extract identically); only rasterising
+      // can, which is why the baseline test does. The risk belongs to a
+      // pathologically long document title, not to this margin — the header
+      // grows downward from a fixed point near the physical page top no
+      // matter how much room the margin gives it, so no margin value here
+      // guards against a title long enough to wrap multiple times.
+      const margin = {
+        // page.pdf() rejects `pt`; mm is the unit the theme converts into.
+        top: toMm(theme.page.marginPt),
+        bottom: toMm(theme.page.marginPt),
+        left: toMm(theme.page.marginPt),
+        right: toMm(theme.page.marginPt),
+      };
+      // Two renders of the one page already loaded with the one HTML string:
+      // same body layout both times (headerTemplate never reaches the body's
+      // layout box — measured in the spike), so pagination is identical and
+      // only the header band differs. That equality is what makes it safe to
+      // take page 1 from one render and pages 2..N from the other below.
+      const withHeader = await page.pdf({
         format: theme.page.size === 'A4' ? 'A4' : 'Letter',
         printBackground: true,
         preferCSSPageSize: false,
         displayHeaderFooter: true,
         headerTemplate: await runningHeader(doc, theme),
         footerTemplate: '<span></span>',
-        margin: {
-          // page.pdf() rejects `pt`; mm is the unit the theme converts into.
-          top: toMm(theme.page.marginPt + RUNNING_HEADER_PT),
-          bottom: toMm(theme.page.marginPt),
-          left: toMm(theme.page.marginPt),
-          right: toMm(theme.page.marginPt),
-        },
+        margin,
       });
-      return normalizePdfDates(Buffer.from(raw), opts.epochSeconds);
+      const withoutHeader = await page.pdf({
+        format: theme.page.size === 'A4' ? 'A4' : 'Letter',
+        printBackground: true,
+        preferCSSPageSize: false,
+        displayHeaderFooter: true,
+        headerTemplate: '<span></span>',
+        footerTemplate: '<span></span>',
+        margin,
+      });
+      return await stitchCleanFirstPage(Buffer.from(withHeader), Buffer.from(withoutHeader), opts.epochSeconds);
     } finally {
       await page.close();
     }

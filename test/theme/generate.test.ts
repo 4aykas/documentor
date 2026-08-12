@@ -73,7 +73,6 @@ describe('the generator and the stylesheet', () => {
     const css = await buildHtml(
       { meta: { title: 'T', lang: 'en' }, blocks: [] },
       resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C' } }),
-      { headerHeightPt: 40 },
     );
     const painted = new Set([...css.matchAll(/\.logo\s+\.([\w-]+)\s*\{/g)].map((m) => m[1]!));
     expect(painted.size, 'no .logo rules found — the extraction, not the stylesheet, is what broke').toBeGreaterThan(0);

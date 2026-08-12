@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { chromium, type Browser } from 'playwright-core';
+import { PDFDict, PDFDocument, PDFName } from 'pdf-lib';
 import { blockNonDataRequests, renderPdf } from '../../src/render/pdf.js';
 import { resolveTheme } from '../../src/theme/resolve.js';
 import { ingestMarkdown } from '../../src/ingest/md.js';
@@ -17,11 +18,32 @@ const render = (md: string) =>
 
 describe('renderPdf', () => {
   it('produces identical bytes on two runs', async () => {
+    // Determinism used to be normalizePdfDates' job (substitute the two date
+    // fields Chromium's own output carries). It is now a property of the
+    // stitch instead: pdf-lib's `updateMetadata: false` on every
+    // create()/load() call in stitchCleanFirstPage keeps it from writing
+    // `new Date()` into a fresh /Info dict — see the spike note and the
+    // comment on stitchCleanFirstPage in pdf.ts.
     const md = '# Report\n\nHello, world.\n';
     const a = await render(md);
     await new Promise((r) => setTimeout(r, 1100)); // cross a second boundary
     const b = await render(md);
     expect(Buffer.compare(a, b)).toBe(0);
+  });
+
+  it('carries the epoch date, even though the stitch leaves pdf-lib no /Info dict to inherit it from', async () => {
+    // A fresh PDFDocument.create({ updateMetadata: false }) writes no /Info
+    // dict at all — deterministic, but silent about the date this project
+    // promises never comes from the wall clock. renderPdf has to set it back
+    // explicitly; this reads the produced bytes back through pdf-lib (not a
+    // regex — see normalize-pdf.ts's own note on why a regex can't reach a
+    // pdf-lib document's compressed object streams) to prove it actually
+    // landed, not just that the code that means to set it ran.
+    const buf = await render('# Report\n\nHello, world.\n');
+    const readBack = await PDFDocument.load(buf, { updateMetadata: false });
+    const expected = new Date(EPOCH * 1000);
+    expect(readBack.getCreationDate()?.getTime()).toBe(expected.getTime());
+    expect(readBack.getModificationDate()?.getTime()).toBe(expected.getTime());
   });
 
   it('renders Ukrainian and Polish with the embedded font', async () => {
@@ -32,15 +54,47 @@ describe('renderPdf', () => {
   });
 
   it('embeds Arimo subsets rather than substituting a system face', async () => {
+    // Not a raw-bytes regex any more: pdf-lib's writer (the stitch's output,
+    // now every renderPdf output) groups most indirect objects, including
+    // /BaseFont dicts, into compressed /ObjStm object streams, so a
+    // plain-text search over the buffer finds nothing — see the spike note
+    // on why the same is true of the /Info dict. Walking the object graph
+    // through pdf-lib's own API is the instrument that still reaches them.
     const buf = await render('# T\n\nПривіт. Zażółć.\n');
-    const names = [...buf.toString('latin1').matchAll(/\/BaseFont\s*\/([A-Za-z0-9+#-]+)/g)].map((m) => m[1]);
+    const readBack = await PDFDocument.load(buf, { updateMetadata: false });
+    const names: string[] = [];
+    for (const [, obj] of readBack.context.enumerateIndirectObjects()) {
+      if (obj instanceof PDFDict) {
+        const baseFont = obj.get(PDFName.of('BaseFont'));
+        if (baseFont !== undefined) names.push(baseFont.toString().replace(/^\//, ''));
+      }
+    }
     expect(names.length).toBeGreaterThan(0);
-    expect(names.every((n) => /Arimo/.test(n!))).toBe(true);
+    expect(names.every((n) => /Arimo/.test(n))).toBe(true);
   });
 
-  it('prints the title once — in the header, not twice in the body', async () => {
+  it('prints the title once — page one carries no running header to duplicate it', async () => {
+    // This is the bug the clean-first-page change exists to fix: before it,
+    // page one printed the title as its own <h1> *and* Chromium's running
+    // header repeated it a few points above, in the same document. Page one
+    // is now stitched in from the empty-header render, so a short,
+    // single-page document should show the title exactly once.
     const text = (await pdfText(await render('# Report\n\nBody.\n'))).join(' ');
-    expect(text.match(/Report/g)?.length).toBe(2); // the doc title and the running header
+    expect(text.match(/Report/g)?.length).toBe(1);
+  });
+
+  it('renders a single-page document with no running-header chrome at all', async () => {
+    // The case most likely to be broken by a page-1/page-2..N stitch and
+    // least likely to be looked at: there is no "pages 2..N" to copy from
+    // the real-header render, so the stitch must still produce a valid
+    // one-page document from page 1 of the empty-header render alone.
+    const buf = await render('# Solo\n\nOne short paragraph, nothing else.\n');
+    const pages = await pdfText(buf);
+    expect(pages.length).toBe(1);
+    // No "N / M" counter and no repeated title — both are the running
+    // header's signature, and page one has none of it.
+    expect(pages[0]).not.toMatch(/\d+\s*\/\s*\d+/);
+    expect(pages[0]?.match(/Solo/g)?.length).toBe(1);
   });
 
   it('lets nothing off the machine, even when the document asks', async () => {

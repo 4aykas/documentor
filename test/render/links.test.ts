@@ -40,7 +40,7 @@ const REFUSED = [
 describe('every renderer refuses the same link schemes', () => {
   for (const href of REFUSED) {
     it(`refuses ${JSON.stringify(href)} in HTML and in Markdown`, async () => {
-      const html = await buildHtml(linkDoc(href), theme, { headerHeightPt: 40 });
+      const html = await buildHtml(linkDoc(href), theme);
       const md = renderMarkdown(linkDoc(href));
 
       expect(html).not.toContain('<a href');
@@ -61,7 +61,7 @@ describe('every renderer refuses the same link schemes', () => {
 
   for (const href of LIVE) {
     it(`keeps ${href} live in HTML and in Markdown`, async () => {
-      const html = await buildHtml(linkDoc(href), theme, { headerHeightPt: 40 });
+      const html = await buildHtml(linkDoc(href), theme);
       expect(html).toContain(`<a href="${href}">Click me</a>`);
       expect(renderMarkdown(linkDoc(href))).toContain(`[Click me](${href})`);
 

@@ -247,6 +247,71 @@ and the .docx is 1" reads as a rendering bug even though it is what asking two
 different engines to solve the same letterhead problem was always going to
 produce.
 
+## Clean first page (`pdf-clean-first-page` branch)
+
+Page one no longer carries Chromium's running header — it duplicated the
+document title (once as the header, once as the `<h1>` immediately below
+it) on every document. `src/render/pdf.ts`'s `renderPdf` now renders the
+same HTML twice against one Chromium page (real header template, then an
+empty one) and stitches page 1 from the empty-header render onto pages
+2..N from the real-header render, via `pdf-lib`. The two renders paginate
+identically — `headerTemplate` never reaches the body's layout box — which
+is what makes taking page 1 from one and the rest from the other safe; see
+`docs/superpowers/notes/2026-08-12-clean-first-page-spike.md` for the
+measurement. `RUNNING_HEADER_PT`, the constant that used to reserve extra
+top-margin band for the header, is gone entirely: a sweep (0, 4, 8, 12pt,
+real ink from a decoded raster, not pdfjs coordinates) found the header's
+own ink sitting at a fixed offset from the page's physical top regardless
+of the margin it was given, with a 33pt gap to the body's first line even
+at zero extra band. The top margin is now just the theme's own
+`marginPt`, on all four sides.
+
+**The rendered PDF is about 29% bigger than before this branch** — measured
+on the owner's real document (`9.1_external_assessment_reports.md`,
+`tebin` theme): 25,110 bytes on `main` (single render, `normalizePdfDates`
+patching two date fields in place) versus 32,439 bytes with the stitch. The
+cause is not the extra render pass itself — a lone stitched render of the
+kitchen-sink fixture came out *smaller* than a lone unstitched one in an
+earlier check, because `pdf-lib`'s writer recompresses more densely than
+Chromium's own incremental layout — it is that `copyPages` across two
+separate source `PDFDocument`s does not deduplicate identical embedded font
+subsets: the fonts used on page 1 get embedded a second time even though a
+byte-identical copy already arrived via the pages-2..N source document (see
+the spike note's Q3). Nothing is lost, nothing is wrong; a document with
+more pages, where the duplicated page-1-only subset is a smaller share of
+the total, would show less growth than this 3-page fixture did. No dedup
+was attempted this branch — it would mean walking both source documents'
+font objects and rewriting one to reference the other's, a `pdf-lib`-level
+piece of work closer to phase-3 sized than a numbers-only stitch.
+
+**`pdf-lib` is now a runtime dependency**, promoted from `devDependencies`
+because `renderPdf` needs it in production, not only in tests. It adds
+roughly 23MB to a consumer's `node_modules` (measured in the spike;
+`pdf-lib`'s own `dist/` folder is ~14MB of prebuilt browser/UMD/ES5 bundles
+the Node entry point never touches, but npm installs the whole package
+regardless). `npm audit --omit=dev` stayed at zero after the move.
+
+**A pathologically long document title will overprint later pages' body
+text, with no guard against it.** Chromium does not clip an oversized
+header template — proved by forcing a ~1000-character mixed-script title to
+wrap onto 7 lines and watching it overlap page 2's own heading (see the
+comment above the `margin` object in `src/render/pdf.ts`). No margin value
+fixes this: the header grows downward from a fixed point near the page's
+physical top no matter how much room it's given, so the only real guard
+would be bounding the title itself — not attempted this branch, and no
+existing validation in `src/ir/validate.ts` touches title length.
+
+**`normalize-pdf.ts` has no caller left in `src/`.** `renderPdf` now gets
+determinism from `pdf-lib`'s `updateMetadata: false` and writes the
+document's date back in explicitly via `setCreationDate`/
+`setModificationDate`, rather than patching Chromium's raw bytes after the
+fact — the regex `normalizePdfDates` uses cannot reach `pdf-lib`'s output
+anyway (different date format, and the fields it targets are compressed
+into object streams a plain-text search can't see). The file was not
+deleted: it carries a measured explanation of Chromium's own date-writing
+behaviour that has value independent of whether anything currently calls
+it, and removing it is the owner's call, not this branch's.
+
 ## Before publishing
 
 `npm audit --omit=dev` reports zero vulnerabilities at the end of this

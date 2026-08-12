@@ -51,7 +51,7 @@ describe('the TEBIN theme', () => {
   it('paints the logo by class, so the theme owns its colours', async () => {
     const theme = await loadTheme('tebin');
     const { doc } = ingestMarkdown(source);
-    const html = await buildHtml(doc, theme, { headerHeightPt: 40 });
+    const html = await buildHtml(doc, theme);
     // The mark carries the classes and the stylesheet carries the rules; if
     // either half goes missing the logo prints solid black, which is SVG's
     // initial fill and reads at a glance as "the stylesheet did not load".
@@ -63,7 +63,7 @@ describe('the TEBIN theme', () => {
   it('prints the letterhead the entity actually uses', async () => {
     const theme = await loadTheme('tebin');
     const { doc } = ingestMarkdown(source);
-    const html = await buildHtml(doc, theme, { headerHeightPt: 40 });
+    const html = await buildHtml(doc, theme);
     expect(html).toContain('TEBIN.PRO Sp. z o.o.');
     expect(html).toContain('NIP: 9552562516 | REGON: 521434962');
   });

@@ -73,16 +73,20 @@ describe('kitchen sink baseline', () => {
     expect(pages.length).toBeGreaterThan(1);
   });
 
-  it('the running header does not collide with the body', async () => {
+  it('the running header does not collide with the body, from page 2 on', async () => {
     // The collision is invisible to text extraction, so this asserts on the
-    // geometry instead: no glyph may sit above the top margin.
+    // geometry instead: no glyph may sit above the top margin. Page 1 is
+    // excluded on purpose: it is stitched in from the empty-header render
+    // and carries no running header at all, so it has nothing to collide
+    // with. Checking it here would only ever pass trivially.
     const theme = await loadTheme('plain');
     const { doc } = ingestMarkdown(source);
     const buf = await renderPdf(doc, theme, { epochSeconds: EPOCH, browser });
     resetPdfjsWorkerGlobal();
     const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
     const pdfDoc = await pdfjs.getDocument({ data: new Uint8Array(buf), useSystemFonts: false }).promise;
-    const page = await pdfDoc.getPage(1);
+    expect(pdfDoc.numPages).toBeGreaterThan(1);
+    const page = await pdfDoc.getPage(2);
     const height = page.getViewport({ scale: 1 }).height;
     const items = (await page.getTextContent()).items.filter((it) => 'str' in it && it.str.trim() !== '');
     // Header baseline sits inside the top margin; body text must start below it.
