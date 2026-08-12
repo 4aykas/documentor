@@ -171,9 +171,10 @@ ingester that does not make that promise, or for hand-built IR that skips
 ## Small things worth naming
 
 - `resetPdfjsWorkerGlobal` and its explanatory comment are duplicated
-  verbatim in `test/agreement/agree.test.ts` and
-  `test/baseline/kitchen-sink.test.ts`. Two places to keep in sync if pdf.js's
-  worker-reset requirement ever changes.
+  verbatim in `test/agreement/agree.test.ts`, `test/baseline/kitchen-sink.test.ts`,
+  and (since `ci-local-baselines` split the byte-compared pixel checks out
+  of that file) `test/baseline/local-only-pixels.test.ts`. Three places to
+  keep in sync if pdf.js's worker-reset requirement ever changes.
 - The CLI test asserting "writes a Word document" only checks that the
   output file exists. An empty buffer would pass it; the buffer's actual
   content is covered separately, by the renderer's own tests, not by this

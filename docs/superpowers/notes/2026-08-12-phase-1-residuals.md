@@ -81,10 +81,31 @@ the fourth renderer lands, not after.
 so nothing reaches a consumer of the package — but this is a publish gate, not
 a merge gate, and it should be triaged before the first `npm publish`.
 
-## Not yet verified anywhere
+## What the first CI run confirmed, and what it disproved
 
-CI is configured for Linux, macOS and Windows but has never run: the workflow
-triggers on pushes to `main` and on pull requests, and this work was done on a
-branch with no remote. Everything reported green was measured on Windows. The
-byte-identical gate in particular is a per-platform promise — the README says
-so — and the Linux and macOS halves of it are configured, not confirmed.
+CI ran for the first time once `main` got a remote (`gh run 31621998165`):
+ubuntu-latest and macos-latest went fully green, including the byte-identical
+PDF and DOCX reproducibility gates that had only ever been measured on this
+machine — the README's per-platform promise now holds on Linux and macOS by
+measurement, not only by configuration.
+
+windows-latest failed on exactly two assertions: the byte comparison of a
+rendered page against its committed PNG, in both `test/baseline/kitchen-sink.test.ts`
+and `test/baseline/tebin.test.ts`. The images CI rendered were downloaded and
+inspected by hand — visually identical to the committed baselines, same
+layout, same embedded Arimo, same Cyrillic and Polish glyphs — and still
+differed byte-for-byte. The workflow had assumed "Windows here equals Windows
+there"; the real cause is sub-pixel rasterisation differences between two
+Windows machines running different Chromium builds, which is the same
+"PNGs from the same SVG differ across renderer versions and platforms" the
+design already warns against, just arriving one layer closer to home than
+"different platform" — it turns out to include "different machine, same
+platform" too.
+
+The byte-comparison tests moved into their own file,
+`test/baseline/local-only-pixels.test.ts` — see its header comment — and CI now
+excludes only that file, on all three platforms. Everything else those two
+test files were checking (the running header not colliding with the body,
+the fixture spanning more than one page, ingest dropping nothing, the
+Markdown round trip, the TEBIN theme's markup assertions) is not
+rasterisation-dependent and runs everywhere, unchanged by this finding.

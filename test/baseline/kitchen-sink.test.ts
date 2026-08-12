@@ -1,7 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser } from 'playwright-core';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ingestMarkdown } from '../../src/ingest/md.js';
@@ -9,7 +8,6 @@ import { renderPdf } from '../../src/render/pdf.js';
 import { renderMarkdown } from '../../src/render/md.js';
 import { loadTheme } from '../../src/theme/resolve.js';
 import { pdfText } from '../helpers/pdf-text.js';
-import { rasterPages } from '../helpers/raster.js';
 
 // The brief's plain `new URL('.', import.meta.url).pathname` strips the
 // leading slash off a Windows drive path but leaves the rest of the
@@ -18,8 +16,6 @@ import { rasterPages } from '../helpers/raster.js';
 // every read below fails with ENOENT. fileURLToPath decodes correctly on
 // every platform.
 const HERE = fileURLToPath(new URL('.', import.meta.url));
-const BASELINE = join(HERE, '__baseline__');
-const ACTUAL = join(HERE, '__actual__');
 const EPOCH = 1_000_000_000;
 
 /**
@@ -49,21 +45,10 @@ beforeAll(async () => {
 afterAll(async () => { await browser.close(); });
 
 describe('kitchen sink baseline', () => {
-  it('every page matches its committed image', async () => {
-    const theme = await loadTheme('plain');
-    const { doc } = ingestMarkdown(source);
-    resetPdfjsWorkerGlobal();
-    const pages = await rasterPages(await renderPdf(doc, theme, { epochSeconds: EPOCH, browser }));
-
-    await mkdir(ACTUAL, { recursive: true });
-    for (const [i, png] of pages.entries()) {
-      const name = `page-${String(i + 1).padStart(2, '0')}.png`;
-      await writeFile(join(ACTUAL, name), png);
-      const golden = join(BASELINE, name);
-      expect(existsSync(golden), `no baseline for ${name} — review test/baseline/__actual__/${name} and copy it into __baseline__ if it is correct`).toBe(true);
-      expect(png.equals(await readFile(golden)), `${name} differs from its baseline; compare it with test/baseline/__actual__/${name}`).toBe(true);
-    }
-  });
+  // The byte comparison of a rendered page against its committed PNG lives
+  // in test/baseline/local-only-pixels.test.ts, not here — it cannot run in
+  // CI (rasterisation differs across machines) while everything below this
+  // comment can and does.
 
   it('renders the fixture in more than one page', async () => {
     const theme = await loadTheme('plain');
