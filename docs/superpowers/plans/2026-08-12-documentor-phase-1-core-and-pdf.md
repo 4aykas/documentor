@@ -2511,6 +2511,32 @@ describe('reproducibility guardrails', () => {
 Run: `npx vitest run test/guardrails/`
 Expected: PASS, 2 tests. If it reports an offender, fix the source — not the test.
 
+- [ ] **Step 2b: Write the built-output smoke test**
+
+Create `test/guardrails/dist-smoke.test.ts`. The whole suite runs from `src/`, so nothing else in the project ever exercises the artefact users actually install. Task 4 shipped a `packageRoot()` bug that was invisible from source and only appeared in `dist/`; this test is what stops the next one.
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
+const ROOT = new URL('../../', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+const ENTRY = join(ROOT, 'dist', 'bin', 'documentor.js');
+
+// `npm run build` is slow, so this suite does not run it — it asserts against
+// whatever is already built and skips otherwise. CI builds before testing, so
+// there the skip never fires; locally it keeps a fast watch loop fast.
+describe.skipIf(!existsSync(ENTRY))('the built CLI', () => {
+  it('loads its own bundled theme and reports itself ready', () => {
+    const out = execFileSync(process.execPath, [ENTRY, 'doctor'], { encoding: 'utf8' });
+    expect(out).toMatch(/^ok\s+Theme/m);
+  });
+});
+```
+
+Note the `skipIf`: a test that silently passes when it did not run is worse than no test. CI runs `npm run build` before `npx vitest run`, so add that step to the workflow below and confirm in the job log that this spec reports as run, not skipped.
+
 - [ ] **Step 3: Write `.github/workflows/ci.yml`**
 
 The baseline image comparison is pinned to **one** platform: PNGs rasterised from the same PDF differ across platforms, so comparing them everywhere would redden CI for its own reasons rather than for a real change. That platform is `windows-latest`, because the baseline is generated on the developer's Windows machine in Task 8 — pinning it to Linux instead would mean the committed images could never match, which is a check that fails for its own reasons in the other direction.
@@ -2537,6 +2563,10 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run typecheck
+      # Built before the tests so test/guardrails/dist-smoke.test.ts runs
+      # rather than skipping — it is the only check that touches the artefact
+      # users actually install.
+      - run: npm run build
       - name: Test (excluding the image baseline)
         if: matrix.os != 'windows-latest'
         run: npx vitest run --exclude 'test/baseline/kitchen-sink.test.ts'
