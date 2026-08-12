@@ -6,7 +6,11 @@ import { PAGE_PT, type PageSize, type Theme } from './types.js';
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const PAGE_SIZES = new Set<PageSize>(['A4', 'Letter']);
-const PACKAGE_NAME = '@tebin/documentor';
+// Exported so the packaging guardrail can compare it against package.json's
+// own name rather than keeping a second copy of it. Renaming the package
+// without changing this breaks theme resolution only at runtime, in an
+// installed copy — the one place nobody is watching.
+export const PACKAGE_NAME = '@tebin/documentor';
 const PNG_DATA_URI = /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/;
 
 /**
