@@ -11,8 +11,14 @@ export type Tokens = Record<string, string>;
  * Which semantic class a brand token becomes in a logo. The host stylesheet
  * (see the .logo rules in render/html.ts) paints these from the theme's own
  * colours, which is what stops the mark drifting from the document around it.
+ *
+ * This map and those rules are two halves of one contract, and only one half
+ * is in this file: a class emitted here with no rule there paints with SVG's
+ * initial fill — solid black, which the stylesheet's own comment reads as "the
+ * stylesheet did not load". Exported so a test can hold the two halves
+ * together by deriving both sides rather than listing the classes by hand.
  */
-const CLASS_FOR_TOKEN: Record<string, string> = {
+export const CLASS_FOR_TOKEN: Record<string, string> = {
   brand: 'c-brand',
   grey: 'c-muted',
   ink: 'c-ink',

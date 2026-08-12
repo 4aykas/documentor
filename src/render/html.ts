@@ -183,6 +183,7 @@ body{
 .logo svg{ height: 100%; width: auto; display: block; }
 .logo .c-brand{ fill: var(--brand); }
 .logo .c-muted{ fill: var(--muted); }
+.logo .c-ink{ fill: var(--ink); }
 .sheet-head{ display:flex; align-items:flex-start; justify-content:space-between; gap: 24pt; }
 .letterhead{ text-align: right; color: var(--muted); }
 .lh-name{ font-size: ${ty.smallPt + 0.5}pt; font-weight: 700; }

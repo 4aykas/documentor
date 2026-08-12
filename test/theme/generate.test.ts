@@ -2,8 +2,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { buildTheme, readTokens, recolourLogo, type Tokens } from '../../src/theme/generate.js';
+import { CLASS_FOR_TOKEN, buildTheme, readTokens, recolourLogo, type Tokens } from '../../src/theme/generate.js';
 import { findInlinePaint, resolveTheme } from '../../src/theme/resolve.js';
+import { buildHtml } from '../../src/render/html.js';
 
 const BRAND = join(fileURLToPath(new URL('../../', import.meta.url)), 'brand', 'tebin');
 const TOKENS: Tokens = { brand: '#DA291C', grey: '#898D8D', ink: '#1A1A1A' };
@@ -42,6 +43,35 @@ describe('recolourLogo', () => {
   it('matches a token colour whatever case it is written in', () => {
     const svg = '<svg><defs><style>.cls-1 { fill: #da291c; }</style></defs><path class="cls-1" d="M0 0"/></svg>';
     expect(recolourLogo(svg, TOKENS)).toContain('class="c-brand"');
+  });
+});
+
+describe('the generator and the stylesheet', () => {
+  it('emits no logo class the stylesheet leaves unpainted', async () => {
+    // The two halves of one contract: generate.ts decides which class a brand
+    // token becomes, html.ts decides what that class paints. Nothing in the
+    // type system connects them, and the failure is invisible in every check
+    // that does exist — an unpainted class is valid SVG that renders in the
+    // initial fill, solid black, which is exactly what html.ts's own comment
+    // says means the stylesheet did not load.
+    //
+    // Both sides are derived, never listed: a test naming the three classes by
+    // hand would go stale the same way the stylesheet did, and would then
+    // agree with itself while the two files disagreed.
+    const emitted = new Set(Object.values(CLASS_FOR_TOKEN));
+    const css = await buildHtml(
+      { meta: { title: 'T', lang: 'en' }, blocks: [] },
+      resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C' } }),
+      { headerHeightPt: 40 },
+    );
+    const painted = new Set([...css.matchAll(/\.logo\s+\.([\w-]+)\s*\{/g)].map((m) => m[1]!));
+    expect(painted.size, 'no .logo rules found — the extraction, not the stylesheet, is what broke').toBeGreaterThan(0);
+    for (const cls of emitted) {
+      expect(
+        painted.has(cls),
+        `the generator can emit class="${cls}" but render/html.ts paints no .logo .${cls} rule — a brand asset using it would print solid black`,
+      ).toBe(true);
+    }
   });
 });
 
