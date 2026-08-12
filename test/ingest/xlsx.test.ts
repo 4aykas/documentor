@@ -202,6 +202,111 @@ describe('ingestXlsx — trimming and header detection', () => {
   });
 });
 
+describe('ingestXlsx — preamble lifted out, empty columns dropped', () => {
+  it('lifts a one-cell title over a blank row, and reads the real header row — the shareholders-register shape', async () => {
+    // Shaped exactly like docs/superpowers/notes/2026-08-13-what-a-real-register-looks-like.md's
+    // own example: a one-cell title, a blank row, then the real header two
+    // rows down. Before this change the reader started its table at row 1,
+    // inspected the title, correctly said "not a header", and carried the
+    // real header down as data.
+    const rows =
+      row(1, inlineStr('A1', 'Shareholders Register')) +
+      row(2, '') +
+      row(3, `${inlineStr('A3', 'Name')}${inlineStr('B3', 'Role')}`) +
+      row(4, `${inlineStr('A4', 'Alice')}${inlineStr('B4', 'Director')}`);
+    const buf = await oneSheetXlsx(rows, { sheetName: 'Register' });
+    const { doc, dropped } = await ingestXlsx(buf);
+
+    // Single sheet, no caller-supplied title, exactly one caption to
+    // promote: the "natural reading" case from the design, so the lifted
+    // title becomes the document's own title rather than a floating para.
+    expect(doc.meta.title).toBe('Shareholders Register');
+    expect(doc.blocks).toEqual([
+      { t: 'heading', level: 1, text: [{ t: 'text', v: 'Register' }] },
+      {
+        t: 'table',
+        head: [[{ t: 'text', v: 'Name' }], [{ t: 'text', v: 'Role' }]],
+        rows: [[[{ t: 'text', v: 'Alice' }], [{ t: 'text', v: 'Director' }]]],
+        align: ['l', 'l'],
+      },
+    ]);
+    expect(dropped.some((d) => d.includes('not a header'))).toBe(false);
+    expect(dropped.some((d) => d.includes('lifted') && d.includes('document title'))).toBe(true);
+  });
+
+  it('drops a wholly empty column between two populated ones and one at the right edge, keeping order and alignment', async () => {
+    // B and D carry no <v> anywhere — present only because they carry a
+    // style (s="1"), same as the corpus's own T/U columns the design note
+    // describes. Referencing them with a bare <c r="…" s="…"/> (no value) is
+    // what makes them part of the used range without giving them content.
+    const rows =
+      row(1, `${inlineStr('A1', 'Name')}<c r="B1" s="1"/>${inlineStr('C1', 'Role')}<c r="D1" s="1"/>`) +
+      row(2, `${inlineStr('A2', 'Alice')}<c r="B2" s="1"/>${inlineStr('C2', 'Director')}<c r="D2" s="1"/>`);
+    const buf = await oneSheetXlsx(rows);
+    const { doc } = await ingestXlsx(buf);
+    const table = doc.blocks[1] as { head: unknown; rows: unknown[][][]; align: string[] };
+    expect(table.head).toEqual([[{ t: 'text', v: 'Name' }], [{ t: 'text', v: 'Role' }]]);
+    expect(table.rows).toEqual([[[{ t: 'text', v: 'Alice' }], [{ t: 'text', v: 'Director' }]]]);
+    expect(table.align).toEqual(['l', 'l']);
+  });
+
+  it('keeps every row of a genuinely single-column list as data — the preamble rule stops short of consuming it', async () => {
+    // No row here ever has two filled cells, so the naive form of the rule
+    // would walk the whole sheet and "lift" it, leaving an empty table. The
+    // guard has to recognise that and read the sheet as one column of data
+    // instead. Numeric cells also keep header-detection from muddying the
+    // assertion — this test is about the preamble guard, not the header rule.
+    const rows = row(1, num('A1', 10)) + row(2, num('A2', 20)) + row(3, num('A3', 30));
+    const buf = await oneSheetXlsx(rows);
+    const { doc, dropped } = await ingestXlsx(buf);
+    const table = doc.blocks[1] as { head: unknown; rows: unknown[][][] };
+    expect(table.rows).toEqual([
+      [[{ t: 'text', v: '10' }]],
+      [[{ t: 'text', v: '20' }]],
+      [[{ t: 'text', v: '30' }]],
+    ]);
+    expect(dropped.some((d) => d.includes('lifted'))).toBe(false);
+  });
+
+  it('lifts nothing when the first row already looks like a table row', async () => {
+    const rows =
+      row(1, `${inlineStr('A1', 'Name')}${inlineStr('B1', 'Role')}`) +
+      row(2, `${inlineStr('A2', 'Alice')}${inlineStr('B2', 'Director')}`);
+    const buf = await oneSheetXlsx(rows);
+    const { doc, dropped } = await ingestXlsx(buf);
+    expect(doc.blocks.filter((b) => b.t === 'para')).toEqual([]);
+    expect(dropped.some((d) => d.includes('lifted'))).toBe(false);
+  });
+
+  it('reports each lifted preamble row by sheet, row number and text, and keeps it as a para block above the table', async () => {
+    // An explicit --title disables the "promote to document title" path, so
+    // this exercises the ordinary para-block destination and its report.
+    const rows =
+      row(1, inlineStr('A1', 'Legal Structure, Locations')) +
+      row(2, `${inlineStr('A2', 'Entity')}${inlineStr('B2', 'Country')}`) +
+      row(3, `${inlineStr('A3', 'HoldCo')}${inlineStr('B3', 'NL')}`);
+    const buf = await oneSheetXlsx(rows, { sheetName: 'Structure' });
+    const { doc, dropped } = await ingestXlsx(buf, { title: 'Due Diligence Pack' });
+
+    expect(doc.blocks).toEqual([
+      { t: 'heading', level: 1, text: [{ t: 'text', v: 'Structure' }] },
+      { t: 'para', text: [{ t: 'text', v: 'Legal Structure, Locations' }] },
+      {
+        t: 'table',
+        head: [[{ t: 'text', v: 'Entity' }], [{ t: 'text', v: 'Country' }]],
+        rows: [[[{ t: 'text', v: 'HoldCo' }], [{ t: 'text', v: 'NL' }]]],
+        align: ['l', 'l'],
+      },
+    ]);
+    const msg = dropped.find((d) => d.includes('lifted'));
+    expect(msg).toBeDefined();
+    expect(msg).toContain('"Structure"');
+    expect(msg).toContain('row 1');
+    expect(msg).toContain('Legal Structure, Locations');
+    expect(msg).toContain('above the table as text');
+  });
+});
+
 describe('ingestXlsx — merges: flatten a single-row span, refuse a row-spanning one', () => {
   it('flattens a merge confined to one row: value in the leftmost cell, the rest of the span blank, other columns unmoved', async () => {
     // The header row (row 1) is ordinary and fully filled, so header
