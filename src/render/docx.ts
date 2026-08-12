@@ -277,11 +277,21 @@ function blocks(b: Block, theme: Theme): (Paragraph | Table)[] {
  * big-endian 32-bit integers. Reading them is thirty bytes of arithmetic and
  * removes the alternative, which is to assume an aspect ratio and stretch
  * somebody's logo to fit it.
+ *
+ * `null` means "not a usable PNG" — a bad signature, too few bytes to hold an
+ * IHDR, or a declared width or height of 0, which would otherwise divide or
+ * scale into `NaN` further down. What a `null` should become is the caller's
+ * decision, not this function's: a document embedding untrusted input
+ * degrades to a placeholder, but a theme's own logo asset failing to parse is
+ * an authoring error and should throw naming the asset, not print a
+ * letterhead with silently no mark. Do not restore the throw here.
  */
-function pngSize(bytes: Buffer): { w: number; h: number } {
+function pngSize(bytes: Buffer): { w: number; h: number } | null {
   const signature = '89504e470d0a1a0a';
-  if (bytes.subarray(0, 8).toString('hex') !== signature) throw new Error('not a PNG');
-  return { w: bytes.readUInt32BE(16), h: bytes.readUInt32BE(20) };
+  if (bytes.length < 24 || bytes.subarray(0, 8).toString('hex') !== signature) return null;
+  const w = bytes.readUInt32BE(16);
+  const h = bytes.readUInt32BE(20);
+  return w > 0 && h > 0 ? { w, h } : null;
 }
 
 /** Word describes a picture in pixels at 96 dpi; the theme thinks in points. */

@@ -136,6 +136,11 @@ describe('renderDocx', () => {
 const PNG_2x1 =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAFElEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkS7cAAAAAElFTkSuQmCC';
 
+// PNG_2x1 with its IHDR width overwritten to 0. Same signature and byte
+// length, so it only fails on the field that matters here.
+const PNG_ZERO_WIDTH =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAAAAAABCAYAAAD0In+KAAAAFElEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkS7cAAAAAElFTkSuQmCC';
+
 describe('images', () => {
   it('embeds a raster data: URI as a real picture', async () => {
     const buf = await render(doc({ t: 'image', src: PNG_2x1, alt: 'a red bar' }));
@@ -161,6 +166,22 @@ describe('images', () => {
     expect(xml).not.toContain('<w:drawing>');
     expect(xml).toContain('a diagram');
     expect(xml).toContain('SVG');
+  });
+
+  it('falls back to a placeholder rather than emit a zero-sized or NaN-sized picture', async () => {
+    const xml = await docxPart(await render(doc({ t: 'image', src: PNG_ZERO_WIDTH, alt: 'blank' })), 'word/document.xml');
+    expect(xml).not.toContain('<w:drawing>');
+    expect(xml).toContain('blank');
+  });
+
+  it('does not fail the whole document over a payload whose mime label lied', async () => {
+    // Labelled image/png but the bytes are not a PNG at all — pngSize must
+    // report failure rather than throw, or one bad picture takes the
+    // document down with it.
+    const notReallyPng = `data:image/png;base64,${Buffer.from('not a png').toString('base64')}`;
+    const xml = await docxPart(await render(doc({ t: 'image', src: notReallyPng, alt: 'mislabelled' })), 'word/document.xml');
+    expect(xml).not.toContain('<w:drawing>');
+    expect(xml).toContain('mislabelled');
   });
 
   it('turns a remote image into a placeholder naming its host', async () => {
