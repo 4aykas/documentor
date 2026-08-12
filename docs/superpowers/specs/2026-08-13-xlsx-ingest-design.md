@@ -56,6 +56,23 @@ other two ingesters have.
 - **Empty leading rows and columns are trimmed**, and fully empty rows inside
   the used range are kept: a blank row inside a register usually separates
   groups, and deleting it changes what the table says.
+- **A column empty across every row is dropped.** Measured after the first
+  version shipped: 62 of the corpus's 112 worksheets carry at least one, 642
+  columns in all, present in the file because they carry a style. They are not
+  data; they take width from the columns that are.
+- **A preamble above the table is lifted out of it.** A sheet's table often
+  does not start at its first row — a one-cell title, sometimes a blank row
+  under it, sometimes a section caption. Counting rows before the first row
+  holding two or more filled cells, 64 of 112 worksheets have one, most often
+  a single row. Left in place, the header rule inspects the title, correctly
+  reports "not a header", and carries the real header down into the data —
+  which is what both of this document's own named examples did.
+
+  Those rows become text above the table, never a deletion. And the rule stops
+  short of consuming the sheet: a genuinely single-column list has no row with
+  two filled cells at all, so a preamble that would swallow every row is not a
+  preamble, and the sheet is read as one column of data. Anything lifted is
+  reported, because a reader whose caption moved should be told where it went.
 - **Dates.** A date in a spreadsheet is a number wearing a format. The number
   format decides, so the styles part must be read; a date rendered as `45107`
   is worse than useless. Where the format cannot be resolved, the raw value is
