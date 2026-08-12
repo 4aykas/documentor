@@ -34,6 +34,16 @@ describe('the exit-code contract', () => {
     for (const format of FORMATS) expect(r.stdout).toContain(format);
   });
 
+  it('mentions --plain-names and explains what it does to the output name', () => {
+    // Pins the option to its explanation the same way the format list above
+    // is pinned: the option appearing in the flags line and the sentence
+    // describing naming going stale independently is exactly the class of
+    // bug the format-list test above exists to prevent.
+    const r = run('--help');
+    expect(r.stdout).toContain('--plain-names');
+    expect(r.stdout).toContain('<name>.<ext>');
+  });
+
   it('exits 2 with no command', () => {
     expect(run().status).toBe(2);
   });
