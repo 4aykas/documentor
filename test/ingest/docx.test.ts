@@ -137,6 +137,24 @@ describe('ingestDocx — hand-built fixtures (what the round trip cannot reach)'
     expect(doc.blocks).toEqual([{ t: 'para', text: [{ t: 'strong', children: [{ t: 'text', v: 'bold' }] }] }]);
   });
 
+  it('reads a tab as a space instead of silently joining the two words it separated', async () => {
+    // Round-2 regression: `s.startsWith('<w:t')` is a plain string-prefix
+    // test, blind to the `\b` word-boundary logic that correctly told
+    // `<w:tab/>` and `<w:t>` apart as separate regex alternatives — and
+    // "<w:tab/>" does start with the four characters "<w:t". With the checks
+    // in the wrong order, every tab fell into the `<w:t>` branch, read a
+    // capture group that didn't exist as `''`, and vanished: `a<w:tab/>b`
+    // ingested as `"ab"`, with nothing in `dropped` to say a tab went
+    // anywhere. The IR has no tab of its own — a renderer sets its own
+    // spacing — so a space is the closest faithful stand-in.
+    const body = para(`${run('a')}<w:r><w:tab/></w:r>${run('b')}`);
+    const buf = await buildDocx({ 'word/document.xml': documentXml(body) });
+    const { doc, dropped } = await ingestDocx(buf);
+
+    expect(doc.blocks).toEqual([{ t: 'para', text: [{ t: 'text', v: 'a b' }] }]);
+    expect(dropped).toEqual([]);
+  });
+
   it('reads an ordered and a bulleted list, each at two levels, with opposite formats across levels so an ilvl-fallback bug cannot pass unnoticed', async () => {
     // Review round 1, Important 5: the original fixture gave both abstracts
     // the same "ordered-ness" at ilvl 0 and ilvl 1, so deleting the ilvl-1
@@ -245,6 +263,40 @@ describe('ingestDocx — hand-built fixtures (what the round trip cannot reach)'
     ]);
   });
 
+  it('honours w:lvlRestart="0" as ECMA-376’s reserved "never restart", not as "restart at ilvl 0"', async () => {
+    // Round-2 regression: `resetDeeperCounters` compared the incoming ilvl
+    // directly against `lvlRestart` with no special case for 0, so
+    // `w:val="0"` — ECMA-376's sentinel for "this level is never restarted"
+    // — was read as "restart whenever ilvl 0 occurs", the single most common
+    // interruption there is. Kept as its own test rather than folded into
+    // the explicit-lvlRestart test above: 0 is a distinct meaning from
+    // "restart at level N", and a shared assertion would not say which of
+    // the two broke if either regressed.
+    const numberingXml = `<?xml version="1.0" encoding="UTF-8"?><w:numbering ${NS}>
+      <w:abstractNum w:abstractNumId="10">
+        <w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/></w:lvl>
+        <w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlRestart w:val="0"/></w:lvl>
+      </w:abstractNum>
+      <w:num w:numId="1"><w:abstractNumId w:val="10"/></w:num>
+    </w:numbering>`;
+    const body = [
+      para(run('a'), numPr(1, 0)),
+      para(run('a.1'), numPr(1, 1)),
+      para(run('b'), numPr(1, 0)),
+      para(run('b.?'), numPr(1, 1)),
+    ].join('');
+    const buf = await buildDocx({ 'word/document.xml': documentXml(body), 'word/numbering.xml': numberingXml });
+    const { doc } = await ingestDocx(buf);
+
+    expect(doc.blocks).toEqual([
+      { t: 'list', ordered: true, depth: 0, items: [[{ t: 'text', v: 'a' }]] },
+      { t: 'list', ordered: true, depth: 1, items: [[{ t: 'text', v: 'a.1' }]] },
+      { t: 'list', ordered: true, depth: 0, items: [[{ t: 'text', v: 'b' }]], start: 2 },
+      // Never restarted: continues from `a.1`'s 1, i.e. this is item 2, not 1.
+      { t: 'list', ordered: true, depth: 1, items: [[{ t: 'text', v: 'b.?' }]], start: 2 },
+    ]);
+  });
+
   it('follows a list style’s numStyleLink to the abstract that actually carries its levels', async () => {
     // An ordinary shape for a Word list built from a paragraph/list style
     // (Format ▸ Bullets and Numbering, linked to a style), not the
@@ -275,7 +327,12 @@ describe('ingestDocx — hand-built fixtures (what the round trip cannot reach)'
     // its `<w:r>` is ordinary content to the run scanner, `<w:ins>` wrapper
     // or not — a deletion reads as rejected and contributes no text. Both are
     // defensible; neither may be invisible on a due-diligence document, so
-    // this asserts the paragraph is reported exactly once, naming both counts.
+    // this asserts the paragraph is reported exactly once, naming both
+    // counts — and, per round 2, exactly once overall: the deletion's own
+    // `<w:delText>` used to also fall through to a second, generic
+    // "run content this ingester does not read" entry, undoing part of the
+    // round-1 fix that made `dropped` trustworthy. `toEqual` on the whole
+    // array (not `.toContain`) is what would catch that duplicate coming back.
     const body = para(
       `${run('kept ')}<w:ins w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z">${run('inserted ')}</w:ins>` +
         `<w:del w:id="2" w:author="A" w:date="2026-01-01T00:00:00Z"><w:r><w:delText xml:space="preserve">deleted </w:delText></w:r></w:del>${run('text')}`,
@@ -286,7 +343,9 @@ describe('ingestDocx — hand-built fixtures (what the round trip cannot reach)'
     expect(doc.blocks).toEqual([
       { t: 'para', text: [{ t: 'text', v: 'kept inserted text' }] },
     ]);
-    expect(dropped).toContain('paragraph contains 1 tracked insertion (kept, read as accepted) and 1 tracked deletion (dropped, read as rejected)');
+    expect(dropped).toEqual([
+      'paragraph contains 1 tracked insertion (kept, read as accepted) and 1 tracked deletion (dropped, read as rejected)',
+    ]);
   });
 
   it('keeps the text on either side of a page break inside the same run', async () => {

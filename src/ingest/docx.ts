@@ -202,7 +202,13 @@ function resolveLevel(numbering: Numbering, numId: string, ilvl: string): Lvl | 
  * "i", not "ii", because `b` at ilvl 0 restarts every deeper level under it.
  * An explicit `<w:lvlRestart w:val="N"/>` narrows that to "restart only when
  * ilvl N specifically occurs", which is honoured here by checking the
- * *deeper* level's own restart value, not the incoming paragraph's.
+ * *deeper* level's own restart value, not the incoming paragraph's — with one
+ * reserved value: ECMA-376 gives `N=0` the meaning "this level is *never*
+ * restarted", not "restart at ilvl 0". Treating it as an ordinary ilvl to
+ * compare against (as an earlier version of this function did) inverted the
+ * document's own instruction — restarting on the single most common
+ * interruption instead of never restarting at all, silently, since a
+ * misnumbered list has nothing to say in `dropped`.
  */
 function resetDeeperCounters(numbering: Numbering, counters: Map<string, number>, numId: string, ilvl: number): void {
   const prefix = `${numId}:`;
@@ -211,7 +217,8 @@ function resetDeeperCounters(numbering: Numbering, counters: Map<string, number>
     const otherIlvl = Number(key.slice(prefix.length));
     if (!(otherIlvl > ilvl)) continue;
     const lvl = resolveLevel(numbering, numId, String(otherIlvl));
-    const triggers = lvl?.lvlRestart !== undefined ? ilvl === lvl.lvlRestart : true;
+    const restart = lvl?.lvlRestart;
+    const triggers = restart === undefined ? true : restart !== 0 && ilvl === restart;
     if (triggers) counters.delete(key);
   }
 }
@@ -358,11 +365,12 @@ type Atom = { kind: 'text'; v: string } | { kind: 'pagebreak' } | { kind: 'drawi
  * file-header comment), so an inserted run reads as accepted content with no
  * trace here at all — that is a deliberate policy (Word's own default
  * display), made visible instead by `reportTrackedChanges` counting the
- * wrappers directly, once per paragraph. A deletion's text lives in
- * `<w:delText>`, which this function does not recognise, so it does fall
- * through to the leftover report below — correctly dropped, but as generic
- * "content not read" rather than named as a deletion, which is why
- * `reportTrackedChanges` also counts deletions rather than relying on this.
+ * wrappers directly, once per paragraph. A deletion's own text lives in
+ * `<w:delText>`, which *is* recognised below (consumed, contributing no
+ * characters) precisely so it does not also fall through to the leftover
+ * report as generic "content not read" — `reportTrackedChanges` already
+ * names it as a deletion once per paragraph, and a second, unlabelled entry
+ * for the same thing would be noise the round-1 fix was trying to remove.
  */
 function runAtoms(runXml: string, sink: Sink): { fmt: Fmt; atoms: Atom[] } {
   const rPr = /<w:rPr>[\s\S]*?<\/w:rPr>/.exec(runXml)?.[0] ?? '';
@@ -391,14 +399,28 @@ function runAtoms(runXml: string, sink: Sink): { fmt: Fmt; atoms: Atom[] } {
   // `<w:br …/>` ones so a `w:type="page"` break is classified as a break, not
   // read as a plain line break.
   const partRe =
-    /<w:t\b[^>]*>([\s\S]*?)<\/w:t>|<w:t\/>|<w:tab\/>|<w:br\b[^>]*\bw:type="page"[^>]*\/>|<w:br\/>|<w:br\b[^>]*\/>|<w:cr\/>|<w:noBreakHyphen\/>|<w:softHyphen\/>|<w:drawing>[\s\S]*?<\/w:drawing>/g;
+    /<w:t\b[^>]*>([\s\S]*?)<\/w:t>|<w:t\/>|<w:tab\/>|<w:br\b[^>]*\bw:type="page"[^>]*\/>|<w:br\/>|<w:br\b[^>]*\/>|<w:cr\/>|<w:noBreakHyphen\/>|<w:softHyphen\/>|<w:delText\b[^>]*>[\s\S]*?<\/w:delText>|<w:delText\/>|<w:drawing>[\s\S]*?<\/w:drawing>/g;
   for (const m of inner.matchAll(partRe)) {
     const s = m[0];
-    if (s.startsWith('<w:t')) text += decodeXmlEntities(m[1] ?? '');
-    else if (s === '<w:tab/>') text += '\t';
+    // `<w:tab/>` must be tested before the `<w:t` prefix check below: a
+    // plain `s.startsWith('<w:t')` is a *string* prefix test, blind to the
+    // regex's own `\b` word-boundary logic that told the two apart as
+    // separate alternatives in the first place — "<w:tab/>" does start with
+    // the four characters "<w:t", so with the checks the other way round
+    // every tab fell into the `<w:t>` branch, read its (nonexistent) capture
+    // group as `''`, and vanished with no trace: `a<w:tab/>b` ingested as
+    // `"ab"`. The order here is load-bearing, not incidental — do not
+    // reorder these two without re-reading this comment.
+    if (s === '<w:tab/>') {
+      // The IR has no tab; a renderer sets its own spacing, so a space is
+      // the closest faithful substitute — better than silently joining the
+      // two words the tab was separating.
+      text += ' ';
+    } else if (s.startsWith('<w:t')) text += decodeXmlEntities(m[1] ?? '');
     else if (s === '<w:cr/>') text += '\n';
     else if (s === '<w:noBreakHyphen/>') text += '\u2011';
     else if (s === '<w:softHyphen/>') { /* no visible character when the line doesn't break there */ }
+    else if (s.startsWith('<w:delText')) { /* a tracked deletion's own text, deliberately not read \u2014 see this function's own doc comment; consumed here so it does not also surface as generic unread-content noise */ }
     else if (s.startsWith('<w:drawing')) { flushText(); atoms.push({ kind: 'drawing', xml: s }); }
     else if (/\bw:type="page"/.test(s)) { flushText(); atoms.push({ kind: 'pagebreak' }); }
     // A `<w:br/>` that isn't a page break (a column or text-wrapping break,
