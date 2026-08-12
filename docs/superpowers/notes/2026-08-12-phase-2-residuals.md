@@ -30,6 +30,21 @@ table out; there is no Word equivalent reproducible across versions, and a
 width computed from the text would need font metrics this renderer does not
 have. Every DOCX table column is the same width regardless of content.
 
+**Word embeds a PNG and nothing else, where HTML and PDF embed any
+raster.** `src/render/docx.ts` reads a picture's natural dimensions from
+PNG's IHDR chunk, and that is the only decoder it has. A picture needs its
+aspect ratio even when the block supplies `widthPt`, because the height has
+nothing else to come from — so a JPEG or a GIF cannot be scaled at all, with
+or without a width. `src/render/html.ts` embeds any `data:` URI, and a JPEG
+is one, so the same document is a picture in the PDF and a bordered
+placeholder in the .docx. This was already the behaviour; what changed this
+phase is that the `RASTER` regex stopped *accepting* jpeg and gif, whose only
+effect was to route them to the same placeholder from one branch further
+down, while the comment beside it claimed the block could rescue them by
+saying how wide it is. Closing the gap means a JPEG decoder — enough of one
+to read SOF0's height and width — which is a phase-3-sized piece of work, not
+a merge-eve one.
+
 **No visual baseline for DOCX.** Word cannot be driven headlessly here, and
 rasterising through a converter would test the converter, not the renderer.
 The agreement test (below) is what stands in for it.
@@ -137,9 +152,7 @@ ingester that does not make that promise, or for hand-built IR that skips
   relationship-integrity test passes vacuously if it finds zero `r:id`
   attributes; table cells set no margins against Word's 108-dxa default,
   and rows do not set `cantSplit` against HTML's `break-inside: avoid`;
-  column count is computed with `Math.max` over a spread that is `-Infinity`
-  for a table with no head and no rows, which happens to degrade safely
-  rather than by design; and one unused `IParagraphOptions` type import
+  and one unused `IParagraphOptions` type import
   survives because no lint script exists to catch it.
 
 ## Before publishing

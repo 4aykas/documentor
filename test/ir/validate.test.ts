@@ -31,6 +31,16 @@ describe('validateDoc', () => {
     expect(() => validateDoc(doc)).toThrow(/blocks\[1\]/);
   });
 
+  it('rejects a table with no columns', () => {
+    // Every other column check compares against head's length, so all of them
+    // pass trivially for an empty head — this is the one malformed table that
+    // used to get through, and each renderer then had to survive it. Rejecting
+    // it once here is cheaper than three renderers learning to.
+    const doc = { ...good, blocks: [{ t: 'table', head: [], align: [], rows: [] }] };
+    expect(() => validateDoc(doc)).toThrow(/blocks\[0\]\.head/);
+    expect(() => validateDoc(doc)).toThrow(/at least one column/);
+  });
+
   it('accepts an ordered list with a positive integer start', () => {
     const doc = { ...good, blocks: [{ t: 'list', ordered: true, depth: 0, items: [[]], start: 3 }] };
     expect(() => validateDoc(doc)).not.toThrow();

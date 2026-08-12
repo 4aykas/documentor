@@ -176,6 +176,15 @@ function columnDxa(theme: Theme): number {
 
 function table(b: Extract<Block, { t: 'table' }>, theme: Theme): Table {
   const cols = Math.max(b.head.length, ...b.rows.map((r) => r.length));
+  // A table with neither head nor rows makes `cols` 0, which lays out as an
+  // empty <w:tblGrid/> and a row with no cells — structurally a table, visibly
+  // nothing, and Word's own reaction to it is not something this renderer can
+  // vouch for. ir/validate.ts refuses such a table before it can reach here,
+  // so this guard is unreachable through the CLI; it stays because hand-built
+  // IR skips the validator, and because failing closed is what this renderer
+  // already does with a PNG whose dimensions it cannot read rather than
+  // scaling by NaN.
+  if (cols < 1) throw new Error('table has no columns — nothing to draw a grid from');
   const total = columnDxa(theme);
   // Equal columns, deliberately. The HTML renderer lets the browser lay the
   // table out; Word has no equivalent that is reproducible across versions,
@@ -252,19 +261,14 @@ function blocks(b: Block, theme: Theme): (Paragraph | Table)[] {
     case 'pagebreak':
       return [new Paragraph({ children: [new PageBreak()] })];
     case 'image': {
-      const raster = RASTER.exec(b.src);
-      if (!raster) return [imagePlaceholder(b, theme)];
+      if (!RASTER.test(b.src)) return [imagePlaceholder(b, theme)];
       const bytes = Buffer.from(b.src.slice(b.src.indexOf(',') + 1), 'base64');
-      const type = raster[1] === 'jpeg' ? 'jpg' : (raster[1] as 'png' | 'gif');
-      // Only a PNG's size is read directly; for the others the block must say
-      // how wide it is, or there is nothing to scale from and the placeholder
-      // is the honest answer.
-      const natural = type === 'png' ? pngSize(bytes) : null;
-      const widthPt = b.widthPt ?? (natural ? Math.min(PAGE_PT[theme.page.size].w - theme.page.marginPt * 2, natural.w * 0.75) : null);
-      if (widthPt === null || natural === null) return [imagePlaceholder(b, theme)];
+      const natural = pngSize(bytes);
+      if (natural === null) return [imagePlaceholder(b, theme)];
+      const widthPt = b.widthPt ?? Math.min(PAGE_PT[theme.page.size].w - theme.page.marginPt * 2, natural.w * 0.75);
       const heightPt = (widthPt * natural.h) / natural.w;
       return [new Paragraph({
-        children: [new ImageRun({ data: bytes, type, transformation: { width: px96(widthPt), height: px96(heightPt) } })],
+        children: [new ImageRun({ data: bytes, type: 'png', transformation: { width: px96(widthPt), height: px96(heightPt) } })],
         spacing: { after: dxa(8) },
       })];
     }
@@ -297,7 +301,19 @@ function pngSize(bytes: Buffer): { w: number; h: number } | null {
 /** Word describes a picture in pixels at 96 dpi; the theme thinks in points. */
 const px96 = (pt: number): number => (pt * 4) / 3;
 
-const RASTER = /^data:image\/(png|jpeg|gif);base64,/;
+/**
+ * PNG only, because pngSize() is the only decoder in this file and a picture
+ * needs its natural aspect ratio even when the block supplies `widthPt` — the
+ * height has nothing else to come from. This regex used to accept jpeg and gif
+ * as well, which changed nothing except where the placeholder came from: both
+ * fell through to it anyway, one branch further down. Accepting a format and
+ * then never embedding it is the shape of promise this project exists to stop
+ * making, so the promise is narrowed to what the code can carry.
+ *
+ * The cost is a renderer disagreement, named in the phase's residuals: HTML
+ * and PDF embed any raster `data:` URI, and Word embeds only a PNG.
+ */
+const RASTER = /^data:image\/png;base64,/;
 
 /**
  * What a picture becomes when it cannot be embedded: a bordered box carrying

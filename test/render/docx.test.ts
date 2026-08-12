@@ -68,6 +68,14 @@ describe('renderDocx', () => {
     expect(xml).toContain('Widget');
   });
 
+  it('refuses a table with no columns rather than writing an empty grid', async () => {
+    // ir/validate.ts rejects this before the CLI could deliver it, so the only
+    // way here is hand-built IR — which is exactly the caller that gets no
+    // second check. The alternative is a <w:tbl> with an empty <w:tblGrid/>
+    // and a row with no cells: structurally a table, visibly nothing.
+    await expect(render(doc({ t: 'table', head: [], rows: [], align: [] }))).rejects.toThrow(/no columns/);
+  });
+
   it('links out, and puts the target only in the relationships', async () => {
     const buf = await render(doc({ t: 'para', text: [{ t: 'link', href: 'https://example.com/a', children: [{ t: 'text', v: 'go' }] }] }));
     expect(await docxPart(buf, 'word/document.xml')).not.toContain('example.com');
@@ -182,6 +190,22 @@ describe('images', () => {
     const xml = await docxPart(await render(doc({ t: 'image', src: notReallyPng, alt: 'mislabelled' })), 'word/document.xml');
     expect(xml).not.toContain('<w:drawing>');
     expect(xml).toContain('mislabelled');
+  });
+
+  it('will not embed a JPEG, and says so where the picture would have been', async () => {
+    // A deliberate divergence, recorded in the phase-2 residuals: html.ts
+    // embeds any raster `data:` URI and a JPEG is one, but this renderer reads
+    // natural dimensions from PNG's IHDR only, and a picture needs its aspect
+    // ratio even when the block supplies widthPt. Accepting `image/jpeg` and
+    // then always falling through to the placeholder is what this used to do;
+    // the placeholder is the same, the promise is no longer false.
+    const jpeg = `data:image/jpeg;base64,${Buffer.from('\xFF\xD8\xFF\xE0 not really decoded', 'binary').toString('base64')}`;
+    const xml = await docxPart(await render(doc({ t: 'image', src: jpeg, alt: 'a photo', widthPt: 200 })), 'word/document.xml');
+    expect(xml).not.toContain('<w:drawing>');
+    expect(xml).toContain('a photo');
+    // Even with widthPt supplied — the branch whose old comment claimed the
+    // block could rescue a JPEG by saying how wide it is.
+    expect(xml).toContain('data:image/jpeg;');
   });
 
   it('turns a remote image into a placeholder naming its host', async () => {

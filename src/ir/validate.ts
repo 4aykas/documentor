@@ -62,6 +62,12 @@ function checkBlock(b: unknown, where: string): void {
     }
     case 'table': {
       if (!Array.isArray(n['head'])) fail(`${where}.head`, 'expected an array');
+      // The column-count checks below all compare against head's length, and
+      // every one of them holds trivially when that length is 0 — so a table
+      // with no columns is the one malformed table this validator would wave
+      // through, leaving each renderer to survive it alone. Markdown cannot
+      // produce one; an empty spreadsheet sheet is an ordinary input.
+      if (n['head'].length === 0) fail(`${where}.head`, 'a table needs at least one column');
       n['head'].forEach((c, i) => checkInlines(c, `${where}.head[${i}]`));
       if (!Array.isArray(n['align'])) fail(`${where}.align`, 'expected an array');
       n['align'].forEach((a, i) => {
