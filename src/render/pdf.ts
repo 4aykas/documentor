@@ -6,7 +6,8 @@ import { buildHtml, escapeHtml } from './html.js';
 import { arimoFaceCss } from './fonts.js';
 
 /**
- * How much of the top margin the running header occupies.
+ * How much of the top margin the running header occupies, beyond the
+ * theme's own margin.
  *
  * Chromium draws header and footer templates in the page margin, in a context
  * that has none of the page's CSS. If the margin is smaller than the header,
@@ -15,19 +16,46 @@ import { arimoFaceCss } from './fonts.js';
  * Measured 2026-08-12; it is why this constant exists rather than a guess at
  * the call site, and why the baseline test rasterises.
  *
- * Narrowed from 26 to 14 on 2026-08-12, after `@page :first` (a
- * single-render way to shrink only page one's band) was measured but set
- * aside — see the spike note's "measured, not used" entry — in favour of
- * narrowing the band for every page instead. 14 is not a round-number
- * guess: it is bounded below by the running header's own drawn height (7pt
- * text, muted colour, one line) plus enough clearance that the header and
- * the body text nearest the margin never touch — measured on the
- * kitchen-sink fixture's mixed-script title, the tallest/widest header text
- * this project renders, and checked by the same rasterising baseline test
- * this comment already points to for the 26pt figure. Do not shrink this
- * further without re-running that measurement.
+ * Set to 0 on 2026-08-12 by a sweep, not a guess: 0, 4, 8 and 12 were each
+ * rendered on the kitchen-sink fixture (TEBIN theme), page 2 rasterised at
+ * 4x, and the PNG decoded by hand (real ink, not pdfjs coordinates — the
+ * instrument that got the earlier negative-margin question wrong) to find
+ * the header's own inked rows and the body's first inked row:
+ *
+ *   band(pt) | header ink (pt from top) | body ink starts (pt) | gap (pt)
+ *   0        | 15.75–22.25              | 55.25                 | 33.00
+ *   4        | 15.75–22.25              | 59.00                 | 36.75
+ *   8        | 15.75–22.25              | 62.75                 | 40.50
+ *   12       | 15.75–22.25              | 67.25                 | 45.00
+ *
+ * The header's ink sits at a fixed offset from the page's physical top edge
+ * in every row — confirming, rather than assuming, that Chromium anchors the
+ * header template independently of the margin box it's given, which is the
+ * premise the whole sweep rests on. The chosen value is the smallest band
+ * where the header's ink does not touch the body **and** at least 12pt of
+ * clear space remains (a legibility floor, not a collision margin) — and
+ * that was already true at 0: the theme's own margin alone gives a 33pt gap,
+ * so no extra band is needed at all.
+ *
+ * A header long enough to wrap onto multiple lines was checked separately,
+ * because it is the one way a 0pt band could still fail: Chromium does not
+ * clip an oversized header template, it lets it **overprint the body** —
+ * confirmed by forcing a ~1000-character mixed-script title (30 repeats of
+ * the kitchen-sink title) to wrap onto 7 lines, which visibly overlapped
+ * page 2's first heading. Each wrapped line adds a consistent ~7.5pt (the
+ * spacing measured between stacked header lines in that test); a real title
+ * long enough to wrap even once did not occur until roughly 100 mixed-script
+ * characters (3 repeats of the kitchen-sink title still fit on one line, ~32
+ * characters), far past any title this project's fixtures or the owner's
+ * documents use — the kitchen-sink title itself never wraps. If it ever did
+ * wrap to two lines, extrapolating the measured 7.5pt/line still leaves
+ * 20+pt of clearance at this 0pt band. The real risk is not this constant —
+ * it is a pathologically long title, which would eventually overprint the
+ * body at *any* band width, because the header grows downward from a fixed
+ * point near the page's physical top regardless of how much room it's given.
+ * That is a title-length problem, not something this constant can fix.
  */
-export const RUNNING_HEADER_PT = 14;
+export const RUNNING_HEADER_PT = 0;
 
 /**
  * The second guard on "this renderer fetches nothing".
