@@ -5,12 +5,15 @@
 
 import { describe, expect, it } from 'vitest';
 import type { Doc } from '../../src/ir/types.js';
+import { renderDocx } from '../../src/render/docx.js';
 import { buildHtml } from '../../src/render/html.js';
 import { refusedLinkTarget, schemeIsRefused } from '../../src/render/links.js';
 import { renderMarkdown } from '../../src/render/md.js';
 import { resolveTheme } from '../../src/theme/resolve.js';
+import { docxPart } from '../helpers/docx-parts.js';
 
 const theme = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C' } });
+const docxTheme = resolveTheme({ id: 't' });
 
 const linkDoc = (href: string): Doc => ({
   meta: { title: 'T', lang: 'en' },
@@ -34,7 +37,7 @@ const REFUSED = [
   'data:text/html;base64,PHNjcmlwdD4=',
 ];
 
-describe('both renderers refuse the same link schemes', () => {
+describe('every renderer refuses the same link schemes', () => {
   for (const href of REFUSED) {
     it(`refuses ${JSON.stringify(href)} in HTML and in Markdown`, async () => {
       const html = await buildHtml(linkDoc(href), theme, { headerHeightPt: 40 });
@@ -49,6 +52,10 @@ describe('both renderers refuse the same link schemes', () => {
       expect(md).toContain('Click me');
       expect(html).toContain('link-refused-target');
       expect(md).toContain(`(${refusedLinkTarget(href)})`);
+
+      const docx = await docxPart(await renderDocx(linkDoc(href), docxTheme, { epochSeconds: 1_000_000_000 }), 'word/document.xml');
+      expect(docx).not.toContain('<w:hyperlink');
+      expect(docx).toContain('Click me');
     });
   }
 
@@ -57,6 +64,9 @@ describe('both renderers refuse the same link schemes', () => {
       const html = await buildHtml(linkDoc(href), theme, { headerHeightPt: 40 });
       expect(html).toContain(`<a href="${href}">Click me</a>`);
       expect(renderMarkdown(linkDoc(href))).toContain(`[Click me](${href})`);
+
+      const buf = await renderDocx(linkDoc(href), docxTheme, { epochSeconds: 1_000_000_000 });
+      expect(await docxPart(buf, 'word/_rels/document.xml.rels')).toContain(`Target="${href}"`);
     });
   }
 });

@@ -7,6 +7,7 @@ import { PAGE_PT, type PageSize, type Theme } from './types.js';
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const PAGE_SIZES = new Set<PageSize>(['A4', 'Letter']);
 const PACKAGE_NAME = '@tebin/documentor';
+const PNG_DATA_URI = /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/;
 
 /**
  * Finds inline paint smuggled into a logo SVG in any of the forms it can
@@ -16,7 +17,7 @@ const PACKAGE_NAME = '@tebin/documentor';
  * where it was found so the refusal explains itself, since the whole point
  * of refusing is that a silently-ignored theme colour is otherwise invisible.
  */
-function findInlinePaint(svg: string): { where: string; found: string } | null {
+export function findInlinePaint(svg: string): { where: string; found: string } | null {
   const attr = svg.match(/\b(fill|stroke)\s*=\s*(["'])[^"']*\2/i);
   if (attr) return { where: `a "${attr[1]}" attribute`, found: attr[0] };
 
@@ -96,7 +97,15 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
     if (paint) {
       bad('logo.svg', `inline paint is not allowed; found ${paint.where} (${JSON.stringify(paint.found)}) — paint by class instead`);
     }
-    logo = { svg: l['svg'], heightPt: num(l['heightPt'], 'logo.heightPt', 11) };
+    const rawPng = l['png'];
+    if (rawPng !== undefined && rawPng !== null && (typeof rawPng !== 'string' || !PNG_DATA_URI.test(rawPng))) {
+      bad('logo.png', 'expected an inline "data:image/png;base64,…" URI, or null — a theme is one file, so a path to a raster beside it is not accepted');
+    }
+    logo = {
+      svg: l['svg'],
+      heightPt: num(l['heightPt'], 'logo.heightPt', 11),
+      png: (rawPng as string | null | undefined) ?? null,
+    };
   }
 
   const letterhead = Array.isArray(t['letterhead'])

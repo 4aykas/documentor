@@ -31,20 +31,28 @@ merely reads.
 renderers and compares what a reader would compare. Three things are outside it
 by construction, and a fourth by choice:
 
-- **Inline emphasis.** PDF text extraction carries no weight or style, so
-  dropping `<strong>` from the HTML renderer would not fail it.
-- **Table alignment.** Same reason.
-- **Link targets.** Only the visible text is compared. `test/render/links.test.ts`
-  covers the one property that matters most here — that both renderers refuse
-  the same schemes — but nothing compares a *live* href across renderers.
+- **~~Inline emphasis.~~** *Closed for DOCX.* `test/agreement/` now renders the
+  kitchen sink through Word as well as PDF and compares bold and italic runs
+  against the IR. PDF text extraction still carries no weight or style, so the
+  gap remains between PDF and the other two.
+- **Table alignment.** Still open — PDF text extraction carries no alignment
+  either. The cheapest of the remaining gaps to close: DOCX carries alignment
+  as `w:jc`, and the kitchen-sink fixture already has three distinct column
+  alignments, so it needs a small extractor and one comparison. See the
+  phase-2 note.
+- **~~Link targets.~~** *Closed for DOCX.* `test/agreement/` compares a live
+  href between the IR and Word's relationship target, not only the visible
+  text. The PDF half of this gap — `test/render/links.test.ts` covers scheme
+  refusal, not a live href — remains open.
 - **Table cells are compared as a value sequence**, not per cell, because an
   untagged PDF has no readable cell boundaries. A value landing in the wrong
   column with unchanged reading order would pass. The baseline image answers
-  geometry instead.
+  geometry instead. DOCX has readable cell boundaries and could be compared
+  per cell; not done in phase 2.
 
-Phases 2 and 3 add two more renderers over the same IR. Each of these gaps gets
-wider with every renderer added, so the agreement test deserves strengthening
-before the fourth one lands, not after.
+Phase 3 adds one more renderer over the same IR. Each of these gaps gets wider
+with every renderer added, so the remaining ones deserve strengthening before
+the fourth renderer lands, not after.
 
 ## Deferred minors from the task reviews
 

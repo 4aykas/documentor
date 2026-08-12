@@ -1,10 +1,13 @@
 #!/usr/bin/env node
-import { runBuild } from '../cli/build.js';
+import { FORMATS, runBuild } from '../cli/build.js';
 import { runDoctor } from '../cli/doctor.js';
 
+// The --to list is derived from build.ts's own FORMATS, not copied, so this
+// text cannot go stale the way it did when docx was wired in but the string
+// here still named only pdf and md.
 const USAGE = `documentor — re-issue an existing document as a well-typeset one
 
-  documentor build <file> [--to pdf,md] [--theme plain] [--out <dir>] [--title <s>]
+  documentor build <file> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>] [--title <s>]
   documentor doctor
 
 Output lands beside the input as <name>.<theme>.<ext>.`;

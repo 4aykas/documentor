@@ -10,9 +10,16 @@ export type Logo = {
   /** Inline SVG markup. Paints by class, never with an inline fill. */
   svg: string;
   heightPt: number;
-  // No corner mark: the running header draws no mark yet, and a field that is
-  // validated, carried and never read only looks like a feature. It comes back
-  // with the header that draws it.
+  /**
+   * The same mark as a raster, inline as a data: URI, for formats that cannot
+   * be trusted with an SVG — Word's support for one is version-dependent. Null
+   * when the theme supplies only a vector: a renderer that needs a raster then
+   * prints the letterhead without a mark rather than substituting anything.
+   *
+   * A PNG is not repainted by a class, so this one does NOT follow the theme's
+   * colours. A theme wanting a mark in Word supplies its own raster.
+   */
+  png: string | null;
 };
 
 export type Theme = {

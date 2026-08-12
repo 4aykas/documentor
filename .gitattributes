@@ -1,0 +1,11 @@
+# Normalise text to LF everywhere — in the repository and in every working
+# tree — so a Windows checkout and a Linux checkout produce byte-identical
+# files. Without this, git's own autocrlf conversion is what breaks the
+# generated theme's zero-diff guarantee (see
+# docs/superpowers/notes/2026-08-12-phase-2-residuals.md).
+* text=auto eol=lf
+
+# Baseline images are byte-compared against renderer output and were
+# approved by a person looking at the pixels. Git must never touch them.
+test/baseline/__baseline__/*.png binary
+brand/tebin/logo-full.png binary

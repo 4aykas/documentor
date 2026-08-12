@@ -22,18 +22,21 @@
     "dist",
     "themes",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "NOTICE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "documentor": "tsx src/bin/documentor.ts"
+    "documentor": "tsx src/bin/documentor.ts",
+    "theme:tebin": "tsx src/theme/generate-tebin.ts"
   },
   "dependencies": {
     "@fontsource/arimo": "^5.2.5",
     "docx": "^9.7.1",
+    "jszip": "^3.10.1",
     "marked": "^15.0.0",
     "playwright-core": "^1.62.1"
   },
