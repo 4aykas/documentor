@@ -23,21 +23,16 @@ jobs:
       # rather than skipping — it is the only check that touches the artefact
       # users actually install.
       - run: npm run build
-      # The rendered-page baselines are byte-compared, and a PNG produced from
-      # the same PDF differs across platforms and Chromium builds. Comparing
-      # them off Windows would cry wolf on every run, which is how a gate stops
-      # being read; the design says compare snapshots within one platform. Both
-      # baseline files are excluded together — adding a third and forgetting it
-      # here is how this line goes stale.
-      - name: Test (excluding the image baselines)
-        if: matrix.os != 'windows-latest'
-        run: npx vitest run --exclude 'test/baseline/**'
-      - name: Test (with the image baseline)
-        if: matrix.os == 'windows-latest'
-        run: npx vitest run
-      - name: Upload the rendered pages when they differ
-        if: failure() && matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: rendered-pages
-          path: test/baseline/__actual__/
+      # test/baseline/local-only-pixels.test.ts byte-compares a rendered PNG
+      # against a committed baseline. The first real CI run proved this is
+      # not portable even within "Windows": the pages windows-latest
+      # rendered were visually identical to the committed baselines — same
+      # layout, same glyphs — and still failed byte-for-byte, because
+      # rasterisation differs across Chromium builds on different machines,
+      # not only across platforms. There is now no runner this file passes
+      # on that isn't the machine the baseline was approved on, so it is
+      # excluded everywhere; see the file's own header for why a tolerant
+      # pixel-diff isn't the fix either. Every other check in test/baseline/
+      # is not rasterisation-dependent and runs on all three platforms same
+      # as the rest of the suite.
+      - run: npx vitest run --exclude 'test/baseline/local-only-pixels.test.ts'
