@@ -458,4 +458,46 @@ describe('ingestDocx — hand-built fixtures (what the round trip cannot reach)'
     const buf = await buildDocx({ 'word/document.xml': documentXml(para(run('just text'))) });
     expect((await ingestDocx(buf)).doc.meta.title).toBe('Untitled');
   });
+
+  it('silences Word’s own layout/authoring-state marks instead of reporting them as unread content', async () => {
+    // Corpus defect: 5 of 86 real documents produced
+    // "run content this ingester does not read: <w:lastRenderedPageBreak/>"
+    // — Word's own record of where *it* last paginated the document for
+    // screen display, meaningless to any other renderer (this project's
+    // renderers choose their own pagination) and not visible content by any
+    // definition. `<w:proofErr>` (a spell/grammar-check flag on adjacent
+    // text) and `<w:bookmarkStart>`/`<w:bookmarkEnd>` (a named anchor with no
+    // visible text of its own — see the ingestDocx.ts comment on why a
+    // bookmark is silenced rather than reported) are the same kind of thing.
+    // `<w:softHyphen/>` was already silenced before this change; kept here
+    // so one test demonstrates the whole family together.
+    const body = para(
+      `<w:r><w:t xml:space="preserve">before</w:t><w:lastRenderedPageBreak/><w:t xml:space="preserve">after</w:t></w:r>` +
+        `<w:bookmarkStart w:id="0" w:name="ref1"/>` +
+        `<w:proofErr w:type="spellStart"/>${run('tricky')}<w:proofErr w:type="spellEnd"/>` +
+        `<w:bookmarkEnd w:id="0"/>` +
+        `<w:r><w:t xml:space="preserve">soft</w:t><w:softHyphen/><w:t xml:space="preserve">hyphen</w:t></w:r>`,
+    );
+    const buf = await buildDocx({ 'word/document.xml': documentXml(body) });
+    const { doc, dropped } = await ingestDocx(buf);
+
+    expect(doc.blocks).toEqual([
+      { t: 'para', text: [{ t: 'text', v: 'beforeaftertrickysofthyphen' }] },
+    ]);
+    expect(dropped).toEqual([]);
+  });
+
+  it('still reports genuinely unread run content, so this change cannot be mistaken for a blanket silencer', async () => {
+    // A comment reference is real, addressable content (the comment text
+    // itself lives in word/comments.xml, which this ingester does not read
+    // at all) — nothing like a layout hint, and it must keep surfacing in
+    // `dropped` after the additions above.
+    const body = para(`<w:r><w:t xml:space="preserve">see</w:t><w:commentReference w:id="0"/></w:r>`);
+    const buf = await buildDocx({ 'word/document.xml': documentXml(body) });
+    const { dropped } = await ingestDocx(buf);
+
+    expect(dropped).toEqual([
+      'run content this ingester does not read: <w:commentReference w:id="0"/>',
+    ]);
+  });
 });

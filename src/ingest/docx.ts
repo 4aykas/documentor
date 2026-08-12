@@ -399,7 +399,7 @@ function runAtoms(runXml: string, sink: Sink): { fmt: Fmt; atoms: Atom[] } {
   // `<w:br …/>` ones so a `w:type="page"` break is classified as a break, not
   // read as a plain line break.
   const partRe =
-    /<w:t\b[^>]*>([\s\S]*?)<\/w:t>|<w:t\/>|<w:tab\/>|<w:br\b[^>]*\bw:type="page"[^>]*\/>|<w:br\/>|<w:br\b[^>]*\/>|<w:cr\/>|<w:noBreakHyphen\/>|<w:softHyphen\/>|<w:delText\b[^>]*>[\s\S]*?<\/w:delText>|<w:delText\/>|<w:drawing>[\s\S]*?<\/w:drawing>/g;
+    /<w:t\b[^>]*>([\s\S]*?)<\/w:t>|<w:t\/>|<w:tab\/>|<w:br\b[^>]*\bw:type="page"[^>]*\/>|<w:br\/>|<w:br\b[^>]*\/>|<w:cr\/>|<w:noBreakHyphen\/>|<w:softHyphen\/>|<w:lastRenderedPageBreak\/>|<w:delText\b[^>]*>[\s\S]*?<\/w:delText>|<w:delText\/>|<w:drawing>[\s\S]*?<\/w:drawing>/g;
   for (const m of inner.matchAll(partRe)) {
     const s = m[0];
     // `<w:tab/>` must be tested before the `<w:t` prefix check below: a
@@ -420,6 +420,16 @@ function runAtoms(runXml: string, sink: Sink): { fmt: Fmt; atoms: Atom[] } {
     else if (s === '<w:cr/>') text += '\n';
     else if (s === '<w:noBreakHyphen/>') text += '\u2011';
     else if (s === '<w:softHyphen/>') { /* no visible character when the line doesn't break there */ }
+    // Word's own record of where *it* last paginated the document for
+    // screen/print layout — a caching hint for its repagination, meaningless
+    // to any other renderer, and this project's renderers choose their own
+    // pagination regardless (see paragraphSegments' pageBreaks option, which
+    // governs the *real* `w:type="page"` break above, not this). Reporting
+    // it in `dropped` is exactly the false positive that sent 5 of 86 real
+    // documents through this ingester with a "content not read" entry that
+    // read nothing: consumed silently, the same way `<w:softHyphen/>` above
+    // already is.
+    else if (s === '<w:lastRenderedPageBreak/>') { /* not content — see comment above */ }
     else if (s.startsWith('<w:delText')) { /* a tracked deletion's own text, deliberately not read \u2014 see this function's own doc comment; consumed here so it does not also surface as generic unread-content noise */ }
     else if (s.startsWith('<w:drawing')) { flushText(); atoms.push({ kind: 'drawing', xml: s }); }
     else if (/\bw:type="page"/.test(s)) { flushText(); atoms.push({ kind: 'pagebreak' }); }
@@ -490,8 +500,31 @@ function paragraphSegments(
     current = [];
   };
 
-  const unitRe = /<w:hyperlink\b([^>]*)>([\s\S]*?)<\/w:hyperlink>|<w:r\b[^>]*\/>|<w:r\b[^>]*>[\s\S]*?<\/w:r>/g;
+  // `<w:bookmarkStart>`/`<w:bookmarkEnd>` and `<w:proofErr>` are siblings of
+  // `<w:r>` inside `<w:p>` (OOXML's EG_PContent group), never nested inside
+  // a run — so they were already invisible to `runAtoms`'s leftover check,
+  // which only ever sees the inside of one `<w:r>`. Left out of `unitRe`
+  // entirely they would still vanish with no dropped entry, but only as an
+  // accident of the regex not matching them, the same kind of incidental
+  // silence this file's own header warns against elsewhere. Matched here
+  // explicitly instead, so the choice is visible and deliberate:
+  //   - `<w:proofErr>` is Word's own spell/grammar-check flag on the run(s)
+  //     beside it, not a value of their text — proofing state, not content.
+  //   - `<w:bookmarkStart>`/`<w:bookmarkEnd>` mark a named point a
+  //     cross-reference elsewhere in the document could target. That makes a
+  //     bookmark content-*adjacent* (unlike a proofing mark, it names
+  //     something a reader could jump to) — but this IR has no
+  //     cross-reference/anchor block shape to carry it to, and the bookmark
+  //     itself has no visible text of its own to lose. Silencing it drops a
+  //     structural feature the ingester cannot represent either way, not a
+  //     word of body text, so it belongs with the other silent atoms rather
+  //     than in `dropped` (which the design reserves for content, per the
+  //     corpus's own review round 1).
+  const unitRe =
+    /<w:bookmarkStart\b[^>]*\/>|<w:bookmarkEnd\b[^>]*\/>|<w:proofErr\b[^>]*\/>|<w:hyperlink\b([^>]*)>([\s\S]*?)<\/w:hyperlink>|<w:r\b[^>]*\/>|<w:r\b[^>]*>[\s\S]*?<\/w:r>/g;
   for (const m of runs.matchAll(unitRe)) {
+    if (m[0].startsWith('<w:bookmarkStart') || m[0].startsWith('<w:bookmarkEnd') || m[0].startsWith('<w:proofErr')) continue;
+
     if (m[1] !== undefined) {
       // A hyperlink. Its target is the relationship its `r:id` names — never
       // the visible text, which is what makes phishing via a mismatched link
