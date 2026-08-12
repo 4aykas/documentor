@@ -176,12 +176,16 @@ ingester that does not make that promise, or for hand-built IR that skips
 - Still parked, and judged not worth a fix this phase: `styles.xml` gives
   every custom style `basedOn: 'Normal'` though no `Normal` style is
   defined, making that inheritance a no-op; the relationship-integrity test
-  passes vacuously if it finds zero `r:id` attributes; table cells set no
-  margins against Word's 108-dxa default, where html.ts sets
-  `th,td{ padding: 4pt 6pt; }`; and `td{ vertical-align: top; }` has no Word
-  counterpart either. The last two are the same class as the three above and
-  were left alone only because they move table geometry, which is a change
-  to make deliberately rather than on merge eve.
+  passes vacuously if it finds zero `r:id` attributes; and
+  `td{ vertical-align: top; }` has no Word counterpart either.
+  (Table cells not carrying html.ts's `th,td{ padding: 4pt 6pt; }` was
+  parked alongside these for the same reason — moving table geometry felt
+  like a deliberate change, not a merge-eve one — but a person opening the
+  rendered .docx afterward found the gap read worse on the page than the
+  numbers suggested, and asked for it. `table()`'s `cell()` now sets
+  `margins: { top: 80, bottom: 80, left: 120, right: 120 }` DXA, matching
+  html.ts's rule exactly; see `test/render/docx.test.ts`'s "gives table
+  cells the same internal margins html.ts paints".)
 - This list previously claimed an unused `IParagraphOptions` type import
   survived in `src/render/docx.ts`. It is used — `runningHeader` types its
   `alignment` parameter as `IParagraphOptions['alignment']`. The claim is
@@ -189,6 +193,30 @@ ingester that does not make that promise, or for hand-built IR that skips
   the record honest cannot afford to carry a false entry of its own, and
   the finding was never true, so there is nothing to record but its
   withdrawal.
+
+## Not a defect, but it will look like one
+
+**The Word and PDF renderings of the same document paginate differently, on
+purpose.** Measured on this machine, rendering the kitchen-sink fixture with
+the `tebin` theme: the PDF is 2 pages, the Word document is 1. This is not
+drift between the two renderers producing the same layout by two different
+routes — it is the direct, intended consequence of a design decision
+`src/render/docx.ts`'s `firstPageHeader` already states its own reasoning
+for: Chromium renders a `@page` header template in a context with none of the
+document's stylesheet, so the PDF's letterhead has to live in the body flow,
+consuming space from the first page's content area the way any other block
+does. Word has no such limitation, so its letterhead moves into an actual
+page header — space the body flow never sees at all. The same content is
+therefore laid out into a shorter first page in the PDF and a taller effective
+first page in Word, and on a document sized close to a page boundary that is
+enough to change the page count.
+
+Recorded here because two page counts for one source document is exactly the
+shape of thing a future reader opens both outputs, notices they differ, and
+files as a bug — without the reasoning in front of them, "the PDF is 2 pages
+and the .docx is 1" reads as a rendering bug even though it is what asking two
+different engines to solve the same letterhead problem was always going to
+produce.
 
 ## Before publishing
 
