@@ -175,7 +175,10 @@ blockquote{ margin: 0 0 10pt; padding-left: 12pt; border-left: 2pt solid var(--r
 pre{ background: #F6F6F4; padding: 8pt 10pt; border-radius: 2pt; overflow-wrap: anywhere; white-space: pre-wrap; break-inside: avoid; }
 code{ font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: ${(ty.bodyPt * 0.92).toFixed(1)}pt; }
 pre code{ font-size: ${(ty.bodyPt * 0.86).toFixed(1)}pt; }
-hr{ border: 0; border-top: 0.75pt solid var(--rule); margin: 14pt 0; }
+/* break-after: avoid keeps a rule from being stranded alone at the foot of a
+   page with the content it introduces pushed to the next one — the whole
+   group moves together instead. */
+hr{ border: 0; border-top: 0.75pt solid var(--rule); margin: 14pt 0; break-after: avoid; page-break-after: avoid; }
 figure{ margin: 0 0 10pt; break-inside: avoid; }
 .img-placeholder-box{ border: 0.75pt solid var(--rule); color: var(--muted); padding: 10pt 12pt; font-size: ${(ty.bodyPt * 0.95).toFixed(1)}pt; }
 .img-placeholder-host{ display: block; margin-top: 3pt; font-size: ${(ty.bodyPt * 0.85).toFixed(1)}pt; }
