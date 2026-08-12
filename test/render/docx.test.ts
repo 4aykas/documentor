@@ -40,6 +40,135 @@ describe('renderDocx', () => {
     expect(xml).toContain('<w:i/>');
   });
 
+  // The kitchen-sink fixture only ever exercises inline()'s recursion on one
+  // shallow case: one bold run, one italic run, and one link, all in a single
+  // top-level paragraph. These cases push emphasis into the other places
+  // inline() is reached from — a table cell, a heading, a list item — and
+  // into nesting one emphasis inside another, which is the recursion itself.
+  // See docs/superpowers/notes/2026-08-12-phase-2-residuals.md, "Coverage the
+  // DOCX fixtures leave thin".
+
+  it('carries emphasis inside a table cell, header and body both', async () => {
+    const xml = await body(doc({
+      t: 'table',
+      head: [[{ t: 'strong', children: [{ t: 'text', v: 'Bold header' }] }]],
+      rows: [[[{ t: 'em', children: [{ t: 'text', v: 'Italic cell' }] }]]],
+      align: ['l'],
+    }));
+    // Scope the assertion to the table itself, not the whole body, so this
+    // can't pass by accident on emphasis that leaked in from elsewhere.
+    const table = xml.match(/<w:tbl>[\s\S]*<\/w:tbl>/)?.[0];
+    expect(table, 'expected a <w:tbl> in the body').toBeDefined();
+    expect(table).toContain('<w:b/>');
+    expect(table).toContain('<w:i/>');
+    expect(table).toContain('Bold header');
+    expect(table).toContain('Italic cell');
+  });
+
+  it('carries emphasis inside a heading', async () => {
+    const xml = await body(doc({
+      t: 'heading',
+      level: 2,
+      text: [
+        { t: 'strong', children: [{ t: 'text', v: 'Bold' }] },
+        { t: 'text', v: ' and ' },
+        { t: 'em', children: [{ t: 'text', v: 'italic' }] },
+      ],
+    }));
+    expect(xml).toContain('DocH2');
+    expect(xml).toContain('<w:b/>');
+    expect(xml).toContain('<w:i/>');
+  });
+
+  it('carries emphasis inside a list item, including a nested one', async () => {
+    // A nested list arrives as two `list` blocks, one per depth — see the
+    // comment on the IR's `start` field and on docx.ts's `blocks()` `case
+    // 'list'` for why: the ingester splits an ordered list at every nesting
+    // change, and each fragment keeps only its own depth.
+    const xml = await body(doc(
+      { t: 'list', ordered: false, depth: 0, items: [[{ t: 'strong', children: [{ t: 'text', v: 'top' }] }]] },
+      { t: 'list', ordered: false, depth: 1, items: [[{ t: 'em', children: [{ t: 'text', v: 'nested' }] }]] },
+    ));
+    expect(xml).toContain('<w:b/>');
+    expect(xml).toContain('<w:i/>');
+    // The nested item's own indent, proving it's the depth-1 fragment that
+    // carries the italic run and not a coincidence of two separate blocks.
+    // Each list paragraph is `<w:ind …/></w:pPr>`, then the written marker
+    // run ("• "), then the text run — so the indent isn't adjacent to the
+    // emphasis, only to the marker ahead of it within the same `<w:p>`.
+    const nestedIndent = xml.match(/<w:ind w:left="(\d+)"\/>(?:(?!<\/w:p>)[\s\S])*?nested/);
+    const topIndent = xml.match(/<w:ind w:left="(\d+)"\/>(?:(?!<\/w:p>)[\s\S])*?<w:b\/>/);
+    expect(nestedIndent).not.toBeNull();
+    expect(topIndent).not.toBeNull();
+    expect(Number(nestedIndent![1])).toBeGreaterThan(Number(topIndent![1]));
+  });
+
+  // A single run carries every rPr child inside one <w:rPr>...</w:rPr>
+  // element, in whatever order docx emits them — this doesn't assume an
+  // order, only that both properties land on the same run.
+  const rPrHasBoth = (xml: string): boolean =>
+    [...xml.matchAll(/<w:rPr>[\s\S]*?<\/w:rPr>/g)].some((m) => m[0].includes('<w:b/>') && m[0].includes('<w:i/>'));
+
+  it('nests bold inside italic onto a single run carrying both', async () => {
+    const xml = await body(doc({
+      t: 'para',
+      text: [{ t: 'em', children: [{ t: 'strong', children: [{ t: 'text', v: 'both' }] }] }],
+    }));
+    expect(rPrHasBoth(xml)).toBe(true);
+  });
+
+  it('nests italic inside bold onto a single run carrying both', async () => {
+    // inline()'s fmt is merged by key, not by nesting order, so this is
+    // expected to produce the same run properties as the italic-inside-bold
+    // case above — recorded as its own case anyway because the residuals
+    // note named both orderings as unexercised, and "the merge doesn't care
+    // about order" is exactly the kind of claim that deserves its own test
+    // rather than an inference from the other one.
+    const xml = await body(doc({
+      t: 'para',
+      text: [{ t: 'strong', children: [{ t: 'em', children: [{ t: 'text', v: 'both' }] }] }],
+    }));
+    expect(rPrHasBoth(xml)).toBe(true);
+  });
+
+  it('gives a document with several links a distinct relationship id per link', async () => {
+    const hrefs = ['https://example.com/a', 'https://example.com/b', 'https://example.com/c'];
+    const buf = await render(doc(...hrefs.map((href, i): Doc['blocks'][number] => ({
+      t: 'para',
+      text: [{ t: 'link', href, children: [{ t: 'text', v: `link ${i}` }] }],
+    }))));
+    const xml = await docxPart(buf, 'word/document.xml');
+    const rels = await docxPart(buf, 'word/_rels/document.xml.rels');
+    // docx puts w:history before r:id on this element, so the attribute
+    // order can't be assumed — [^>]* skips whatever comes first.
+    const usedIds = [...xml.matchAll(/<w:hyperlink[^>]*r:id="([^"]+)"/g)].map((m) => m[1]!);
+    expect(usedIds, 'expected one <w:hyperlink> per link, not one shared between them').toHaveLength(hrefs.length);
+    expect(new Set(usedIds).size, 'expected a distinct r:id per link').toBe(hrefs.length);
+    const relTarget = new Map([...rels.matchAll(/Id="([^"]+)"[^>]*Target="([^"]+)"/g)].map((m) => [m[1]!, m[2]!]));
+    for (const [i, id] of usedIds.entries()) {
+      expect(relTarget.get(id)).toBe(hrefs[i]);
+    }
+  });
+
+  // Documented limitation, not a bug: ExternalHyperlink takes runs, and this
+  // renderer passes the link's text as a single flattened string (flatten()
+  // in docx.ts), so bold or italic nested inside a link's text is dropped.
+  // This test pins that behaviour — the one the residuals note already names
+  // ("Emphasis inside a link is flattened in Word") — so it fails loudly if
+  // the flattening ever silently changes, not because the flattening is the
+  // goal.
+  it('pins the documented limitation: emphasis inside link text is flattened away', async () => {
+    const xml = await body(doc({
+      t: 'para',
+      text: [{ t: 'link', href: 'https://example.com/bold', children: [{ t: 'strong', children: [{ t: 'text', v: 'bold link' }] }] }],
+    }));
+    const hyperlink = xml.match(/<w:hyperlink[\s\S]*?<\/w:hyperlink>/)?.[0];
+    expect(hyperlink, 'expected a <w:hyperlink> in the body').toBeDefined();
+    expect(hyperlink).toContain('bold link');
+    // The text survives; the bold does not.
+    expect(hyperlink).not.toContain('<w:b/>');
+  });
+
   it('numbers an ordered list from the IR’s own start', async () => {
     const xml = await body(doc({ t: 'list', ordered: true, depth: 0, start: 4, items: [[{ t: 'text', v: 'a' }], [{ t: 'text', v: 'b' }]] }));
     expect(xml).toContain('4.');
