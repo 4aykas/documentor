@@ -243,6 +243,21 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
 // is simply not an input, so discoverInputs below skips it without a word.
 const READABLE_EXTS = new Set(['.md', '.markdown', '.docx']);
 
+type Discovered = {
+  inputs: string[];
+  // Filtered out as this build's own prior output (see the theme-id-marker
+  // comment below), not silently — a real source that happens to be named
+  // e.g. `contract.plain.md` would otherwise vanish from a run with no
+  // trace at all, which is exactly the kind of loss this batch's summary
+  // exists to surface. Named here so runBuildBatch can report a count.
+  skippedOwnOutput: string[];
+  // A directory readdir refused (permissions, a broken junction, …) does not
+  // abort the walk — its siblings are still walked, and it is reported
+  // rather than silently missing from the batch, the same property
+  // processFile already protects for a single bad document.
+  unreadableDirs: { dir: string; reason: string }[];
+};
+
 /**
  * Walks a directory (optionally recursive) and returns every file this build
  * can ingest, sorted by path so a batch's order — and therefore anything
@@ -257,33 +272,72 @@ const READABLE_EXTS = new Set(['.md', '.markdown', '.docx']);
  * name always carries `.<themeId>.` before the final extension, so a file
  * whose stem ends that way is this build's own mark, not a source — skipped
  * here rather than merely skipped in the summary, so it's never ingested at
- * all. What this does *not* catch: a file from a run under a *different*
- * theme id (no marker this scan recognises), and a `--plain-names` output
- * writing `md` or `docx` (identical name to a real source) — which is why
- * runBuildBatch refuses that combination outright instead of relying on a
- * filename heuristic that cannot see it.
+ * all. What this does *not* catch, on purpose rather than by oversight: a
+ * file from a run under a *different* theme id carries no marker this scan
+ * recognises, and is left open — narrowing it would mean guessing at every
+ * string that might be a theme id, which is worse than an honest gap. A
+ * `--plain-names` output writing `md` or `docx` (identical name to a real
+ * source, no marker at all) is closed a different way: runBuildBatch refuses
+ * that combination outright rather than relying on a filename heuristic that
+ * cannot see it.
  */
-async function discoverInputs(dir: string, recursive: boolean, themeId: string): Promise<string[]> {
-  const found: string[] = [];
+async function discoverInputs(dir: string, recursive: boolean, themeId: string): Promise<Discovered> {
+  const inputs: string[] = [];
+  const skippedOwnOutput: string[] = [];
+  const unreadableDirs: { dir: string; reason: string }[] = [];
   async function walk(d: string): Promise<void> {
-    const entries = await readdir(d, { withFileTypes: true });
+    let entries;
+    try {
+      entries = await readdir(d, { withFileTypes: true });
+    } catch (e) {
+      unreadableDirs.push({ dir: d, reason: (e as Error).message });
+      return; // this directory's contents are unknown; siblings are still walked
+    }
     entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
       const full = join(d, entry.name);
-      if (entry.isDirectory()) {
+      let isDir = entry.isDirectory();
+      let isFile = entry.isFile();
+      if (entry.isSymbolicLink()) {
+        // A symlinked .md is an ordinary input from the operator's chair —
+        // readdir's Dirent flags describe the link itself, not what it
+        // points to, so a symlink would otherwise be silently treated as
+        // "not a document" regardless of its target. Resolved once via
+        // `stat` (which follows the link) instead. Not guarded: a symlink
+        // cycle under --recursive, since nothing in this project's real
+        // usage (a data room, a delivery folder) has ever produced one.
+        const target = await stat(full).catch(() => undefined);
+        isDir = target?.isDirectory() ?? false;
+        isFile = target?.isFile() ?? false;
+      }
+      if (isDir) {
         if (recursive) await walk(full);
         continue;
       }
-      if (!entry.isFile()) continue; // symlinks, sockets, etc. — not documents
+      if (!isFile) continue; // a broken symlink, socket, fifo, … — genuinely not a document
       const ext = extname(entry.name).toLowerCase();
       if (!READABLE_EXTS.has(ext)) continue;
       const stem = basename(entry.name, ext);
-      if (stem.endsWith(`.${themeId}`)) continue; // this build's own output — see above
-      found.push(full);
+      if (stem.endsWith(`.${themeId}`)) { skippedOwnOutput.push(full); continue; }
+      inputs.push(full);
     }
   }
   await walk(dir);
-  return found;
+  return { inputs, skippedOwnOutput, unreadableDirs };
+}
+
+/** Where a document's outputs land, and what to call them — the one
+ * computation collision-detection and processFile must agree on, since a
+ * collision the pre-pass didn't see is a collision the write loop would
+ * silently commit. */
+function targetsFor(
+  input: string, args: ReturnType<typeof parseArgs>, formats: readonly Format[], theme: Theme,
+): { outDir: string; targets: string[] } {
+  const outDir = args.out === undefined ? dirname(input) : resolve(args.out);
+  const stem = basename(input, extname(input));
+  const targets = formats.map((format) =>
+    resolve(join(outDir, args.plainNames ? `${stem}.${format}` : `${stem}.${theme.id}.${format}`)));
+  return { outDir, targets };
 }
 
 type FileResult =
@@ -301,7 +355,7 @@ type FileResult =
  * that makes a batch result trustworthy at all on a real folder.
  */
 async function processFile(
-  input: string, args: ReturnType<typeof parseArgs>, formats: Format[], theme: Theme, browser: Browser,
+  input: string, args: ReturnType<typeof parseArgs>, formats: Format[], theme: Theme, browser: Browser | undefined,
 ): Promise<FileResult> {
   try {
     const ext = extname(input).toLowerCase();
@@ -320,14 +374,19 @@ async function processFile(
       return { input, kind: 'refused', written: [], dropped, reason: (e as Error).message };
     }
 
-    const outDir = args.out === undefined ? dirname(input) : resolve(args.out);
+    // Same computation runBuildBatch's collision pre-pass already ran over
+    // every file before any of them reached this function — recomputed
+    // rather than threaded through as a parameter so this function stays
+    // the single source of truth for "what does this input's output path
+    // look like", with the pre-pass calling out to it instead of the other
+    // way around.
+    const { outDir, targets } = targetsFor(input, args, formats, theme);
     await mkdir(outDir, { recursive: true });
-    const stem = basename(input, extname(input));
     const written: string[] = [];
     let refusedReason: string | undefined;
-    for (const format of formats) {
-      const target = join(outDir, args.plainNames ? `${stem}.${format}` : `${stem}.${theme.id}.${format}`);
-      if (resolve(target) === input) {
+    for (const [i, format] of formats.entries()) {
+      const target = targets[i]!;
+      if (target === resolve(input)) {
         refusedReason = `refusing to overwrite the input file ${input}`;
         continue; // one colliding format must not stop the others from being written
       }
@@ -352,21 +411,56 @@ async function processFile(
  * what got dropped without reading every per-file list — so this computes
  * all three instead of leaving them implicit in the log above it.
  */
-function printSummary(results: readonly FileResult[], io: Io): void {
-  const written = results.filter((r) => r.kind === 'written' || (r.kind === 'refused' && r.written.length > 0));
-  const refused = results.filter((r) => r.kind === 'refused');
-  const failed = results.filter((r) => r.kind === 'failed');
+function printSummary(
+  results: readonly FileResult[], discovered: Discovered, outDir: string | undefined, io: Io,
+): void {
+  // Every bucket below is disjoint — each result lands in exactly one — so
+  // these counts can be printed independently without one silently
+  // including entries another already counted. A `refused` result that
+  // still wrote some formats used to be counted in both "written" and
+  // "refused" at once, which let the total exceed the number of documents;
+  // it now has its own line instead of hiding inside "written".
+  const fullyWritten = results.filter((r): r is Extract<FileResult, { kind: 'written' }> => r.kind === 'written');
+  const refused = results.filter((r): r is Extract<FileResult, { kind: 'refused' }> => r.kind === 'refused');
+  const partial = refused.filter((r) => r.written.length > 0);
+  const refusedOnly = refused.filter((r) => r.written.length === 0);
+  const failed = results.filter((r): r is Extract<FileResult, { kind: 'failed' }> => r.kind === 'failed');
 
   io.log('');
   io.log(`documentor: batch summary — ${results.length} document(s)`);
-  io.log(`  ${written.length} written`);
-  if (refused.length) {
-    io.log(`  ${refused.length} refused:`);
-    for (const r of refused) io.log(`    - ${basename(r.input)}: ${r.reason}`);
+  io.log(`  ${fullyWritten.length} written`);
+  if (partial.length) {
+    io.log(`  ${partial.length} partially written (one or more formats refused):`);
+    for (const r of partial) io.log(`    - ${basename(r.input)}: ${r.reason}`);
+  }
+  if (refusedOnly.length) {
+    io.log(`  ${refusedOnly.length} refused:`);
+    for (const r of refusedOnly) io.log(`    - ${basename(r.input)}: ${r.reason}`);
   }
   if (failed.length) {
     io.log(`  ${failed.length} failed:`);
     for (const r of failed) io.log(`    - ${basename(r.input)}: ${r.reason}`);
+  }
+
+  // The path, not just a count: with --out sending output away from the
+  // inputs, "12 written" alone doesn't say where they landed, and 84 files
+  // is too many to infer from the per-file lines above (which this summary
+  // exists to replace anyway). Without --out, output is scattered beside
+  // each input rather than one place, so there is no single directory to
+  // name — the count still says something on its own there.
+  const totalWritten = fullyWritten.reduce((n, r) => n + r.written.length, 0)
+    + partial.reduce((n, r) => n + r.written.length, 0);
+  io.log(outDir === undefined
+    ? `  wrote ${totalWritten} file(s) beside their inputs`
+    : `  wrote ${totalWritten} file(s) to ${outDir}`);
+
+  if (discovered.skippedOwnOutput.length) {
+    io.log(`  ${discovered.skippedOwnOutput.length} skipped as this build's own prior output:`);
+    for (const p of discovered.skippedOwnOutput) io.log(`    - ${basename(p)}`);
+  }
+  if (discovered.unreadableDirs.length) {
+    io.log(`  ${discovered.unreadableDirs.length} director(y/ies) could not be read:`);
+    for (const u of discovered.unreadableDirs) io.log(`    - ${u.dir}: ${u.reason}`);
   }
 
   // Grouped by *what* was left out, not repeated once per document: across a
@@ -400,38 +494,87 @@ async function runBuildBatch(
   // discoverInputs' own-output guard only recognises the default naming
   // scheme (`<stem>.<themeId>.<ext>`); `--plain-names` output for a readable
   // extension (md, docx) is spelled identically to a genuine source file, so
-  // no filename heuristic can tell them apart on a rerun. Refusing the
-  // combination up front is what keeps that gap from silently reingesting a
-  // batch's own prior output — the alternative was a footgun with no error
-  // message anywhere near where it would go wrong.
-  if (args.plainNames && formats.some((f) => f === 'md' || f === 'docx')) {
-    io.err('documentor: --plain-names is refused for a directory batch writing md or docx — both are also readable input extensions, so a rerun over this folder could not tell this run\'s own output from a fresh source document; drop --plain-names, or send this batch elsewhere with --out');
+  // no filename heuristic can tell them apart on a rerun. That gap is real
+  // only when the output can land back inside the tree this run itself
+  // scans — i.e. no --out, since output then defaults to beside each input.
+  // An --out pointed elsewhere genuinely closes it (the next scan of `dir`
+  // never looks in --out's directory), so the condition checks for that
+  // rather than blocking every --plain-names batch and then telling the
+  // user to do the one thing (`--out`) that would have been safe.
+  if (args.plainNames && args.out === undefined && formats.some((f) => f === 'md' || f === 'docx')) {
+    io.err('documentor: --plain-names is refused for a directory batch writing md or docx with no --out — both are also readable input extensions, so a rerun over this folder could not tell this run\'s own output from a fresh source document; drop --plain-names, or pass --out to write outside this folder');
     return 2;
   }
 
-  const files = await discoverInputs(dir, args.recursive, theme.id);
+  const discovered = await discoverInputs(dir, args.recursive, theme.id);
+  const files = discovered.inputs;
   if (files.length === 0) {
     io.err(`documentor: no readable input under ${dir} (looked for .md, .markdown, .docx${args.recursive ? ', recursively' : ''})`);
     return 2;
   }
 
-  // One browser for the whole batch — launched once, closed in `finally` so
-  // a mid-batch throw (a bug in this loop, not a per-file failure, which
-  // processFile already catches on its own) cannot leak a Chromium process.
-  const browser = await chromium.launch();
+  const outDir = args.out === undefined ? undefined : resolve(args.out);
   const results: FileResult[] = [];
+
+  // Every target this run would write, computed for every file before any
+  // of them is ingested or rendered. This is the fix for the batch's worst
+  // failure mode: two sources that collapse to the same
+  // `<stem>.<theme>.<format>` (a name derived from the stem alone, which
+  // drops both the source extension and, with --out, the source directory)
+  // used to overwrite each other with no warning, and the summary counted
+  // both as written even though only one file's bytes survived on disk.
+  // Refusing both sides of a collision — rather than picking one to
+  // disambiguate with an invented suffix — is the same policy the
+  // single-file overwrite guard already uses: predictable, and it never
+  // requires guessing which of two documents the operator actually wanted
+  // at that name.
+  const bySources = new Map<string, string[]>(); // resolved target -> every input that would write it
+  for (const file of files) {
+    const { targets } = targetsFor(file, args, formats, theme);
+    for (const target of targets) {
+      const list = bySources.get(target) ?? [];
+      list.push(file);
+      bySources.set(target, list);
+    }
+  }
+  const collidesWith = new Map<string, Set<string>>(); // input -> the other input(s) it collides with
+  for (const sources of bySources.values()) {
+    const unique = [...new Set(sources)];
+    if (unique.length < 2) continue;
+    for (const s of unique) {
+      const set = collidesWith.get(s) ?? new Set<string>();
+      for (const other of unique) if (other !== s) set.add(other);
+      collidesWith.set(s, set);
+    }
+  }
+
+  // Only launched when a requested format actually needs Chromium — a
+  // directory of .md/.docx sources written --to md or --to docx has no
+  // reason to carry Playwright's browser dependency at all (measured:
+  // launch=1, newPage=0 before this fix), and a batch that omits pdf
+  // should not fail with an "install chromium" message a single-file build
+  // of the same input would never have hit.
+  const needsBrowser = formats.includes('pdf');
+  const browser = needsBrowser ? await chromium.launch() : undefined;
   try {
     for (const file of files) {
+      const collision = collidesWith.get(file);
+      if (collision !== undefined) {
+        const reason = `output target collides with ${[...collision].map((o) => basename(o)).join(', ')} — both would write the same file, so neither was written`;
+        results.push({ input: file, kind: 'refused', written: [], dropped: [], reason });
+        io.err(`documentor: ${file} — refused: ${reason}`);
+        continue;
+      }
       const result = await processFile(file, args, formats, theme, browser);
       results.push(result);
       if (result.kind === 'failed') io.err(`documentor: ${file} — failed: ${result.reason}`);
       else if (result.kind === 'refused') io.err(`documentor: ${file} — refused: ${result.reason}`);
     }
   } finally {
-    await browser.close();
+    if (browser !== undefined) await browser.close();
   }
 
-  printSummary(results, io);
+  printSummary(results, discovered, outDir, io);
 
   // 1 outranks 3 outranks 0: a `failed` entry is the batch's analogue of the
   // single-file body's uncaught throw (exit 1, "a bug, a missing file,
@@ -439,8 +582,11 @@ async function runBuildBatch(
   // `refused` is its analogue of the validateDoc/overwrite refusal (exit 3,
   // "understood and declined, do not retry unchanged"). A batch with both
   // reports the more serious class, the same way a single build never gets
-  // to choose between 1 and 3 for the one document it ran.
-  if (results.some((r) => r.kind === 'failed')) return 1;
+  // to choose between 1 and 3 for the one document it ran. An unreadable
+  // subdirectory is folded into the `failed` class: like a failed document,
+  // it means part of the batch's own intended input was never even seen,
+  // which is strictly worse than a document this build read and declined.
+  if (results.some((r) => r.kind === 'failed') || discovered.unreadableDirs.length > 0) return 1;
   if (results.some((r) => r.kind === 'refused')) return 3;
   return 0;
 }
