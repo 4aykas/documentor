@@ -1,0 +1,171 @@
+// IR + theme → one self-contained HTML document. Everything the page needs is
+// in the string: no <link>, no remote image, no webfont URL. See fonts.ts for
+// why that rule is absolute.
+
+import type { Block, Doc, Inline } from '../ir/types.js';
+import { PAGE_PT, toMm, type Theme } from '../theme/types.js';
+import { arimoFaceCss } from './fonts.js';
+
+export function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function inline(nodes: Inline[]): string {
+  return nodes
+    .map((n) => {
+      switch (n.t) {
+        case 'text': return escapeHtml(n.v);
+        case 'strong': return `<strong>${inline(n.children)}</strong>`;
+        case 'em': return `<em>${inline(n.children)}</em>`;
+        case 'code': return `<code>${inline(n.children)}</code>`;
+        case 'link': return `<a href="${escapeHtml(n.href)}">${inline(n.children)}</a>`;
+      }
+    })
+    .join('');
+}
+
+const ALIGN_CSS = { l: 'left', r: 'right', c: 'center' } as const;
+
+function block(b: Block): string {
+  switch (b.t) {
+    case 'heading':
+      return `<h${b.level}>${inline(b.text)}</h${b.level}>`;
+    case 'para':
+      return `<p>${inline(b.text)}</p>`;
+    case 'list': {
+      const tag = b.ordered ? 'ol' : 'ul';
+      const items = b.items.map((it) => `<li>${inline(it)}</li>`).join('');
+      // A list is split into fragments wherever a sublist interrupts it, so an
+      // ordered fragment after a sublist must resume its numbering rather than
+      // restart at 1.
+      const start = b.ordered && b.start !== undefined && b.start !== 1 ? ` start="${b.start}"` : '';
+      return `<${tag} class="d${b.depth}"${start}>${items}</${tag}>`;
+    }
+    case 'table': {
+      const head = b.head
+        .map((c, i) => `<th style="text-align: ${ALIGN_CSS[b.align[i] ?? 'l']}">${inline(c)}</th>`)
+        .join('');
+      const rows = b.rows
+        .map(
+          (row) =>
+            `<tr>${row
+              .map((c, i) => `<td style="text-align: ${ALIGN_CSS[b.align[i] ?? 'l']}">${inline(c)}</td>`)
+              .join('')}</tr>`,
+        )
+        .join('');
+      return `<table class="${b.landscape ? 'landscape' : ''}"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+    }
+    case 'image':
+      return `<figure><img src="${escapeHtml(b.src)}" alt="${escapeHtml(b.alt)}"${
+        b.widthPt ? ` style="width: ${b.widthPt}pt"` : ''
+      }></figure>`;
+    case 'code':
+      return `<pre><code>${escapeHtml(b.text)}</code></pre>`;
+    case 'quote':
+      return `<blockquote>${b.paras.map((p) => `<p>${inline(p)}</p>`).join('')}</blockquote>`;
+    case 'rule':
+      return '<hr>';
+    case 'pagebreak':
+      return '<div class="pagebreak"></div>';
+  }
+}
+
+function firstPageHeader(doc: Doc, theme: Theme): string {
+  // The full letterhead, printed once in the body flow rather than in
+  // Chromium's header box — the header box has no access to this stylesheet.
+  const logo = theme.logo
+    ? `<div class="logo" style="height: ${theme.logo.heightPt}pt">${theme.logo.svg}</div>`
+    : '<div></div>';
+  const lines = theme.letterhead
+    .map((l, i) => `<div class="${i === 0 ? 'lh-name' : 'lh-line'}">${escapeHtml(l)}</div>`)
+    .join('');
+  return `<header class="sheet-head">${logo}<div class="letterhead">${lines}</div></header>
+<div class="tick-row"><span class="tick"></span><span class="hair"></span></div>
+<h1 class="doc-title">${escapeHtml(doc.meta.title)}</h1>${
+    doc.meta.subtitle ? `<p class="doc-subtitle">${escapeHtml(doc.meta.subtitle)}</p>` : ''
+  }`;
+}
+
+export async function buildHtml(
+  doc: Doc,
+  theme: Theme,
+  opts: { headerHeightPt: number },
+): Promise<string> {
+  const faces = await arimoFaceCss();
+  const { colors: c, type: ty, page } = theme;
+  const trim = PAGE_PT[page.size];
+  const colWidthPt = trim.w - page.marginPt * 2;
+
+  const css = `${faces}
+:root{
+  --brand: ${c.brandOnLight};
+  --ink: ${c.ink};
+  --muted: ${c.muted};
+  --rule: ${c.rule};
+}
+@page{ size: ${page.size}; margin: ${toMm(page.marginPt + opts.headerHeightPt)} ${toMm(page.marginPt)} ${toMm(page.marginPt)} ${toMm(page.marginPt)}; }
+*{ box-sizing: border-box; }
+html,body{ margin:0; padding:0; }
+body{
+  font-family: Arimo, ${theme.font.document}, sans-serif;
+  font-size: ${ty.bodyPt}pt;
+  line-height: ${ty.leading};
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+/* The logo paints by class, never with an inline fill, so the theme owns its
+   colour. A solid-black logo therefore means this stylesheet did not load. */
+.logo svg{ height: 100%; width: auto; display: block; }
+.logo .c-brand{ fill: var(--brand); }
+.logo .c-muted{ fill: var(--muted); }
+.sheet-head{ display:flex; align-items:flex-start; justify-content:space-between; gap: 24pt; }
+.letterhead{ text-align: right; color: var(--muted); }
+.lh-name{ font-size: ${ty.smallPt + 0.5}pt; font-weight: 700; }
+.lh-line{ font-size: ${ty.smallPt - 0.5}pt; }
+.tick-row{ display:flex; align-items:center; gap: 6pt; margin: 14pt 0 0; }
+.tick{ display:block; width: 28pt; height: 3pt; background: var(--brand); }
+.hair{ display:block; flex:1; height: 0.75pt; background: var(--rule); }
+.doc-title{ font-size: ${ty.h1Pt}pt; font-weight: 700; margin: 22pt 0 0; letter-spacing: -0.01em; }
+.doc-subtitle{ color: var(--muted); margin: 4pt 0 0; }
+h1,h2,h3{ break-after: avoid; page-break-after: avoid; }
+h2{ font-size: ${ty.h2Pt}pt; font-weight: 700; margin: 18pt 0 4pt; }
+h3{ font-size: ${ty.h3Pt}pt; font-weight: 700; margin: 14pt 0 3pt; }
+p{ margin: 0 0 ${(ty.bodyPt * 0.7).toFixed(1)}pt; orphans: 2; widows: 2; }
+ul,ol{ margin: 0 0 ${(ty.bodyPt * 0.7).toFixed(1)}pt; padding-left: 16pt; }
+${[0, 1, 2, 3].map((d) => `.d${d}{ margin-left: ${d * 14}pt; }`).join('\n')}
+li{ margin: 0 0 2pt; }
+blockquote{ margin: 0 0 10pt; padding-left: 12pt; border-left: 2pt solid var(--rule); color: var(--muted); }
+pre{ background: #F6F6F4; padding: 8pt 10pt; border-radius: 2pt; overflow-wrap: anywhere; white-space: pre-wrap; break-inside: avoid; }
+code{ font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: ${(ty.bodyPt * 0.92).toFixed(1)}pt; }
+pre code{ font-size: ${(ty.bodyPt * 0.86).toFixed(1)}pt; }
+hr{ border: 0; border-top: 0.75pt solid var(--rule); margin: 14pt 0; }
+figure{ margin: 0 0 10pt; break-inside: avoid; }
+img{ max-width: 100%; height: auto; }
+table{ width: 100%; max-width: ${colWidthPt}pt; border-collapse: collapse; margin: 0 0 12pt; font-size: ${(ty.bodyPt * 0.95).toFixed(1)}pt; }
+/* A row that splits across a page break loses its meaning; a whole table that
+   cannot fit one page still has to break, so only the rows are protected. */
+tr{ break-inside: avoid; }
+thead{ display: table-header-group; }
+th{ text-align: left; font-weight: 700; border-bottom: 1pt solid var(--rule); padding: 4pt 6pt; }
+td{ border-bottom: 0.5pt solid var(--rule); padding: 4pt 6pt; vertical-align: top; }
+.pagebreak{ break-after: page; page-break-after: always; }
+a{ color: var(--ink); text-decoration: underline; text-decoration-color: var(--rule); }`;
+
+  const body = doc.blocks.map(block).join('\n');
+
+  return `<!doctype html>
+<html lang="${escapeHtml(doc.meta.lang)}">
+<head><meta charset="utf-8"><title>${escapeHtml(doc.meta.title)}</title>
+<style>${css}</style></head>
+<body>
+${firstPageHeader(doc, theme)}
+<main>
+${body}
+</main>
+</body></html>`;
+}
