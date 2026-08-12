@@ -405,8 +405,12 @@ const px96 = (pt: number): number => (pt * 4) / 3;
  *
  * The cost is a renderer disagreement, named in the phase's residuals: HTML
  * and PDF embed any raster `data:` URI, and Word embeds only a PNG.
+ *
+ * Exported so `documentor inspect` can warn "this will not embed in Word"
+ * against the same test this file actually applies, rather than a
+ * re-declared copy of the regex that could silently drift from it.
  */
-const RASTER = /^data:image\/png;base64,/;
+export const RASTER = /^data:image\/png;base64,/;
 
 /**
  * What a picture becomes when it cannot be embedded: a bordered box carrying

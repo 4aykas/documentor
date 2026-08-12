@@ -56,6 +56,25 @@ async function renderTo(
   }
 }
 
+// The three fields both ingesters accept as overrides. Exported as its own
+// type — rather than passing the CLI's own `ReturnType<typeof parseArgs>`
+// through, as this used to — because `inspect` needs `ingest` too (it must
+// read exactly what `build` would read, or the two could disagree about what
+// a document contains) and inspect's own args carry no --title/--date
+// /--entity today. Narrowing the parameter to only what ingest() actually
+// uses is what makes it callable from a second command without also
+// threading that command's unrelated flags (--to, --out, --plain-names, …)
+// through a parameter that would just go unread.
+export type IngestOpts = { title?: string; date?: string; entity?: string };
+
+function ingestOptsFrom(args: { title?: string; date?: string; entity?: string }): IngestOpts {
+  return {
+    ...(args.title === undefined ? {} : { title: args.title }),
+    ...(args.date === undefined ? {} : { date: args.date }),
+    ...(args.entity === undefined ? {} : { entity: args.entity }),
+  };
+}
+
 /**
  * One spot for "which ingester, read how". Both ingesters return the same
  * `{ doc, dropped }` shape, so everything after this call is format-agnostic
@@ -65,15 +84,14 @@ async function renderTo(
  * is a zip, and `readFile(input, 'utf8')` would corrupt it into replacement
  * characters before ingestDocx ever saw the bytes. Deciding both together,
  * here, is what keeps that pairing from drifting apart later.
+ *
+ * Exported so `inspect` reads a document exactly the way `build` does — the
+ * one thing the design will not tolerate is `inspect` reporting one Doc and
+ * `build` rendering a different one from the same input.
  */
-async function ingest(
-  ext: '.docx' | '.md' | '.markdown', input: string, args: ReturnType<typeof parseArgs>,
+export async function ingest(
+  ext: '.docx' | '.md' | '.markdown', input: string, opts: IngestOpts,
 ): Promise<Ingested> {
-  const opts = {
-    ...(args.title === undefined ? {} : { title: args.title }),
-    ...(args.date === undefined ? {} : { date: args.date }),
-    ...(args.entity === undefined ? {} : { entity: args.entity }),
-  };
   if (ext === '.docx') {
     const bytes = await readFile(input);
     const result = await ingestDocx(bytes, opts);
@@ -83,7 +101,7 @@ async function ingest(
     // doc's rule is that a DOCX's name is its title in that case, so this is
     // the one place that can fill it in: --title and a body title (checked
     // above, inside ingestDocx, in that order) both still win over it.
-    if (args.title === undefined && result.doc.meta.title === 'Untitled') {
+    if (opts.title === undefined && result.doc.meta.title === 'Untitled') {
       result.doc.meta.title = basename(input, ext);
     }
     return result;
@@ -183,7 +201,7 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
     return 2;
   }
 
-  const { doc, dropped } = await ingest(ext, input, args);
+  const { doc, dropped } = await ingest(ext, input, ingestOptsFrom(args));
   // The gate between ingest and render. Every renderer assumes a well-formed
   // Doc — an exhaustive switch over `Block` type-checks but says nothing about
   // what actually arrives at runtime from an ingester, a hand-written IR file
@@ -241,9 +259,15 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
 // found in a directory walk — PDFs, spreadsheets, images, a previous run's
 // own renders under an unrecognised extension — is not noise to report, it
 // is simply not an input, so discoverInputs below skips it without a word.
-const READABLE_EXTS = new Set(['.md', '.markdown', '.docx']);
+//
+// Exported alongside discoverInputs below for the same reason: `inspect`
+// walks a directory exactly the way `build` does (see the design's
+// requirement that both commands agree on what a batch contains), and a
+// second copy of this set would only ever be a second place for the two to
+// drift apart the day a fifth ingester arrives.
+export const READABLE_EXTS = new Set(['.md', '.markdown', '.docx']);
 
-type Discovered = {
+export type Discovered = {
   inputs: string[];
   // Filtered out as this build's own prior output (see the theme-id-marker
   // comment below), not silently — a real source that happens to be named
@@ -280,8 +304,11 @@ type Discovered = {
  * source, no marker at all) is closed a different way: runBuildBatch refuses
  * that combination outright rather than relying on a filename heuristic that
  * cannot see it.
+ *
+ * Exported so `inspect` can reuse this walk instead of writing a second one —
+ * see this file's own header comment on why READABLE_EXTS is exported too.
  */
-async function discoverInputs(dir: string, recursive: boolean, themeId: string): Promise<Discovered> {
+export async function discoverInputs(dir: string, recursive: boolean, themeId: string): Promise<Discovered> {
   const inputs: string[] = [];
   const skippedOwnOutput: string[] = [];
   const unreadableDirs: { dir: string; reason: string }[] = [];
@@ -367,7 +394,7 @@ async function processFile(
       throw new Error(`cannot read ${ext || 'a file with no extension'} yet — this build reads .md and .docx`);
     }
     const epochSeconds = await resolveEpoch(process.env, input);
-    const { doc, dropped } = await ingest(ext, input, args);
+    const { doc, dropped } = await ingest(ext, input, ingestOptsFrom(args));
     try {
       validateDoc(doc);
     } catch (e) {

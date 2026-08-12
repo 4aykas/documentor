@@ -1,19 +1,24 @@
 #!/usr/bin/env node
 import { FORMATS, runBuild } from '../cli/build.js';
 import { runDoctor } from '../cli/doctor.js';
+import { runInspect } from '../cli/inspect.js';
 
 // The --to list is derived from build.ts's own FORMATS, not copied, so this
 // text cannot go stale the way it did when docx was wired in but the string
 // here still named only pdf and md.
 const USAGE = `documentor — re-issue an existing document as a well-typeset one
 
+  documentor inspect <file|dir> [--theme plain] [--json] [--recursive]
   documentor build <file|dir> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>] [--title <s>] [--date <s>] [--entity <s>] [--plain-names] [--recursive]
   documentor doctor
 
+inspect reads a document and reports what it understood, what it had to drop,
+and what will surprise you — it renders nothing, and writes nothing to disk.
 Output lands beside the input as <name>.<theme>.<ext>, or <name>.<ext> with --plain-names.
-A directory input builds every .md/.markdown/.docx file it contains (its own
-top level only, unless --recursive), reusing one browser for the batch and
-printing a summary of what was written, refused, failed, or dropped.`;
+A directory input builds (or inspects) every .md/.markdown/.docx file it
+contains (its own top level only, unless --recursive); build reuses one
+browser for the batch and prints a summary of what was written, refused,
+failed, or dropped.`;
 
 /**
  * The exit code contract, documented in this one place because callers script
@@ -40,6 +45,10 @@ printing a summary of what was written, refused, failed, or dropped.`;
  * 1 (the catch-all for anything that threw instead of returning a code) —
  * except that a directory batch computes its own 1 the same way, since one
  * bad document must not let an uncaught throw end the whole batch.
+ *
+ * `inspect` returns the same four codes for the same meanings — see
+ * src/cli/inspect.ts's own comment on `runInspect` for exactly how a
+ * readable, an unreadable, and a would-be-refused document each map here.
  */
 
 const io = { log: (s: string) => console.log(s), err: (s: string) => console.error(s) };
@@ -48,6 +57,7 @@ const [command, ...rest] = process.argv.slice(2);
 let code = 0;
 try {
   if (command === 'build') code = await runBuild(rest, io);
+  else if (command === 'inspect') code = await runInspect(rest, io);
   else if (command === 'doctor') code = await runDoctor(io);
   else if (command === undefined || command === '--help' || command === '-h') { io.log(USAGE); code = command === undefined ? 2 : 0; }
   else { io.err(`documentor: unknown command ${JSON.stringify(command)}\n\n${USAGE}`); code = 2; }
