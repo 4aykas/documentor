@@ -76,10 +76,78 @@ the fourth renderer lands, not after.
 
 ## Before publishing
 
-`npm audit` reports seven vulnerabilities in transitive **dev** dependencies
-(three moderate, two high, two critical). `npm audit --omit=dev` reports none,
-so nothing reaches a consumer of the package — but this is a publish gate, not
-a merge gate, and it should be triaged before the first `npm publish`.
+*Triaged 2026-08-13, on `audit-triage` off `ef0c612`.* At that commit,
+`npm audit` reported seven vulnerabilities, all in transitive **dev**
+dependencies (three moderate, two high, two critical); `npm audit
+--omit=dev` reported none. `docx`, `jszip`, and `pdf-lib` had already moved
+to runtime dependencies by then, so that split was measured after the move,
+not before it.
+
+Both chains traced to test tooling, not to anything a consumer of `npx
+@tebin/documentor` runs:
+
+- **critical/high — `tar` via `@mapbox/node-pre-gyp` via `canvas`**, pulled
+  in only by `pdf-to-img`'s bundled `canvas@3.1.0` (used to rasterise PDF
+  pages to PNG for the baseline/agreement tests). `@mapbox/node-pre-gyp`
+  never actually installed on any platform tested here — it's an optional
+  dependency of `canvas` — so the vulnerable code never reached a real
+  `node_modules` tree, only the lockfile's dependency graph.
+- **moderate/high/critical — `esbuild`/`vite`/`vite-node`/`@vitest/mocker`/
+  `vitest`**, the test runner's own dependency chain. Never bundled into
+  `dist`, never installed by a consumer (`vitest` is a devDependency).
+
+Fixes applied, in order, each verified with `npx vitest run`, `npm run
+typecheck`, `npm run build`, and a kitchen-sink render/hash before and after:
+
+1. `pdf-to-img` `^4.4.0` → `^5.0.0`. Drops the bundled `canvas` dependency
+   entirely (5.x uses `pdfjs-dist` directly, no native rasteriser), which
+   removes the `tar`/`node-pre-gyp` critical/high chain. `pdf-to-img@6.x`
+   was tried first and rejected: its bundled `pdfjs-dist@5.6.205` falls in
+   the vulnerable range for GHSA-hq66-cqwq-w95j (arbitrary JS execution
+   opening a malicious PDF); `5.0.0`'s `pdfjs-dist@~5.4.0` does not.
+2. `vitest` `^2.1.8` → `^4.1.10` (major bump; the only fix `npm audit fix
+   --force` offered for the `esbuild`/`vite` chain). No config change
+   needed — `vitest.config.ts` is a plain `defineConfig` with no API this
+   major touched.
+
+Result: `npm audit` and `npm audit --omit=dev` both report **0
+vulnerabilities**.
+
+Kitchen-sink fixture (`test/fixtures/kitchen-sink.md`), rendered through
+`renderPdf`/`renderDocx` at a fixed epoch, before and after both bumps:
+
+- PDF: `072d9786b3e4bd8bcbcfb13aa719099db1d8bc50ebec5aab9bb81f585a91686`
+  (51,340 bytes) — unchanged
+- DOCX: `df6d922077b54bf8b5d3a594b84f055151a6e760bd4b5dbde7bb64115b23423`
+  (13,104 bytes) — unchanged
+
+Both renderers go through Playwright/Chromium and `docx`/`jszip`, none of
+which moved version — the two dev-dependency bumps above touch neither
+path, so byte-identity holding was expected, not just hoped for, and the
+hashes confirm it.
+
+One casualty, left as-is rather than papered over:
+`test/baseline/local-only-pixels.test.ts` (2 tests, already excluded from
+CI on all three platforms — see below) now fails after the `pdf-to-img`
+bump. It rasterises our (byte-identical, hash-confirmed) PDF output with
+`pdf-to-img` and compares the resulting PNG pixel-for-pixel against a
+committed baseline image. `pdf-to-img@5.0.0`'s newer bundled `pdfjs-dist`
+anti-aliases differently than `4.2.67` did, so the pixels differ even
+though the PDF content does not — the same "rasteriser version changes,
+pixels drift, content doesn't" finding this file already exists to
+quarantine (see below), just triggered by the test tool's own dependency
+instead of a different CI machine. The committed baseline PNGs were not
+touched — regenerating them is a human call, not this triage's. Whoever
+picks it up next: either re-approve fresh baselines rastered with
+`pdf-to-img@5.x`, or accept the drift is expected and skip the two
+assertions with a comment pointing here.
+
+**The publish gate is clear.** `npm audit` and `npm audit --omit=dev` both
+report zero vulnerabilities; 387 of 389 tests pass (the 2 known-fragile,
+already-non-CI pixel tests above are the only exceptions, and they assert
+on test tooling, not on product output); typecheck and build are clean;
+byte-identity of both shipped formats is confirmed by hash. Nothing blocks
+`npm publish` on dependency vulnerabilities.
 
 ## What the first CI run confirmed, and what it disproved
 
