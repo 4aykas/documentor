@@ -354,7 +354,7 @@ function blocks(b: Block, theme: Theme): (Paragraph | Table)[] {
     case 'pagebreak':
       return [new Paragraph({ children: [new PageBreak()] })];
     case 'image': {
-      if (!RASTER.test(b.src)) return [imagePlaceholder(b, theme)];
+      if (!canEmbedInDocx(b.src)) return [imagePlaceholder(b, theme)];
       const bytes = Buffer.from(b.src.slice(b.src.indexOf(',') + 1), 'base64');
       const natural = pngSize(bytes);
       if (natural === null) return [imagePlaceholder(b, theme)];
@@ -405,12 +405,24 @@ const px96 = (pt: number): number => (pt * 4) / 3;
  *
  * The cost is a renderer disagreement, named in the phase's residuals: HTML
  * and PDF embed any raster `data:` URI, and Word embeds only a PNG.
- *
- * Exported so `documentor inspect` can warn "this will not embed in Word"
- * against the same test this file actually applies, rather than a
- * re-declared copy of the regex that could silently drift from it.
  */
-export const RASTER = /^data:image\/png;base64,/;
+const RASTER = /^data:image\/png;base64,/;
+
+/**
+ * Whether this renderer can embed `src` as a real picture — the question
+ * `documentor inspect` needs answered to warn "this will not embed in
+ * Word", exported as a predicate rather than the regex above. `inspect`
+ * should depend on *what* counts as embeddable, not *how* this file
+ * currently decides that: today it's a `data:` URI prefix test, but
+ * ingest/docx.ts's own `sniffRaster` already reads magic bytes for the
+ * inverse direction (source → mime), and the day this renderer does the
+ * same, a regex exported on its own would leave `inspect`'s warning
+ * silently answering a question this file no longer asks that way. One
+ * function is one place for that to change.
+ */
+export function canEmbedInDocx(src: string): boolean {
+  return RASTER.test(src);
+}
 
 /**
  * What a picture becomes when it cannot be embedded: a bordered box carrying

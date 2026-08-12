@@ -15,7 +15,7 @@
 
 import { basename, extname, resolve } from 'node:path';
 import { stat } from 'node:fs/promises';
-import { RASTER as DOCX_RASTER } from '../render/docx.js';
+import { canEmbedInDocx } from '../render/docx.js';
 import type { Block, Doc, Inline } from '../ir/types.js';
 import { validateDoc } from '../ir/validate.js';
 import { loadTheme, type Theme } from '../theme/resolve.js';
@@ -68,9 +68,22 @@ export type DocInspection =
       file: string;
       status: 'ok';
       title: string;
-      hasSubtitle: boolean;
-      hasDate: boolean;
-      hasEntity: boolean;
+      // `subtitle`/`date`/`entity` are meta.doc fields verbatim (present only
+      // when the ingester found one — exactOptionalPropertyTypes means an
+      // absent fact is an absent key, never an explicit `undefined`). They
+      // exist here for the same reason `title` does: all four print on the
+      // themed letterhead at build time, so a person deciding whether the
+      // build is ready to run wants to see exactly what will land there —
+      // not just "yes/no, one was found" but the actual text. Every one of
+      // them is rendered in renderUnderstood below; a fact that appeared
+      // only in this structure and never in the human text would be exactly
+      // the disagreement the design's "one structure, two renderings" rule
+      // exists to prevent, and test/cli/inspect.test.ts's parity test walks
+      // this structure at runtime (not a hand-maintained field list) to
+      // catch a future field added here without a renderer for it.
+      subtitle?: string;
+      date?: string;
+      entity?: string;
       counts: Counts;
       /** Exactly what the ingester returned — not re-derived or re-worded.
        *  The ingesters own this vocabulary; a second phrasing of the same
@@ -185,10 +198,12 @@ function computeWarnings(doc: Doc, theme: Theme): string[] {
     }
   }
 
-  // render/docx.ts embeds only a PNG data: URI (DOCX_RASTER, imported from
-  // there rather than re-declared here — the design's own "read once" rule
+  // render/docx.ts's own exported predicate answers "can this be embedded",
+  // imported rather than re-implemented — the design's own "read once" rule
   // for what an ingester returns applies just as much to what a renderer
-  // will accept). Anything else — JPEG, GIF, SVG — draws a bordered
+  // will accept, and a regex duplicated here could silently go stale the
+  // day that renderer answers the question a different way (see
+  // canEmbedInDocx's own comment). Anything it rejects draws a bordered
   // placeholder instead, a named residual of that renderer's own docs. This
   // is deliberately not conditioned on which formats the caller intends to
   // build: DOCX is always one of the formats `build --to` can be asked for,
@@ -197,7 +212,7 @@ function computeWarnings(doc: Doc, theme: Theme): string[] {
   for (const b of doc.blocks) {
     if (b.t !== 'image') continue;
     imageIndex++;
-    if (!DOCX_RASTER.test(b.src)) {
+    if (!canEmbedInDocx(b.src)) {
       warnings.push(`image ${imageIndex} will not embed in Word — only PNG embeds; a .docx build will draw a placeholder instead`);
     }
   }
@@ -230,9 +245,9 @@ async function inspectDoc(
     file,
     status: 'ok',
     title: doc.meta.title,
-    hasSubtitle: doc.meta.subtitle !== undefined,
-    hasDate: doc.meta.date !== undefined,
-    hasEntity: doc.meta.entity !== undefined,
+    ...(doc.meta.subtitle === undefined ? {} : { subtitle: doc.meta.subtitle }),
+    ...(doc.meta.date === undefined ? {} : { date: doc.meta.date }),
+    ...(doc.meta.entity === undefined ? {} : { entity: doc.meta.entity }),
     counts: countBlocks(doc.blocks),
     dropped,
     warnings: computeWarnings(doc, theme),
@@ -253,9 +268,14 @@ const COUNT_LABELS: { key: keyof Counts; one: string; many: string }[] = [
 
 /** Renders one `ok` document's `understood:` line. Every word here is
  *  derived from fields already on `DocInspection`, never invented — the
- *  parity test walks this same structure to check that. */
+ *  parity test walks this same structure at runtime to check that, rather
+ *  than a hand-written list of "the fields this function remembers to
+ *  render" that a new field could silently fall outside of. */
 function renderUnderstood(d: Extract<DocInspection, { status: 'ok' }>): string {
   const parts: string[] = [d.title === 'Untitled' ? 'no title' : `title "${d.title}"`];
+  if (d.subtitle !== undefined) parts.push(`subtitle "${d.subtitle}"`);
+  if (d.date !== undefined) parts.push(`date "${d.date}"`);
+  if (d.entity !== undefined) parts.push(`entity "${d.entity}"`);
   for (const { key, one, many } of COUNT_LABELS) {
     const n = d.counts[key];
     if (n > 0) parts.push(`${n} ${n === 1 ? one : many}`);

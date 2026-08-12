@@ -38,6 +38,33 @@ function parseJson(log: string[]): InspectResult {
   return JSON.parse(log.join('\n')) as InspectResult;
 }
 
+/**
+ * Every fact a value carries, walked at runtime rather than read off a
+ * hand-maintained list of "the fields we remembered to check" — the whole
+ * point is that a field added to `DocInspection` later is covered here
+ * without anyone also updating a parallel list in this test file. `file` and
+ * `status` are excluded because they are addressing/discriminant fields, not
+ * reported facts (a full path is never printed verbatim in single-document
+ * output, and the word "ok" never appears in the human form at all) — every
+ * other string or nonzero number reachable from the object is a fact this
+ * test requires to appear, verbatim, in the human text. A zero number is
+ * excluded because `renderUnderstood`'s own contract is to omit a zero count
+ * (see its comment) — that is a documented exception, not a loophole this
+ * test is blind to: a *nonzero* value of any newly added field still has to
+ * show up somewhere in the human output, or this walk will catch it.
+ */
+function factsOf(value: unknown): string[] {
+  if (typeof value === 'string') return value === '' ? [] : [value];
+  if (typeof value === 'number') return value === 0 ? [] : [String(value)];
+  if (Array.isArray(value)) return value.flatMap(factsOf);
+  if (value !== null && typeof value === 'object') {
+    return Object.entries(value)
+      .filter(([k]) => k !== 'file' && k !== 'status')
+      .flatMap(([, v]) => factsOf(v));
+  }
+  return [];
+}
+
 describe('parseInspectArgs', () => {
   it('defaults to the plain theme, human output, non-recursive', () => {
     expect(parseInspectArgs(['a.md'])).toEqual({ input: 'a.md', theme: 'plain', json: false, recursive: false });
@@ -90,21 +117,61 @@ describe('runInspect: single file', () => {
     expect(doc.status).toBe('ok');
     if (doc.status !== 'ok') throw new Error('unreachable');
 
-    // Every fact the human form states also appears, verbatim, in the JSON
-    // — proving the two are one structure rendered twice, not two
-    // computations that happen to agree today. Only the nonzero counts are
-    // checked: renderUnderstood omits a zero count on purpose (see its own
-    // comment), so "0" is not a fact the human form claims to state.
-    expect(human).toContain(doc.title === 'Untitled' ? 'no title' : doc.title);
-    for (const d of doc.dropped) expect(human).toContain(d);
-    for (const w of doc.warnings) expect(human).toContain(w);
-    for (const [key, n] of Object.entries(doc.counts)) {
-      if (n > 0) expect(human, `count ${key}=${n} missing from human output`).toContain(String(n));
+    // Walks the structure itself via factsOf — see its own comment — rather
+    // than a hand-written list of which fields to check. "no title" is the
+    // one fact rendered as a synonym instead of the literal field value
+    // ("Untitled"), so it is asserted directly; every other fact is read off
+    // the object and required to appear, verbatim, in the human text.
+    expect(human).toContain('no title');
+    for (const fact of factsOf(doc)) {
+      expect(human, `fact ${JSON.stringify(fact)} missing from the human output`).toContain(fact);
     }
     // And the reverse holds for renderHuman called directly against the same
     // structure, guarding against a future field added to one rendering and
     // not the other.
     expect(renderHuman(result)).toBe(human);
+  });
+
+  it('a field added to DocInspection and left unrendered fails the parity walk', async () => {
+    // Reproduces the reviewer's own counterexample from fix round 1: add a
+    // field to the `ok` shape, populate it, and never render it. Proves
+    // factsOf (unlike the old hand-maintained field list it replaced) does
+    // not need to be told about the new field to catch the omission.
+    const file = await fixture('# Report\n\nHello.\n');
+    const { io, log } = collect();
+    await runInspect([file, '--json'], io);
+    const result = parseJson(log);
+    const doc = result.documents[0] as unknown as Record<string, unknown>;
+    expect(doc['status']).toBe('ok');
+    doc['probeField'] = 'a fact nobody rendered';
+
+    const human = renderHuman(result);
+    expect(() => {
+      for (const fact of factsOf(doc)) {
+        expect(human, `fact ${JSON.stringify(fact)} missing from the human output`).toContain(fact);
+      }
+    }).toThrowError(/fact "a fact nobody rendered" missing from the human output/);
+  });
+
+  it('renders a subtitle and a date when the document carries them', async () => {
+    // ingestDocx recovers `subtitle` from a DocSubtitle body paragraph and
+    // `date` from the letterhead's header/footer scan — round-tripped
+    // through this project's own renderDocx the same way
+    // test/ingest/docx.test.ts's own fixture is. `entity` has no source
+    // inside a document at all (see DocInspection's own comment: it comes
+    // only from a caller-supplied opts.entity, which inspect never passes),
+    // so it is not exercised here — there is no fixture that could give it a
+    // value through this path today.
+    const withMeta: Doc = {
+      meta: { title: 'Reply to Request 4.2', subtitle: 'Confidential', date: 'July 20, 2026', lang: 'en' },
+      blocks: [{ t: 'para', text: [{ t: 'text', v: 'Body text.' }] }],
+    };
+    const file = await docxFixture(withMeta, 'meta.docx');
+    const { io, log } = collect();
+    await runInspect([file], io);
+    const human = log.join('\n');
+    expect(human).toMatch(/subtitle "Confidential"/);
+    expect(human).toMatch(/date "July 20, 2026"/);
   });
 
   it('reports the ingester\'s own dropped entries, unchanged', async () => {
