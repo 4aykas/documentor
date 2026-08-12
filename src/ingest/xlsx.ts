@@ -256,21 +256,65 @@ function looksLikeHeader(row: readonly Cell[]): boolean {
   return row.length > 0 && row.every((c) => c.text.trim() !== '' && !c.isNumeric);
 }
 
-/** Removes leading empty rows and leading empty columns — and only those.
- *  A fully empty row *inside* the used range survives (a blank row inside a
- *  register usually separates groups; deleting it changes what the table
- *  says — see the design doc), and so does a trailing one: the grid's own
- *  extent already comes from the last cell reference that exists in the
- *  sheet, so there is nothing "trailing" left to trim once that boundary is
- *  the one the grid was built to. */
-function trimLeading(grid: readonly Cell[][]): Cell[][] {
+/** Drops every column that holds no value in *any* row of the grid — not
+ *  only a leading run of them, which is all the old leading-trim did. A
+ *  column like this is in the file because it carries a style, not data
+ *  (see docs/superpowers/notes/2026-08-13-what-a-real-register-looks-like.md,
+ *  measured at 62 of 112 worksheets, 642 columns in total). This has to run
+ *  *before* header and preamble detection, not after: `looksLikeHeader`
+ *  requires every cell in a row to be filled, and a style-only empty column
+ *  sitting in the used range would fail that test on every row forever,
+ *  including the real header — which is exactly what happened to the
+ *  shareholders register the design was built from. */
+function dropEmptyColumns(grid: readonly Cell[][]): Cell[][] {
+  if (grid.length === 0) return [];
+  const cols = grid[0]!.length;
+  const keep: number[] = [];
+  for (let c = 0; c < cols; c++) {
+    if (grid.some((row) => row[c]!.text !== '')) keep.push(c);
+  }
+  if (keep.length === cols) return grid.map((row) => row.slice());
+  return grid.map((row) => keep.map((c) => row[c]!));
+}
+
+/** Removes only a *leading* run of fully-empty rows. A fully empty row
+ *  *inside* the used range survives (a blank row inside a register usually
+ *  separates groups; deleting it changes what the table says — see the
+ *  design doc), and so does a trailing one: the grid's own extent already
+ *  comes from the last cell reference that exists in the sheet, so there is
+ *  nothing "trailing" left to trim once that boundary is the one the grid
+ *  was built to. Column trimming is `dropEmptyColumns`'s job now, not this
+ *  function's — see that function's comment for why it has to run first. */
+function trimLeadingRows(grid: readonly Cell[][]): Cell[][] {
   let firstRow = 0;
   while (firstRow < grid.length && grid[firstRow]!.every((c) => c.text === '')) firstRow++;
-  if (firstRow === grid.length) return [];
-  const cols = grid[0]!.length;
-  let firstCol = 0;
-  while (firstCol < cols && grid.every((row) => row[firstCol]!.text === '')) firstCol++;
-  return grid.slice(firstRow).map((row) => row.slice(firstCol));
+  return grid.slice(firstRow);
+}
+
+/** Splits a grid into the preamble sitting above the table and the table
+ *  itself. A title or caption row has at most one filled cell; an ordinary
+ *  table row (header or data) almost always has two or more, so the first
+ *  row with two or more filled cells is where the table actually starts —
+ *  measured, not assumed: 64 of 112 worksheets in the corpus have a
+ *  preamble by this rule, almost always exactly one row (see the design
+ *  note). Everything before that row is lifted out — as text, never
+ *  deleted; the caller reports where each row went.
+ *
+ *  The guard that matters: a genuinely single-column list has *no* row with
+ *  two filled cells at all, so without this check the loop below would walk
+ *  off the end of the grid and "lift" the entire sheet, leaving an empty
+ *  table — the single worst outcome this rule could produce. When the scan
+ *  reaches the end without finding a wide row, there is no preamble: the
+ *  sheet is one column of data, and every row of it is the table. */
+function liftPreamble(grid: readonly Cell[][]): { preamble: Cell[][]; table: Cell[][] } {
+  let split = 0;
+  while (split < grid.length) {
+    const filled = grid[split]!.reduce((n, c) => (c.text.trim() !== '' ? n + 1 : n), 0);
+    if (filled >= 2) break;
+    split++;
+  }
+  if (split === grid.length) return { preamble: [], table: grid.map((row) => row.slice()) };
+  return { preamble: grid.slice(0, split), table: grid.slice(split) };
 }
 
 // ---------------------------------------------------------------------------
@@ -304,7 +348,11 @@ function parseMergeCells(sheetXml: string): MergeRange[] {
 type SheetOutcome =
   | { kind: 'refused'; message: string }
   | { kind: 'empty' }
-  | { kind: 'ok'; grid: Cell[][]; hadFormula: boolean };
+  // `minRow` is the sheet's first used row (1-based, from the address scan
+  // below) — carried out so the caller can turn a preamble row's index in
+  // the trimmed grid back into the row number a reader would recognise from
+  // the actual spreadsheet.
+  | { kind: 'ok'; grid: Cell[][]; hadFormula: boolean; minRow: number };
 
 /**
  * Reads one `xl/worksheets/sheetN.xml`. Two passes over the same string,
@@ -473,7 +521,7 @@ function readWorksheet(
     }
   }
 
-  return { kind: 'ok', grid, hadFormula };
+  return { kind: 'ok', grid, hadFormula, minRow };
 }
 
 // ---------------------------------------------------------------------------
@@ -506,6 +554,10 @@ export async function ingestXlsx(
   const refusalMessages: string[] = [];
   let refusedCount = 0;
   let hadFormula = false;
+  // Set at most once: a lifted preamble becomes the document title only when
+  // there is exactly one sheet, exactly one caption row to promote, and the
+  // caller didn't already give this document a title — see the loop below.
+  let liftedTitle: string | undefined;
 
   for (const sheet of sheets) {
     const target = rels.get(sheet.rId);
@@ -531,22 +583,58 @@ export async function ingestXlsx(
     }
 
     if (outcome.hadFormula) hadFormula = true;
-    const trimmed = trimLeading(outcome.grid);
-    if (trimmed.length === 0 || trimmed[0]!.length === 0) {
-      sink.dropped.push(`sheet "${sheet.name}" is entirely empty once leading blank rows and columns are trimmed — nothing to show`);
+
+    // Order, deliberately: empty columns are dropped first, then leading
+    // blank rows, then the preamble is lifted. Column-dropping has to come
+    // before both row steps — see dropEmptyColumns's own comment for why a
+    // style-only empty column would otherwise make the header rule fail on
+    // every row, including the real header. Leading-row trimming then has to
+    // come before the preamble lift: a genuinely blank row above the title
+    // (not the "blank row under the title" the design measured, but an empty
+    // row above *that*) has zero filled cells, which liftPreamble would
+    // happily count as "part of the preamble" too — harmless for the split
+    // itself, but folding it into trimLeadingRows keeps the preamble report
+    // limited to rows that actually said something, instead of reporting a
+    // blank line as "lifted".
+    const colTrimmed = dropEmptyColumns(outcome.grid);
+    if (colTrimmed.length === 0 || colTrimmed[0]!.length === 0) {
+      sink.dropped.push(`sheet "${sheet.name}" is entirely empty once wholly empty columns are removed — nothing to show`);
+      continue;
+    }
+    const leadingBlankRows = (() => {
+      let n = 0;
+      while (n < colTrimmed.length && colTrimmed[n]!.every((c) => c.text === '')) n++;
+      return n;
+    })();
+    const rowTrimmed = trimLeadingRows(colTrimmed);
+    if (rowTrimmed.length === 0) {
+      sink.dropped.push(`sheet "${sheet.name}" is entirely empty once leading blank rows and wholly empty columns are trimmed — nothing to show`);
       continue;
     }
 
-    const header = trimmed[0]!;
+    const { preamble, table: tableGrid } = liftPreamble(rowTrimmed);
+    // Each preamble row has at most one filled cell (liftPreamble stops at
+    // the first row with two or more), so there is never more than one piece
+    // of text to report per row. A row with none — the blank spacer under a
+    // title — is skipped: nothing was lifted from it because it never held
+    // anything, so there is nothing to report either.
+    const preambleEntries: { row: number; text: string }[] = [];
+    preamble.forEach((r, i) => {
+      const filled = r.find((c) => c.text.trim() !== '');
+      if (filled === undefined) return;
+      preambleEntries.push({ row: outcome.minRow + leadingBlankRows + i, text: filled.text });
+    });
+
+    const header = tableGrid[0]!;
     let head: Inline[][];
     let dataRows: Cell[][];
     if (looksLikeHeader(header)) {
       head = header.map(cellToInline);
-      dataRows = trimmed.slice(1);
+      dataRows = tableGrid.slice(1);
     } else {
       sink.dropped.push(`sheet "${sheet.name}": first row is not a header (every header cell must be filled with non-numeric text) — the table has no header row, and every row (including what would have been the header) was kept as data`);
       head = header.map(() => []);
-      dataRows = trimmed;
+      dataRows = tableGrid;
     }
 
     // "Sheet1" on a single-sheet workbook tells a reader nothing — see the
@@ -554,6 +642,28 @@ export async function ingestXlsx(
     if (!(sheets.length === 1 && sheet.name === 'Sheet1')) {
       sink.blocks.push({ t: 'heading', level: 1, text: [{ t: 'text', v: sheet.name }] });
     }
+
+    // A lifted preamble is never deleted (design's own rule). Ordinarily it
+    // becomes a `para` block sitting above the table; the one case where it
+    // becomes the document title instead is a single-sheet workbook, with
+    // exactly one caption to promote, and no title the caller already set —
+    // that is the "natural reading" the design names, and it is what turns
+    // the shareholders register's own one-cell title back into a title
+    // instead of a floating paragraph.
+    const canPromoteTitle =
+      sheets.length === 1 && preambleEntries.length === 1 && liftedTitle === undefined &&
+      (opts.title === undefined || opts.title === '');
+    if (canPromoteTitle) {
+      const entry = preambleEntries[0]!;
+      liftedTitle = entry.text;
+      sink.dropped.push(`sheet "${sheet.name}": preamble row ${entry.row} ("${entry.text}") lifted and used as the document title`);
+    } else {
+      for (const entry of preambleEntries) {
+        sink.blocks.push({ t: 'para', text: [{ t: 'text', v: entry.text }] });
+        sink.dropped.push(`sheet "${sheet.name}": preamble row ${entry.row} ("${entry.text}") lifted above the table as text`);
+      }
+    }
+
     sink.blocks.push({
       t: 'table',
       head,
@@ -577,11 +687,14 @@ export async function ingestXlsx(
     sink.dropped.push('workbook contains formulas — the cached values Excel last computed were used rather than recomputed; a workbook last saved by something that did not recalculate could carry a stale number');
   }
 
+  // A lifted preamble title only fills in where the caller left the title
+  // unset — an explicit --title always wins, same precedence as every other
+  // opts field below.
   const title = opts.title;
   return {
     doc: {
       meta: {
-        title: title && title !== '' ? title : 'Untitled',
+        title: title && title !== '' ? title : (liftedTitle ?? 'Untitled'),
         lang: 'en',
         ...(opts.subtitle !== undefined && opts.subtitle !== '' ? { subtitle: opts.subtitle } : {}),
         ...(opts.date !== undefined ? { date: opts.date } : {}),
