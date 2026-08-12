@@ -1343,6 +1343,22 @@ describe('buildHtml', () => {
   it('omits the logo block entirely when the theme has none', async () => {
     expect(await build()).not.toContain('class="logo"');
   });
+
+  it('resumes an ordered list that a sublist interrupted', async () => {
+    const withList: Doc = {
+      meta: { title: 'T', lang: 'en' },
+      blocks: [
+        { t: 'list', ordered: true, depth: 0, items: [[{ t: 'text', v: 'a' }]] },
+        { t: 'list', ordered: false, depth: 1, items: [[{ t: 'text', v: 'x' }]] },
+        { t: 'list', ordered: true, depth: 0, start: 2, items: [[{ t: 'text', v: 'b' }]] },
+      ],
+    };
+    const html = await buildHtml(withList, theme, { headerHeightPt: 40 });
+    expect(html).toContain('<ol class="d0" start="2">');
+    // A first fragment starting at 1 must not carry a redundant attribute.
+    expect(html).toContain('<ol class="d0">');
+    expect(html).toContain('<ul class="d1">');
+  });
 });
 
 describe('escapeHtml', () => {
@@ -1402,7 +1418,11 @@ function block(b: Block): string {
     case 'list': {
       const tag = b.ordered ? 'ol' : 'ul';
       const items = b.items.map((it) => `<li>${inline(it)}</li>`).join('');
-      return `<${tag} class="d${b.depth}">${items}</${tag}>`;
+      // A list is split into fragments wherever a sublist interrupts it, so an
+      // ordered fragment after a sublist must resume its numbering rather than
+      // restart at 1.
+      const start = b.ordered && b.start !== undefined && b.start !== 1 ? ` start="${b.start}"` : '';
+      return `<${tag} class="d${b.depth}"${start}>${items}</${tag}>`;
     }
     case 'table': {
       const head = b.head
