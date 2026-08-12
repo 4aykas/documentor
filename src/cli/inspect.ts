@@ -26,7 +26,7 @@ import type { Block, Doc, Inline } from '../ir/types.js';
 import { validateDoc } from '../ir/validate.js';
 import { loadTheme, type Theme } from '../theme/resolve.js';
 import { PAGE_PT } from '../theme/types.js';
-import { discoverInputs, ingest, READABLE_EXTS, type IngestOpts } from './build.js';
+import { checkFormats, discoverInputs, ingest, READABLE_EXTS, type IngestOpts } from './build.js';
 import { resolveConfig, type ConfigFlags, DEFAULT_THEME } from './config.js';
 
 type Io = { log: (s: string) => void; err: (s: string) => void };
@@ -498,12 +498,21 @@ export async function runInspect(argv: string[], io: Io): Promise<number> {
       const ext = extname(file).toLowerCase() as '.md' | '.markdown' | '.docx';
       try {
         const resolved = await resolveConfig(file, configFlagsFrom(args));
+        // inspect has no --to flag of its own to validate a format against,
+        // but a sidecar can still carry a `to` this build cannot write —
+        // checked here, through the exact function build.ts's own runBuild
+        // checks a resolved `to` with, so `inspect` cannot report a clean
+        // preview for a document `build` is about to refuse (see this
+        // file's own module comment on why that disagreement is precisely
+        // the defect `inspect` exists to prevent).
+        const formatCheck = checkFormats(resolved.to);
+        if ('error' in formatCheck) throw new Error(formatCheck.error);
         const theme = await loadTheme(resolved.theme);
         documents.push(await inspectCore(file, ext, theme, resolved.ingestOpts, resolved.sidecarPath));
       } catch (e) {
-        // A sidecar that does not resolve (or a theme it names that does
-        // not exist) means this one document was never read at all — the
-        // same class of loss an unreadable .docx zip already is, folded
+        // A sidecar that does not resolve (a theme or format it names that
+        // does not exist) means this one document was never read at all —
+        // the same class of loss an unreadable .docx zip already is, folded
         // into 'failed' rather than aborting the batch. See DocInspection's
         // own comment on why this differs from the single-file case below.
         documents.push({ file, status: 'failed', reason: (e as Error).message });
@@ -526,6 +535,14 @@ export async function runInspect(argv: string[], io: Io): Promise<number> {
       resolved = await resolveConfig(inputArg, configFlagsFrom(args));
     } catch (e) {
       io.err(`documentor: ${(e as Error).message}`);
+      return 2;
+    }
+    // Same reasoning as the batch branch above: a sidecar's `to` is
+    // validated here, through build.ts's own `checkFormats`, so a single
+    // `inspect` run cannot green-light a `build` that is about to exit 2.
+    const formatCheck = checkFormats(resolved.to);
+    if ('error' in formatCheck) {
+      io.err(`documentor: ${formatCheck.error}`);
       return 2;
     }
     const theme = await loadTheme(resolved.theme);

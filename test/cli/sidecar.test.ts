@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Doc } from '../../src/ir/types.js';
@@ -423,5 +423,145 @@ describe('resolveConfig directly: precedence and defaults', () => {
     expect(resolved.to).toEqual(['pdf']);
     expect(resolved.plainNames).toBe(false);
     expect(resolved.sidecarPath).toBe(sidecarPathFor(file));
+  });
+});
+
+describe('fix round 1: inspect validates a sidecar\'s "to" the same way build does', () => {
+  it('a sidecar naming a format this build cannot write refuses build with exit 2', async () => {
+    const { file } = await fixture('# R\n\nHi.\n');
+    await sidecarFor(file, { to: ['xlsx'] });
+    const { io, err } = collect();
+    expect(await runBuild([file], io)).toBe(2);
+    expect(err.join('\n')).toMatch(/cannot write "xlsx" yet/);
+  });
+
+  it('inspect refuses the identical sidecar the identical way, for a single file — it must not green-light a build that will refuse', async () => {
+    const { file } = await fixture('# R\n\nHi.\n');
+    await sidecarFor(file, { to: ['xlsx'] });
+    const { io, err } = collect();
+    expect(await runInspect([file], io)).toBe(2);
+    expect(err.join('\n')).toMatch(/cannot write "xlsx" yet/);
+  });
+
+  it('inspect refuses it in a batch too, folding it into that one document\'s failure', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'documentor-sidecar-to-batch-'));
+    await writeFile(join(dir, 'a.md'), '# A\n\nHi.\n');
+    await writeFile(join(dir, 'a.documentor.json'), JSON.stringify({ to: ['xlsx'] }));
+    const { io, log } = collect();
+    expect(await runInspect([dir, '--json'], io)).toBe(1);
+    const result = JSON.parse(log.join('\n')) as InspectResult;
+    const doc = result.documents[0]!;
+    expect(doc.status).toBe('failed');
+    if (doc.status !== 'failed') throw new Error('unreachable');
+    expect(doc.reason).toMatch(/cannot write "xlsx" yet/);
+  });
+});
+
+describe('fix round 1: the batch own-output guard survives a sidecar theme, on an identical rerun', () => {
+  it('a second, identical run does not re-ingest the first run\'s sidecar-themed output', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'documentor-sidecar-selfoutput-'));
+    await writeFile(join(dir, 'g1.md'), '# G1\n\nHello.\n');
+    await writeFile(join(dir, 'g1.documentor.json'), JSON.stringify({ theme: 'tebin' }));
+    await writeFile(join(dir, 'g2.md'), '# G2\n\nHello.\n');
+
+    const { io: io1, log: log1 } = collect();
+    expect(await runBuild([dir, '--to', 'md'], io1)).toBe(0);
+    expect(log1.join('\n')).toMatch(/2 written/);
+    expect((await readdir(dir)).sort()).toEqual([
+      'g1.documentor.json', 'g1.md', 'g1.tebin.md', 'g2.md', 'g2.plain.md',
+    ]);
+
+    const { io: io2, log: log2 } = collect();
+    expect(await runBuild([dir, '--to', 'md'], io2)).toBe(0);
+    const summary2 = log2.join('\n');
+    // Nothing new was written, and both prior outputs are named as skipped
+    // — g1.tebin.md would otherwise have been silently re-ingested as a
+    // fresh source and written again as g1.tebin.plain.md, growing the
+    // theme-id chain on every identical rerun. Only g1.md and g2.md — the
+    // two genuine sources — count as this batch's documents; g2.plain.md
+    // was already caught by discoverInputs' own walk-time filter (its
+    // stem ends in the CLI-default theme id), and g1.tebin.md is now
+    // caught by the new target-based check on top of it.
+    expect(summary2).toMatch(/2 document\(s\)/);
+    expect(summary2).toMatch(/2 skipped as this build's own prior output/);
+    expect(summary2).toMatch(/g1\.tebin\.md/);
+    expect(summary2).toMatch(/g2\.plain\.md/);
+    expect((await readdir(dir)).sort()).toEqual([
+      'g1.documentor.json', 'g1.md', 'g1.tebin.md', 'g2.md', 'g2.plain.md',
+    ]);
+  });
+});
+
+describe('fix round 1: a sidecar-named theme that does not exist', () => {
+  it('is a usage error naming the sidecar, not a bare "theme not found" — exit 2 for a single file', async () => {
+    const { file } = await fixture('# R\n\nHi.\n');
+    const sidecar = await sidecarFor(file, { theme: 'nope' });
+    const { io, err } = collect();
+    expect(await runBuild([file, '--to', 'md'], io)).toBe(2);
+    expect(err.join('\n')).toContain(`sidecar ${sidecar}`);
+    expect(err.join('\n')).toMatch(/theme "nope" not found/);
+  });
+
+  it('folds into that one document\'s failure in a batch, still naming the sidecar', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'documentor-sidecar-badtheme-batch-'));
+    await writeFile(join(dir, 'a.md'), '# A\n\nHi.\n');
+    await writeFile(join(dir, 'a.documentor.json'), JSON.stringify({ theme: 'nope' }));
+    const { io, log } = collect();
+    expect(await runBuild([dir, '--to', 'md'], io)).toBe(1);
+    const summary = log.join('\n');
+    expect(summary).toMatch(/1 had a sidecar/);
+    expect(summary).toMatch(/theme "nope" not found/);
+  });
+
+  it('a bad --theme flag is unaffected — still the pre-existing uncaught-throw behaviour', async () => {
+    const { file } = await fixture('# R\n\nHi.\n');
+    const { io, err } = collect();
+    await expect(runBuild([file, '--to', 'md', '--theme', 'nope'], io)).rejects.toThrow(/theme "nope" not found/);
+    expect(err.join('\n')).toBe('');
+  });
+});
+
+describe('fix round 1: "N had a sidecar" counts inputs that had one, not only ones that resolved', () => {
+  it('counts a file whose sidecar was found but rejected (unknown key)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'documentor-sidecar-count-'));
+    await writeFile(join(dir, 'good.md'), '# Good\n\nHi.\n');
+    await writeFile(join(dir, 'bad.md'), '# Bad\n\nHi.\n');
+    await writeFile(join(dir, 'bad.documentor.json'), JSON.stringify({ tittle: 'typo' }));
+    const { io, log } = collect();
+    expect(await runBuild([dir, '--to', 'md'], io)).toBe(1);
+    expect(log.join('\n')).toMatch(/1 had a sidecar/);
+  });
+
+  it('counts a file whose sidecar was found but named a nonexistent theme', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'documentor-sidecar-count2-'));
+    await writeFile(join(dir, 'a.md'), '# A\n\nHi.\n');
+    await writeFile(join(dir, 'a.documentor.json'), JSON.stringify({ theme: 'nope' }));
+    const { io, log } = collect();
+    expect(await runBuild([dir, '--to', 'md'], io)).toBe(1);
+    expect(log.join('\n')).toMatch(/1 had a sidecar/);
+  });
+});
+
+describe('fix round 1: a sidecar path that exists but is a directory', () => {
+  it('refuses loudly for a single file, instead of silently behaving as though none exists', async () => {
+    const { file, dir } = await fixture('# R\n\nHi.\n');
+    await mkdir(sidecarPathFor(file));
+    const { io, err } = collect();
+    expect(await runBuild([file, '--to', 'md'], io)).toBe(2);
+    expect(err.join('\n')).toMatch(/exists but is not a file/);
+    expect(err.join('\n')).toMatch(/directory/);
+    // Nothing was written for the one document this run could not trust.
+    expect((await readdir(dir)).sort()).toEqual(['report.documentor.json', 'report.md']);
+  });
+
+  it('is refused the same way in a batch, folded into that document\'s failure and still counted as having had one', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'documentor-sidecar-dirsidecar-batch-'));
+    await writeFile(join(dir, 'a.md'), '# A\n\nHi.\n');
+    await mkdir(join(dir, 'a.documentor.json'));
+    const { io, log } = collect();
+    expect(await runBuild([dir, '--to', 'md'], io)).toBe(1);
+    const summary = log.join('\n');
+    expect(summary).toMatch(/1 had a sidecar/);
+    expect(summary).toMatch(/exists but is not a file/);
   });
 });

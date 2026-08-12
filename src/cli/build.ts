@@ -10,7 +10,7 @@ import { renderPdf } from '../render/pdf.js';
 import { renderDocx } from '../render/docx.js';
 import { loadTheme, type Theme } from '../theme/resolve.js';
 import { resolveEpoch } from './timestamp.js';
-import { resolveConfig, type ConfigFlags, DEFAULT_THEME, DEFAULT_TO } from './config.js';
+import { resolveConfig, SidecarResolutionError, type ConfigFlags, DEFAULT_THEME, DEFAULT_TO } from './config.js';
 
 type Io = { log: (s: string) => void; err: (s: string) => void };
 // Exported so the top-level --help text can name exactly what this build
@@ -28,8 +28,13 @@ function isFormat(s: string): s is Format {
  *  own `to` field, it is validated here, in the one place that already
  *  knows every format this build can write, rather than a second check
  *  living beside `readSidecar` (see that file's own comment on why a value
- *  the sidecar accepts and the CLI rejects must not be possible). */
-function checkFormats(to: readonly string[]): Format[] | { error: string } {
+ *  the sidecar accepts and the CLI rejects must not be possible). Exported
+ *  so `inspect` runs a sidecar's `to` through the exact same check — it has
+ *  no `--to` flag of its own to validate against, but a sidecar can still
+ *  carry a format this build cannot write, and `inspect` must refuse that
+ *  the same way `build` would rather than reporting a clean preview for a
+ *  build that is about to fail. */
+export function checkFormats(to: readonly string[]): Format[] | { error: string } {
   const formats: Format[] = [];
   for (const f of to) {
     if (!isFormat(f)) return { error: `cannot write ${JSON.stringify(f)} yet — this build knows ${[...FORMATS].join(', ')}` };
@@ -635,9 +640,18 @@ async function runBuildBatch(
   // stop the rest.
   const perFile = new Map<string, FileConfig>();
   const preResults = new Map<string, Extract<FileResult, { kind: 'failed' }>>();
+  // Tracks every file a sidecar was actually *found* for, independent of
+  // whether it went on to resolve — a sidecar that was found but rejected
+  // (an unknown key, a bad theme) still had a sidecar; the summary's own
+  // count claims exactly that, not "resolved cleanly". SidecarResolutionError
+  // carries the path it found even when what it did with that path is what
+  // failed (see config.ts's own comment on why), which is what makes this
+  // possible without re-deriving sidecar discovery a second time here.
+  const hadSidecar = new Set<string>();
   for (const file of files) {
     try {
       const resolved = await resolveConfig(file, configFlags);
+      if (resolved.sidecarPath !== undefined) hadSidecar.add(file);
       const formatCheck = checkFormats(resolved.to);
       if ('error' in formatCheck) throw new Error(formatCheck.error);
       if (resolved.plainNames && outDir === undefined && formatCheck.some((f) => f === 'md' || f === 'docx')) {
@@ -650,16 +664,58 @@ async function runBuildBatch(
         ...(resolved.sidecarPath === undefined ? {} : { sidecarPath: resolved.sidecarPath }),
       });
     } catch (e) {
+      if (e instanceof SidecarResolutionError && e.sidecarPath !== undefined) hadSidecar.add(file);
       preResults.set(file, { input: file, kind: 'failed', reason: (e as Error).message });
     }
   }
 
-  // Every target this run would write, computed for every successfully
-  // resolved file before any of them is ingested or rendered. This is the
-  // fix for the batch's worst failure mode: two sources that collapse to
-  // the same `<stem>.<theme>.<format>` (a name derived from the stem alone,
-  // which drops both the source extension and, with --out, the source
-  // directory) used to overwrite each other with no warning, and the
+  // A discovered file that is itself the resolved output path of some
+  // *other* discovered file in this same run is not a fresh source — it is
+  // this build's own prior output, written under a theme a sidecar chose.
+  // discoverInputs' own walk-time filter cannot see that: it runs once,
+  // before any sidecar is read, against only the flag-or-default theme id
+  // (see its own comment on the gap this closes). Every file's *actual*
+  // resolved theme/formats is known now, though, so this asks the same
+  // question that filter already asks — "does this file's own name match
+  // what this build would call its own output?" — against the real
+  // per-file targets instead of one assumed theme id, and it fires
+  // precisely on the case a --theme flag cannot: an *identical* rerun of
+  // the same command, with a sidecar theme in play, that would otherwise
+  // re-ingest its own prior output as a fresh document and write it again
+  // under a second, compounding name. A false positive here is possible
+  // for the same reason discoverInputs' own filter can have one (a genuine
+  // source that happens to be named like this build's output) — handled
+  // the same way: reported by name in the summary via `skippedOwnOutput`,
+  // never silently dropped.
+  const producedBy = new Map<string, string[]>(); // resolved path -> every file whose own config would write it
+  for (const [file, cfg] of perFile) {
+    const { targets } = targetsFor(file, args.out, cfg.plainNames, cfg.formats, cfg.theme);
+    for (const target of targets) {
+      const list = producedBy.get(target) ?? [];
+      list.push(file);
+      producedBy.set(target, list);
+    }
+  }
+  const selfOutput = new Set<string>();
+  for (const file of perFile.keys()) {
+    const producers = producedBy.get(resolve(file));
+    if (producers !== undefined && producers.some((p) => p !== file)) selfOutput.add(file);
+  }
+  for (const file of selfOutput) {
+    perFile.delete(file);
+    hadSidecar.delete(file);
+  }
+  const discoveredForSummary: Discovered = selfOutput.size === 0
+    ? discovered
+    : { ...discovered, skippedOwnOutput: [...discovered.skippedOwnOutput, ...selfOutput] };
+
+  // Every target this run would write, recomputed from the filtered
+  // `perFile` — a file just excluded as this build's own prior output must
+  // not also contribute a phantom target to collision detection below.
+  // This is the fix for the batch's worst failure mode: two sources that
+  // collapse to the same `<stem>.<theme>.<format>` (a name derived from the
+  // stem alone, which drops both the source extension and, with --out, the
+  // source directory) used to overwrite each other with no warning, and the
   // summary counted both as written even though only one file's bytes
   // survived on disk. Refusing both sides of a collision — rather than
   // picking one to disambiguate with an invented suffix — is the same
@@ -700,6 +756,11 @@ async function runBuildBatch(
   let sidecarCount = 0;
   try {
     for (const file of files) {
+      // Excluded as this build's own prior output above — not a document
+      // this batch's own count includes at all, the same way discoverInputs'
+      // own skippedOwnOutput files never reach this loop either.
+      if (selfOutput.has(file)) continue;
+      if (hadSidecar.has(file)) sidecarCount++;
       const pre = preResults.get(file);
       if (pre !== undefined) {
         results.push(pre);
@@ -707,7 +768,6 @@ async function runBuildBatch(
         continue;
       }
       const cfg = perFile.get(file)!;
-      if (cfg.sidecarPath !== undefined) sidecarCount++;
       const collision = collidesWith.get(file);
       if (collision !== undefined) {
         const reason = `output target collides with ${[...collision].map((o) => basename(o)).join(', ')} — both would write the same file, so neither was written`;
@@ -724,7 +784,7 @@ async function runBuildBatch(
     if (browser !== undefined) await browser.close();
   }
 
-  printSummary(results, discovered, outDir, sidecarCount, io);
+  printSummary(results, discoveredForSummary, outDir, sidecarCount, io);
 
   // 1 outranks 3 outranks 0: a `failed` entry is the batch's analogue of the
   // single-file body's uncaught throw (exit 1, "a bug, a missing file,
