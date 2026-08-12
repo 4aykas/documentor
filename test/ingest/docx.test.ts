@@ -500,4 +500,125 @@ describe('ingestDocx — hand-built fixtures (what the round trip cannot reach)'
       'run content this ingester does not read: <w:commentReference w:id="0"/>',
     ]);
   });
+
+  it('carries a fldSimple HYPERLINK field as a link, with the href from w:instr and the text from its nested runs', async () => {
+    // Word wrote a link this way for every version before 2007, and still
+    // does for mail-merge and cross-reference fields — ordinary Word output,
+    // not a corruption. Before this change, `dropped` came back empty *and*
+    // the href was gone: the run-matching regex still found the nested
+    // `<w:r>` for "click here" wherever it sat, so the text survived by
+    // accident while the attribute carrying the actual link target vanished
+    // with no trace anywhere in the ingester's output.
+    const body = para(`<w:fldSimple w:instr='HYPERLINK "http://example.com/secret"'>${run('click here')}</w:fldSimple>`);
+    const buf = await buildDocx({ 'word/document.xml': documentXml(body) });
+    const { doc, dropped } = await ingestDocx(buf);
+
+    expect(doc.blocks).toEqual([
+      { t: 'para', text: [{ t: 'link', href: 'http://example.com/secret', children: [{ t: 'text', v: 'click here' }] }] },
+    ]);
+    expect(dropped).toEqual([]);
+  });
+
+  it('keeps a switch after the URL in a fldSimple HYPERLINK instruction out of the href', async () => {
+    // `\l "frag"` (a bookmark switch) and `\o "tooltip"` are ordinary parts of
+    // a HYPERLINK field instruction, sitting after the quoted URL — capturing
+    // "everything inside the attribute" instead of "the first quoted span"
+    // would fold them straight into the href.
+    const body = para(`<w:fldSimple w:instr='HYPERLINK "http://example.com/x" \\l "frag" \\o "tip"'>${run('text')}</w:fldSimple>`);
+    const buf = await buildDocx({ 'word/document.xml': documentXml(body) });
+    const { doc, dropped } = await ingestDocx(buf);
+
+    expect(doc.blocks).toEqual([
+      { t: 'para', text: [{ t: 'link', href: 'http://example.com/x', children: [{ t: 'text', v: 'text' }] }] },
+    ]);
+    expect(dropped).toEqual([]);
+  });
+
+  it('reports, once, a fldSimple field that is not a HYPERLINK, keeping its already-computed text', async () => {
+    const body = para(`<w:fldSimple w:instr=' PAGE '>${run('3')}</w:fldSimple>`);
+    const buf = await buildDocx({ 'word/document.xml': documentXml(body) });
+    const { doc, dropped } = await ingestDocx(buf);
+
+    expect(doc.blocks).toEqual([{ t: 'para', text: [{ t: 'text', v: '3' }] }]);
+    expect(dropped).toEqual(['field code this ingester does not carry (kept its text): PAGE']);
+  });
+
+  it('carries the complex fldChar/instrText/separate/fldChar-end form of a HYPERLINK the same way as fldSimple, once, not four times', async () => {
+    // Decision (see paragraphSegments' own comment on the `cfSpan` branch):
+    // the complex form is handled identically to `fldSimple` rather than
+    // merely reported, so the same link is not silent in one spelling and
+    // noisy in the other. Before this case existed, each of the four
+    // `<w:r>`s below (begin/instrText/separate/end) tripped `runAtoms`'s own
+    // per-run leftover check independently, so this fixture produced four
+    // "run content this ingester does not read" entries — and still lost the
+    // href, since nothing turned the instruction text into a link.
+    const body = para(
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+        '<w:r><w:instrText xml:space="preserve"> HYPERLINK "http://example.com/complex" </w:instrText></w:r>' +
+        '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+        `${run('complex link text')}` +
+        '<w:r><w:fldChar w:fldCharType="end"/></w:r>',
+    );
+    const buf = await buildDocx({ 'word/document.xml': documentXml(body) });
+    const { doc, dropped } = await ingestDocx(buf);
+
+    expect(doc.blocks).toEqual([
+      { t: 'para', text: [{ t: 'link', href: 'http://example.com/complex', children: [{ t: 'text', v: 'complex link text' }] }] },
+    ]);
+    expect(dropped).toEqual([]);
+  });
+
+  it('reports a complex, non-HYPERLINK field once, not once per fldChar/instrText run', async () => {
+    const body = para(
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+        '<w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>' +
+        '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+        `${run('3')}` +
+        '<w:r><w:fldChar w:fldCharType="end"/></w:r>',
+    );
+    const buf = await buildDocx({ 'word/document.xml': documentXml(body) });
+    const { doc, dropped } = await ingestDocx(buf);
+
+    expect(doc.blocks).toEqual([{ t: 'para', text: [{ t: 'text', v: '3' }] }]);
+    expect(dropped).toEqual(['complex field code this ingester does not carry (kept its text): PAGE']);
+  });
+
+  it('reports an unrecognised paragraph-level wrapper (e.g. w:smartTag) instead of silently discarding what it wraps, while its nested text still survives', async () => {
+    // The general defect this change closes: a paragraph-level element that
+    // carries meaning outside any run — here, `w:smartTag`'s own
+    // `w:uri`/`w:element` attributes naming what Word recognised the text
+    // as — was invisible to both the run-level and (previously nonexistent)
+    // paragraph-level leftover checks. The nested run's text still survives,
+    // the same accident of the run regex matching wherever it sits that the
+    // file header describes; what changes is that the wrapper's own vanished
+    // meaning is now named in `dropped` instead of leaving no trace at all.
+    const body = para(
+      `<w:smartTag w:uri="urn:schemas-tebin-com:place" w:element="place">${run('Springfield')}</w:smartTag>`,
+    );
+    const buf = await buildDocx({ 'word/document.xml': documentXml(body) });
+    const { doc, dropped } = await ingestDocx(buf);
+
+    expect(doc.blocks).toEqual([{ t: 'para', text: [{ t: 'text', v: 'Springfield' }] }]);
+    expect(dropped.length).toBe(1);
+    expect(dropped[0]).toMatch(/^paragraph content this ingester does not read: /);
+    expect(dropped[0]).toMatch(/w:smartTag/);
+  });
+
+  it('does not undo the bookmark/proofErr/lastRenderedPageBreak silencing now that a paragraph-level leftover check also runs', async () => {
+    // Same fixture as the earlier silencing test, re-asserted after adding
+    // the paragraph-level check: that check must recognise exactly the same
+    // elements `unitRe` already special-cases (bookmarkStart/bookmarkEnd/
+    // proofErr) as consumed, not merely as "matched and then still flagged".
+    const body = para(
+      `<w:r><w:t xml:space="preserve">before</w:t><w:lastRenderedPageBreak/><w:t xml:space="preserve">after</w:t></w:r>` +
+        `<w:bookmarkStart w:id="0" w:name="ref1"/>` +
+        `<w:proofErr w:type="spellStart"/>${run('tricky')}<w:proofErr w:type="spellEnd"/>` +
+        `<w:bookmarkEnd w:id="0"/>`,
+    );
+    const buf = await buildDocx({ 'word/document.xml': documentXml(body) });
+    const { doc, dropped } = await ingestDocx(buf);
+
+    expect(doc.blocks).toEqual([{ t: 'para', text: [{ t: 'text', v: 'beforeaftertricky' }] }]);
+    expect(dropped).toEqual([]);
+  });
 });
