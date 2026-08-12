@@ -1,5 +1,6 @@
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { dirname, join, resolve as resolvePath, sep } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PAGE_PT, type PageSize, type Theme } from './types.js';
 
@@ -104,10 +105,27 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
   };
 }
 
-/** The package root, so a bare theme id resolves whether run from src or dist. */
+/**
+ * The package root, so a bare theme id resolves whether run from src or dist.
+ * Walks up from this file to the first directory holding both package.json
+ * and themes/, rather than counting '..' segments: that count depends on the
+ * build's output layout (rootDir, whether dist mirrors src/), which changes
+ * independently of this file and would silently break the lookup again.
+ */
 function packageRoot(): string {
-  const here = dirname(fileURLToPath(import.meta.url)); // src/theme or dist/src/theme
-  return resolvePath(here, '..', '..');
+  let dir = dirname(fileURLToPath(import.meta.url));
+  while (true) {
+    if (existsSync(join(dir, 'package.json')) && existsSync(join(dir, 'themes'))) {
+      return dir;
+    }
+    const parentDir = dirname(dir);
+    if (parentDir === dir) {
+      throw new Error(
+        `could not locate the documentor package root (looked for package.json + themes/ above ${dirname(fileURLToPath(import.meta.url))})`,
+      );
+    }
+    dir = parentDir;
+  }
 }
 
 export async function loadTheme(idOrPath: string): Promise<Theme> {
