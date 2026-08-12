@@ -202,29 +202,93 @@ describe('ingestXlsx — trimming and header detection', () => {
   });
 });
 
-describe('ingestXlsx — the two refusals', () => {
-  it('refuses a sheet with a merged cell, naming the sheet and the count', async () => {
+describe('ingestXlsx — merges: flatten a single-row span, refuse a row-spanning one', () => {
+  it('flattens a merge confined to one row: value in the leftmost cell, the rest of the span blank, other columns unmoved', async () => {
+    // The header row (row 1) is ordinary and fully filled, so header
+    // detection is unaffected — the merge sits in a data row (row 2), where
+    // B2:C2 is merged ("Note spanning two columns") and D2 is a plain cell
+    // after the merge that must land in its own column, not be shifted left.
+    // C2 carries a stale value ("ghost") even though it's inside the merge —
+    // some writers leave (or don't clean up) a value under a merge's covered
+    // cells even though Excel never displays it. Flattening must clear it,
+    // not just leave whatever a naive grid build happened to already have.
+    const rows =
+      row(1, `${inlineStr('A1', 'Item')}${inlineStr('B1', 'Note')}${inlineStr('C1', 'Note2')}${inlineStr('D1', 'Qty')}`) +
+      row(2, `${inlineStr('A2', 'Widget')}${inlineStr('B2', 'spans two columns')}${inlineStr('C2', 'ghost')}${num('D2', 5)}`);
+    const buf = await oneSheetXlsx(rows, { merges: ['B2:C2'] });
+    const { doc, dropped } = await ingestXlsx(buf);
+    const table = doc.blocks[1] as { head: unknown; rows: unknown[][][] };
+    expect(table.head).toEqual([[{ t: 'text', v: 'Item' }], [{ t: 'text', v: 'Note' }], [{ t: 'text', v: 'Note2' }], [{ t: 'text', v: 'Qty' }]]);
+    expect(table.rows).toEqual([[[{ t: 'text', v: 'Widget' }], [{ t: 'text', v: 'spans two columns' }], [], [{ t: 'text', v: '5' }]]]);
+    expect(dropped.some((d) => d.includes('"Data"') && d.includes('B2:C2') && d.includes('flattened'))).toBe(true);
+  });
+
+  it('refuses a sheet with a merge that spans more than one row, naming the sheet and the count', async () => {
     const rows = row(1, `${inlineStr('A1', 'X')}${inlineStr('B1', 'Y')}`) + row(2, `${inlineStr('A2', 'a')}${inlineStr('B2', 'b')}`);
-    const buf = await oneSheetXlsx(rows, { merges: ['A1:B1'] });
-    // Break-on-purpose check performed by hand: removing the `mergeCount > 0`
-    // guard in readWorksheet (src/ingest/xlsx.ts) turns this red — the sheet
-    // is silently ingested with the merge flattened instead of refused.
+    const buf = await oneSheetXlsx(rows, { merges: ['A1:A2'] }); // spans rows 1-2, column A only
+    // Break-on-purpose check performed by hand: changing the refusal's filter
+    // from `m.r1 !== m.r2` to `merges.length > 0` (i.e. reverting to "any
+    // merge refuses") turns this green for the wrong reason and the sibling
+    // "flattens a merge confined to one row" test above red — the two must
+    // move in opposite directions when the row-spanning guard is touched.
+    await expect(ingestXlsx(buf)).rejects.toThrow(/every sheet in the workbook was refused/);
+  });
+
+  it('refuses a sheet with a block merge (spans both rows and columns)', async () => {
+    const rows =
+      row(1, `${inlineStr('A1', 'X')}${inlineStr('B1', 'Y')}`) +
+      row(2, `${inlineStr('A2', 'a')}${inlineStr('B2', 'b')}`) +
+      row(3, `${inlineStr('A3', 'p')}${inlineStr('B3', 'q')}`);
+    const buf = await oneSheetXlsx(rows, { merges: ['A1:B2'] });
+    await expect(ingestXlsx(buf)).rejects.toThrow(/every sheet in the workbook was refused/);
+  });
+
+  it('refuses a sheet holding both a single-row and a row-spanning merge — the refusing kind is present', async () => {
+    const rows =
+      row(1, `${inlineStr('A1', 'X')}${inlineStr('B1', 'Y')}`) +
+      row(2, `${inlineStr('A2', 'a')}${inlineStr('B2', 'b')}`);
+    const buf = await oneSheetXlsx(rows, { merges: ['A1:B1', 'A1:A2'] });
     await expect(ingestXlsx(buf)).rejects.toThrow(/every sheet in the workbook was refused/);
   });
 
   it('names the merge count and sheet name in the dropped list when at least one other sheet succeeds', async () => {
     const goodRows = row(1, inlineStr('A1', 'X')) + row(2, inlineStr('A2', 'ok'));
-    const mergedRows = row(1, `${inlineStr('A1', 'X')}${inlineStr('B1', 'Y')}`) + row(2, `${inlineStr('A2', 'a')}${inlineStr('B2', 'b')}`);
+    const mergedRows =
+      row(1, `${inlineStr('A1', 'X')}${inlineStr('B1', 'Y')}`) +
+      row(2, `${inlineStr('A2', 'a')}${inlineStr('B2', 'b')}`);
     const buf = await buildXlsx({
       'xl/workbook.xml': workbookXml([{ name: 'Good', rId: 'rId1' }, { name: 'Merged', rId: 'rId2' }]),
       'xl/_rels/workbook.xml.rels': relsXml([{ rId: 'rId1', target: 'worksheets/sheet1.xml' }, { rId: 'rId2', target: 'worksheets/sheet2.xml' }]),
       'xl/worksheets/sheet1.xml': sheetXml(goodRows),
-      'xl/worksheets/sheet2.xml': sheetXml(mergedRows, ['A1:B1']),
+      'xl/worksheets/sheet2.xml': sheetXml(mergedRows, ['A1:A2']), // row-spanning — still refused
     });
     const { dropped } = await ingestXlsx(buf);
     const msg = dropped.find((d) => d.includes('refused'));
     expect(msg).toContain('"Merged"');
     expect(msg).toContain('1 merged cell');
+  });
+
+  it('reports each range individually at or under the report cap, and switches to one aggregate line above it', async () => {
+    // FLATTEN_REPORT_CAP (src/ingest/xlsx.ts) is 20. One sheet at exactly the
+    // cap still gets a line per range; one sheet at cap+1 collapses to a
+    // single summary line — this is the boundary the design's "one merge,
+    // and forty thousand" trade-off actually engages at.
+    const atCapMerges = Array.from({ length: 20 }, (_, i) => `A${i + 1}:B${i + 1}`);
+    const atCapRows = Array.from({ length: 20 }, (_, i) => row(i + 1, inlineStr(`A${i + 1}`, `v${i}`))).join('');
+    const atCapBuf = await oneSheetXlsx(atCapRows, { merges: atCapMerges });
+    const { dropped: atCapDropped } = await ingestXlsx(atCapBuf);
+    expect(atCapDropped.filter((d) => d.includes('flattened') && d.includes(':'))).toHaveLength(20);
+    expect(atCapDropped.some((d) => d.includes('too many to list'))).toBe(false);
+
+    const overCapRows = Array.from({ length: 21 }, (_, i) => row(i + 1, inlineStr(`A${i + 1}`, `v${i}`))).join('');
+    const overCapMerges = Array.from({ length: 21 }, (_, i) => `A${i + 1}:B${i + 1}`);
+    const overCapBuf = await oneSheetXlsx(overCapRows, { merges: overCapMerges });
+    const { dropped: overCapDropped } = await ingestXlsx(overCapBuf);
+    const summary = overCapDropped.find((d) => d.includes('too many to list'));
+    expect(summary).toBeDefined();
+    expect(summary).toContain('21 single-row merges');
+    expect(summary).toContain('rows 1-21');
+    expect(overCapDropped.some((d) => /flattened — value kept in the leftmost/.test(d) && d.includes(':'))).toBe(false);
   });
 
   it('refuses a sheet beyond the row limit, naming the size', async () => {
@@ -247,8 +311,8 @@ describe('ingestXlsx — the two refusals', () => {
   });
 
   it('fails the whole ingest — not an empty document — when every sheet is refused', async () => {
-    const mergedRows = row(1, `${inlineStr('A1', 'X')}${inlineStr('B1', 'Y')}`);
-    const buf = await oneSheetXlsx(mergedRows, { merges: ['A1:B1'] });
+    const mergedRows = row(1, inlineStr('A1', 'X')) + row(2, inlineStr('A2', 'Y'));
+    const buf = await oneSheetXlsx(mergedRows, { merges: ['A1:A2'] }); // row-spanning — still refused
     await expect(ingestXlsx(buf)).rejects.toThrow(/every sheet in the workbook was refused \(1 of 1\)/);
   });
 });
