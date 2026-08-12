@@ -110,4 +110,24 @@ describe('renderDocx', () => {
     expect(xml).toContain('Report');
     expect(xml).toContain('Q3');
   });
+
+  it('sizes the page from the theme, not a fixed default', async () => {
+    // docx defaults to A4 when no size is given, which would silently mismatch
+    // a Letter theme — both shipped themes are A4, so only a Letter theme
+    // exercises this.
+    const letterTheme = resolveTheme({ id: 'l', page: { size: 'Letter' }, colors: { brandOnLight: '#DA291C' } });
+    const xml = await docxPart(
+      await renderDocx(doc({ t: 'para', text: [{ t: 'text', v: 'x' }] }), letterTheme, { epochSeconds: EPOCH }),
+      'word/document.xml',
+    );
+    // 612pt and 792pt in DXA (twentieths of a point): 12240, 15840.
+    expect(xml).toContain('<w:pgSz w:w="12240" w:h="15840" w:orient="portrait"/>');
+  });
+
+  it('colours a link with the theme’s ink, not Word’s built-in blue', async () => {
+    const xml = await body(doc({ t: 'para', text: [{ t: 'link', href: 'https://example.com', children: [{ t: 'text', v: 'go' }] }] }));
+    // theme.colors.ink defaults to #1A1A1A when unset by the test fixture.
+    expect(xml).toContain('<w:color w:val="1A1A1A"/>');
+    expect(xml).not.toContain('0563C1');
+  });
 });

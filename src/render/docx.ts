@@ -48,17 +48,40 @@ function styles(theme: Theme) {
       document: { run: { font: theme.font.document, size: halfPt(ty.bodyPt), color: hex(c.ink) } },
     },
     paragraphStyles: [
-      para('DocTitle', 'Doc Title', { size: halfPt(ty.h1Pt), bold: true, color: hex(c.ink) }, { spacing: { before: dxa(11), after: dxa(2) } }),
-      para('DocSubtitle', 'Doc Subtitle', { size: halfPt(ty.bodyPt), color: hex(c.muted) }, { spacing: { after: dxa(8) } }),
+      // Spacing below is copied from html.ts's CSS margins, not re-derived,
+      // because Word does not collapse adjacent margins the way a browser
+      // does — a `before`/`after` pair that merely approximated the CSS
+      // numbers would silently drift from the PDF/HTML rendering of the same
+      // document. `before` mirrors the rule's top margin, `after` its bottom
+      // margin; where the CSS sets only one side, the other stays 0 here too.
+      para('DocTitle', 'Doc Title', { size: halfPt(ty.h1Pt), bold: true, color: hex(c.ink) }, {
+        // html.ts: `.doc-title{ margin: 22pt 0 0; }`
+        spacing: { before: dxa(22), after: 0 },
+      }),
+      para('DocSubtitle', 'Doc Subtitle', { size: halfPt(ty.bodyPt), color: hex(c.muted) }, {
+        // html.ts: `.doc-subtitle{ margin: 4pt 0 0; }`
+        spacing: { before: dxa(4), after: 0 },
+      }),
+      // DocH1 (level-1 headings inside the body, distinct from DocTitle) has
+      // no matching html.ts rule to copy — html.ts styles only h2 and h3
+      // explicitly and leaves a bare <h1> to the browser's UA default, which
+      // has no fixed point value — so its spacing is left as originally set.
       para('DocH1', 'Doc Heading 1', { size: halfPt(ty.h1Pt), bold: true, color: hex(c.ink) }, { spacing: { before: dxa(11), after: dxa(3) }, keepNext: true }),
-      para('DocH2', 'Doc Heading 2', { size: halfPt(ty.h2Pt), bold: true, color: hex(c.ink) }, { spacing: { before: dxa(9), after: dxa(2) }, keepNext: true }),
-      para('DocH3', 'Doc Heading 3', { size: halfPt(ty.h3Pt), bold: true, color: hex(c.ink) }, { spacing: { before: dxa(7), after: dxa(1.5) }, keepNext: true }),
+      para('DocH2', 'Doc Heading 2', { size: halfPt(ty.h2Pt), bold: true, color: hex(c.ink) }, {
+        // html.ts: `h2{ margin: 18pt 0 4pt; }`
+        spacing: { before: dxa(18), after: dxa(4) }, keepNext: true,
+      }),
+      para('DocH3', 'Doc Heading 3', { size: halfPt(ty.h3Pt), bold: true, color: hex(c.ink) }, {
+        // html.ts: `h3{ margin: 14pt 0 3pt; }`
+        spacing: { before: dxa(14), after: dxa(3) }, keepNext: true,
+      }),
       para('DocBody', 'Doc Body', { size: halfPt(ty.bodyPt) }, { spacing: { line: Math.round(ty.leading * 240), after: dxa(ty.bodyPt * 0.7) } }),
       para('DocList', 'Doc List Item', { size: halfPt(ty.bodyPt) }, { spacing: { line: Math.round(ty.leading * 240), after: dxa(2) } }),
       para('DocQuote', 'Doc Quote', { size: halfPt(ty.bodyPt), color: hex(c.muted) }, {
         indent: { left: dxa(12) },
         border: { left: { style: BorderStyle.SINGLE, size: eighthPt(2), color: hex(c.rule), space: 6 } },
-        spacing: { after: dxa(5) },
+        // html.ts: `blockquote{ margin: 0 0 10pt; … }`
+        spacing: { after: dxa(10) },
       }),
       para('DocCode', 'Doc Code', { font: 'Consolas', size: halfPt(ty.bodyPt * 0.86) }, {
         shading: { type: ShadingType.CLEAR, fill: 'F6F6F4', color: 'auto' },
@@ -110,12 +133,19 @@ function inline(nodes: Inline[], fmt: { bold?: boolean; italics?: boolean; code?
         } else {
           // `Hyperlink` is a character style docx always emits, so this is the
           // one style id in the file without a Doc prefix: it is theirs, not
-          // ours, and naming it is how the link text looks like a link.
+          // ours, and naming it is how the link text looks like a link — it
+          // supplies the underline. Its colour is not borrowed along with it:
+          // the built-in style paints `#0563C1`, a blue that appears in no
+          // theme here, while html.ts deliberately paints link text in the
+          // theme's ink with only the underline (in the rule colour) marking
+          // it as a link. The run's own `color` below overrides the style's,
+          // so the theme keeps owning link colour in every renderer.
           out.push(new ExternalHyperlink({
             link: n.href,
             children: [new TextRun({
               text: flatten(n.children),
               style: 'Hyperlink',
+              color: hex(theme.colors.ink),
               ...(fmt.bold ? { bold: true } : {}),
               ...(fmt.italics ? { italics: true } : {}),
             })],
@@ -215,7 +245,9 @@ function blocks(b: Block, theme: Theme): (Paragraph | Table)[] {
       return [new Paragraph({
         children: [],
         border: { bottom: { style: BorderStyle.SINGLE, size: eighthPt(0.75), color: hex(theme.colors.rule), space: 6 } },
-        spacing: { before: dxa(7), after: dxa(7) },
+        // html.ts: `hr{ … margin: 14pt 0; … }` — copied, not re-derived; see
+        // the comment on styles()'s paragraphStyles for why.
+        spacing: { before: dxa(14), after: dxa(14) },
       })];
     case 'pagebreak':
       return [new Paragraph({ children: [new PageBreak()] })];
@@ -255,10 +287,18 @@ export async function renderDocx(doc: Doc, theme: Theme, opts: { epochSeconds: n
     sections: [{
       properties: {
         titlePage: true,
-        page: { margin: {
-          top: dxa(theme.page.marginPt), right: dxa(theme.page.marginPt),
-          bottom: dxa(theme.page.marginPt), left: dxa(theme.page.marginPt),
-        } },
+        page: {
+          // Without an explicit size, docx defaults to A4 regardless of the
+          // theme, while columnDxa() below already sizes tables from the
+          // theme's own PAGE_PT trim — a Letter theme would then be Letter as
+          // a PDF and A4 as a .docx, with tables sized for one page hanging
+          // past the margin of the other.
+          size: { width: dxa(PAGE_PT[theme.page.size].w), height: dxa(PAGE_PT[theme.page.size].h) },
+          margin: {
+            top: dxa(theme.page.marginPt), right: dxa(theme.page.marginPt),
+            bottom: dxa(theme.page.marginPt), left: dxa(theme.page.marginPt),
+          },
+        },
       },
       children: [...head, ...doc.blocks.flatMap((b) => blocks(b, theme))],
     }],
