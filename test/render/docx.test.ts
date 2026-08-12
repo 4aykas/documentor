@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Doc } from '../../src/ir/types.js';
 import { renderDocx } from '../../src/render/docx.js';
-import { resolveTheme } from '../../src/theme/resolve.js';
+import { loadTheme, resolveTheme } from '../../src/theme/resolve.js';
 import { docxEntries, docxPart } from '../helpers/docx-parts.js';
 
 const EPOCH = 1_000_000_000;
@@ -194,5 +194,92 @@ describe('images', () => {
   it('is still byte-identical twice with a picture in it', async () => {
     const d = doc({ t: 'image', src: PNG_2x1, alt: 'a' });
     expect((await render(d)).equals(await render(d))).toBe(true);
+  });
+});
+
+describe('the letterhead', () => {
+  const branded = async () =>
+    renderDocx(
+      { meta: { title: 'Report', lang: 'en' }, blocks: [{ t: 'para', text: [{ t: 'text', v: 'x' }] }] },
+      await loadTheme('tebin'),
+      { epochSeconds: EPOCH },
+    );
+
+  it('puts the full letterhead on the first page and the slim one on the rest', async () => {
+    const buf = await branded();
+    // headers.default becomes header1.xml and headers.first becomes
+    // header2.xml — the numbering follows the option order, not the page
+    // order, so asserting this the other way round would pass for the wrong
+    // reason.
+    const first = await docxPart(buf, 'word/header2.xml');
+    const running = await docxPart(buf, 'word/header1.xml');
+    expect(first).toContain('TEBIN.PRO Sp. z o.o.');
+    expect(first).toContain('NIP: 9552562516');
+    expect(running).toContain('Report');
+    expect(running).not.toContain('NIP');
+  });
+
+  it('counts the pages with Word’s own fields', async () => {
+    const running = await docxPart(await branded(), 'word/header1.xml');
+    expect(running).toContain('PAGE');
+    expect(running).toContain('NUMPAGES');
+  });
+
+  it('draws the tick in the brand colour and the hairline in the rule colour', async () => {
+    const first = await docxPart(await branded(), 'word/header2.xml');
+    expect(first).toContain('w:color="DA291C"');
+    expect(first).toContain(`w:sz="${8 * 3}"`);
+    expect(first).toContain('w:color="CDCDCE"');
+  });
+
+  it('places the mark, at the height the theme asks for', async () => {
+    const buf = await branded();
+    expect(await docxPart(buf, 'word/header2.xml')).toContain('<w:drawing>');
+    // 177800 EMU is the tebin theme's logo.heightPt (14pt, see theme.json's
+    // $generated.notFromBrand — a human looked at the printed page and asked
+    // for a larger mark, 11 -> 14) converted at pt * 4/3 * 9525. Written as a
+    // literal, not recomputed from theme.logo.heightPt: deriving it with the
+    // same formula the renderer uses would make this test agree with the
+    // renderer by construction and stop testing anything. Changing the
+    // theme's logo height means recomputing this number on purpose.
+    expect(await docxPart(buf, 'word/header2.xml')).toContain('cy="177800"');
+  });
+
+  it('prints a document’s own entity and date under the letterhead', async () => {
+    const buf = await renderDocx(
+      { meta: { title: 'R', lang: 'en', entity: 'TEBIN Limited', date: '2026-08-12' }, blocks: [] },
+      await loadTheme('tebin'),
+      { epochSeconds: EPOCH },
+    );
+    const first = await docxPart(buf, 'word/header2.xml');
+    expect(first).toContain('TEBIN Limited');
+    expect(first).toContain('2026-08-12');
+  });
+
+  it('prints a letterhead with no mark when the theme carries only a vector', async () => {
+    const vectorOnly = resolveTheme({
+      id: 'v', letterhead: ['Someone Ltd'],
+      logo: { svg: '<svg><path class="c-brand" d="M0 0"/></svg>', heightPt: 11 },
+    });
+    const first = await docxPart(
+      await renderDocx({ meta: { title: 'R', lang: 'en' }, blocks: [] }, vectorOnly, { epochSeconds: EPOCH }),
+      'word/header2.xml',
+    );
+    expect(first).toContain('Someone Ltd');
+    expect(first).not.toContain('<w:drawing>');
+  });
+
+  it('refuses to print a letterhead whose theme raster is not a usable PNG', async () => {
+    // Labelled as a PNG data URI but the bytes are not PNG at all. In the
+    // document body this degrades to a placeholder (see the `images` suite);
+    // in the theme's own letterhead it is an authoring error, not untrusted
+    // input, so it must fail loudly and name the field.
+    const brokenLogo = resolveTheme({
+      id: 'broken', letterhead: ['Someone Ltd'],
+      logo: { svg: '<svg><path class="c-brand" d="M0 0"/></svg>', heightPt: 11, png: `data:image/png;base64,${Buffer.from('not a png').toString('base64')}` },
+    });
+    await expect(
+      renderDocx({ meta: { title: 'R', lang: 'en' }, blocks: [] }, brokenLogo, { epochSeconds: EPOCH }),
+    ).rejects.toThrow(/theme\.logo\.png/);
   });
 });

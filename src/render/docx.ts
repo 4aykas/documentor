@@ -8,8 +8,8 @@
 // in points until the moment it stops being.
 
 import {
-  AlignmentType, BorderStyle, Document, ExternalHyperlink, ImageRun, Packer, PageBreak,
-  Paragraph, ShadingType, Table, TableCell, TableLayoutType, TableRow, TextRun,
+  AlignmentType, BorderStyle, Document, ExternalHyperlink, Header, ImageRun, Packer, PageBreak,
+  PageNumber, Paragraph, ShadingType, Table, TableCell, TableLayoutType, TableRow, TextRun,
   WidthType, type IParagraphOptions, type ParagraphChild,
 } from 'docx';
 import type { Block, Doc, Inline } from '../ir/types.js';
@@ -322,6 +322,115 @@ function imagePlaceholder(b: Extract<Block, { t: 'image' }>, theme: Theme): Para
   });
 }
 
+/**
+ * The first page's letterhead. In the PDF this is drawn in the body flow,
+ * because Chromium renders a header template in a separate context with none
+ * of the page's CSS. Word has no such limitation, and a DOCX is a thing people
+ * edit: a letterhead in the body flow is pushed down the page by the first
+ * paragraph somebody adds, and page two carries nothing.
+ *
+ * The mark is the theme's raster. A PNG is not repainted by a class, so a
+ * theme carrying only a vector prints the letterhead without one rather than
+ * substituting a colour nobody chose. A theme that *does* carry a raster and
+ * it fails to parse is a different case entirely — that raster was chosen by
+ * whoever authored the theme, not supplied by the document, so silently
+ * printing the letterhead with no mark would hide an authoring mistake behind
+ * every document that theme touches. This throws instead.
+ */
+function firstPageHeader(doc: Doc, theme: Theme): Header {
+  const total = columnDxa(theme);
+  const logoWidth = dxa(120);
+  const png = theme.logo?.png;
+  const mark: ParagraphChild[] = [];
+  if (png) {
+    const bytes = Buffer.from(png.slice(png.indexOf(',') + 1), 'base64');
+    const size = pngSize(bytes);
+    if (size === null) throw new Error('theme.logo.png is not a usable PNG (bad signature, too few bytes, or a zero dimension)');
+    const { w, h } = size;
+    const heightPt = theme.logo!.heightPt;
+    mark.push(new ImageRun({
+      data: bytes, type: 'png',
+      transformation: { width: px96((heightPt * w) / h), height: px96(heightPt) },
+    }));
+  }
+
+  const lines = theme.letterhead.map((l, i) =>
+    new Paragraph({ style: i === 0 ? 'DocLetterheadName' : 'DocLetterheadLine', children: [new TextRun({ text: l })] }));
+  // The document's own entity and date answer the same two questions the
+  // letterhead does — who, and when — so they sit in the same muted column.
+  const docLines = [doc.meta.entity, doc.meta.date]
+    .filter((v): v is string => v !== undefined && v !== '')
+    .map((v, i) => new Paragraph({
+      style: 'DocLetterheadLine',
+      spacing: i === 0 ? { before: dxa(5) } : {},
+      children: [new TextRun({ text: v })],
+    }));
+
+  return new Header({
+    children: [
+      new Table({
+        layout: TableLayoutType.FIXED,
+        width: { size: total, type: WidthType.DXA },
+        columnWidths: [logoWidth, total - logoWidth],
+        borders: NO_BORDERS,
+        rows: [new TableRow({ children: [
+          new TableCell({ width: { size: logoWidth, type: WidthType.DXA }, borders: NO_BORDERS, children: [new Paragraph({ children: mark })] }),
+          new TableCell({ width: { size: total - logoWidth, type: WidthType.DXA }, borders: NO_BORDERS, children: [...lines, ...docLines] }),
+        ] })],
+      }),
+      tickRow(theme),
+    ],
+  });
+}
+
+/** The brand tick and the hairline beside it: 28pt of 3pt border, then 0.75pt
+ *  across the rest. The same drawing the stylesheet makes, in Word's terms —
+ *  nothing scales and it reads back as structure. */
+function tickRow(theme: Theme): Table {
+  const total = columnDxa(theme);
+  const tick = dxa(28);
+  const cell = (width: number, size: number, colour: string) =>
+    new TableCell({
+      width: { size: width, type: WidthType.DXA },
+      borders: { ...NO_BORDERS, bottom: { style: BorderStyle.SINGLE, size: eighthPt(size), color: hex(colour) } },
+      children: [new Paragraph({ children: [] })],
+    });
+  return new Table({
+    layout: TableLayoutType.FIXED,
+    width: { size: total, type: WidthType.DXA },
+    columnWidths: [tick, total - tick],
+    borders: NO_BORDERS,
+    rows: [new TableRow({ children: [
+      cell(tick, 3, theme.colors.brandOnLight),
+      cell(total - tick, 0.75, theme.colors.rule),
+    ] })],
+  });
+}
+
+/** Pages two onward: the title, and where the reader is. */
+function runningHeader(doc: Doc, theme: Theme): Header {
+  const total = columnDxa(theme);
+  const right = dxa(60);
+  const plain = (children: ParagraphChild[], alignment?: IParagraphOptions['alignment']) =>
+    new Paragraph({ style: 'DocRunningHeader', ...(alignment ? { alignment } : {}), children });
+  return new Header({
+    children: [new Table({
+      layout: TableLayoutType.FIXED,
+      width: { size: total, type: WidthType.DXA },
+      columnWidths: [total - right, right],
+      borders: NO_BORDERS,
+      rows: [new TableRow({ children: [
+        new TableCell({ width: { size: total - right, type: WidthType.DXA }, borders: NO_BORDERS, children: [plain([new TextRun({ text: doc.meta.title })])] }),
+        new TableCell({ width: { size: right, type: WidthType.DXA }, borders: NO_BORDERS, children: [plain([
+          new TextRun({ children: [PageNumber.CURRENT] }),
+          new TextRun({ text: ' / ' }),
+          new TextRun({ children: [PageNumber.TOTAL_PAGES] }),
+        ], AlignmentType.RIGHT)] }),
+      ] })],
+    })],
+  });
+}
+
 export async function renderDocx(doc: Doc, theme: Theme, opts: { epochSeconds: number }): Promise<Buffer> {
   const head: Paragraph[] = [
     new Paragraph({ style: 'DocTitle', children: [new TextRun({ text: doc.meta.title })] }),
@@ -349,6 +458,7 @@ export async function renderDocx(doc: Doc, theme: Theme, opts: { epochSeconds: n
           },
         },
       },
+      headers: { default: runningHeader(doc, theme), first: firstPageHeader(doc, theme) },
       children: [...head, ...doc.blocks.flatMap((b) => blocks(b, theme))],
     }],
   }));
