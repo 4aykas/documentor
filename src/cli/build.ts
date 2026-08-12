@@ -86,11 +86,13 @@ async function ingest(
 
 export function parseArgs(argv: string[]): {
   input?: string; to: string[]; theme: string; out?: string; title?: string; date?: string; entity?: string;
+  plainNames: boolean;
 } {
   const out: {
     input?: string; to: string[]; theme: string; out?: string; title?: string; date?: string; entity?: string;
+    plainNames: boolean;
   } = {
-    to: ['pdf'], theme: 'plain',
+    to: ['pdf'], theme: 'plain', plainNames: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
@@ -110,6 +112,14 @@ export function parseArgs(argv: string[]): {
     // the printed page says.
     else if (a === '--date') out.date = next();
     else if (a === '--entity') out.entity = next();
+    // Opt-out of the theme id in the output name. The id is there so a
+    // same-extension re-issue (report.pdf --to pdf) can never collide with
+    // its own input; dropping it for a batch of .md/.docx sources being
+    // reissued as PDF just removes noise from every filename, since nothing
+    // in that batch can collide anyway. The overwrite guard below still runs
+    // either way, so the one case where dropping the id *would* collide is
+    // still caught, not silently allowed.
+    else if (a === '--plain-names') out.plainNames = true;
     else if (a.startsWith('-')) throw new Error(`unknown option ${a}`);
     else if (out.input === undefined) out.input = a;
     else throw new Error(`unexpected argument ${a}`);
@@ -126,7 +136,7 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
     return 2;
   }
   if (args.input === undefined) {
-    io.err(`documentor: build needs an input file\n\n  documentor build <file> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>] [--title <s>] [--date <s>] [--entity <s>]`);
+    io.err(`documentor: build needs an input file\n\n  documentor build <file> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>] [--title <s>] [--date <s>] [--entity <s>] [--plain-names]`);
     return 2;
   }
   // Narrowed here, once, so that everything downstream carries the union type
@@ -179,22 +189,24 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
   await mkdir(dir, { recursive: true });
   const stem = basename(input, extname(input));
 
+  // Reachable now, not just an invariant assertion: with --plain-names the
+  // target is "<stem>.<format>", and a same-extension re-issue (e.g.
+  // `report.pdf --to pdf --plain-names`) makes that exactly the input's own
+  // name. Without the flag this stays unreachable by construction — the
+  // theme id is an extra path segment the resolved input can never carry —
+  // so the guard is still worth keeping either way, but it can no longer be
+  // dismissed as untestable.
+  let refused = false;
   for (const format of formats) {
-    const target = join(dir, `${stem}.${theme.id}.${format}`);
-    // Unreachable by construction today: target is always
-    // "<stem>.<theme.id>.<format>", an extra path segment the resolved input
-    // can never carry, so this can never be true under the current naming
-    // scheme. It stays as an invariant assertion against a future change to
-    // that scheme (e.g. a theme id or format that collapses back onto the
-    // input's own name) — deliberately left untested, since contriving a
-    // test to reach it would just be testing today's naming scheme twice.
+    const target = join(dir, args.plainNames ? `${stem}.${format}` : `${stem}.${theme.id}.${format}`);
     if (resolve(target) === input) {
       io.err(`documentor: refusing to overwrite the input file ${input}`);
-      return 3; // refused — see the exit code contract in src/bin/documentor.ts
+      refused = true; // refused — see the exit code contract in src/bin/documentor.ts
+      continue; // one colliding format must not stop the others from being written
     }
     const bytes = await renderTo(format, doc, theme, epochSeconds);
     await writeFile(target, bytes);
     io.log(`${target}  (${bytes.length.toLocaleString('en-US')} bytes)`);
   }
-  return 0;
+  return refused ? 3 : 0;
 }
