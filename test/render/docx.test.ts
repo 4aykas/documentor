@@ -92,6 +92,47 @@ describe('renderDocx', () => {
     expect(xml).toContain('javascript:');
   });
 
+  // Three rules html.ts states, with its reasoning written down, that docx.ts
+  // transcribed the spacing of but not the rest of. docx.ts already cites
+  // `// html.ts: …` beside every spacing constant, so the convention was
+  // established — it simply had not been applied to these.
+
+  it('keeps a horizontal rule with the content it introduces', async () => {
+    // html.ts: `hr{ … break-after: avoid; }`. The rule paragraph is the only
+    // one in the file with no style of its own, which is how it escaped: the
+    // headings get keepNext from their styles, and this gets it here.
+    const xml = await body(doc({ t: 'rule' }, { t: 'para', text: [{ t: 'text', v: 'after' }] }));
+    expect(xml).toContain('<w:keepNext/>');
+  });
+
+  it('does not let a table row split across a page break', async () => {
+    // html.ts: `tr{ break-inside: avoid; }`. Both the header row and the body
+    // rows — a header row that splits is as unreadable as any other.
+    const xml = await body(doc({
+      t: 'table',
+      head: [[{ t: 'text', v: 'Item' }]],
+      rows: [[[{ t: 'text', v: 'Widget' }]]],
+      align: ['l'],
+    }));
+    expect(xml.match(/<w:cantSplit\/>/g)).toHaveLength(2);
+  });
+
+  it('sets inline code smaller than the prose around it, as the stylesheet does', async () => {
+    // html.ts: `code{ font-size: 0.92 × bodyPt; }`. Changing the font without
+    // the size is what made a monospaced word read as larger than its
+    // neighbours. 18 half-points is 9.2pt: the test theme's 10pt body times
+    // 0.92, written as a literal rather than recomputed with the renderer's own
+    // formula — deriving it the same way would make this agree by construction
+    // and stop testing anything, the same argument the letterhead's logo height
+    // makes below.
+    const xml = await body(doc({ t: 'para', text: [
+      { t: 'text', v: 'prose ' },
+      { t: 'code', children: [{ t: 'text', v: 'ident' }] },
+    ] }));
+    expect(theme.type.bodyPt, 'the literal below assumes a 10pt body').toBe(10);
+    expect(xml).toMatch(/<w:rFonts w:ascii="Consolas"[^>]*\/><w:sz w:val="18"\/>/);
+  });
+
   it('sets the document up for a different first page', async () => {
     const xml = await body(doc({ t: 'para', text: [{ t: 'text', v: 'x' }] }));
     expect(xml).toContain('<w:titlePg/>');

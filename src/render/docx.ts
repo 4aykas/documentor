@@ -118,7 +118,14 @@ function inline(nodes: Inline[], fmt: { bold?: boolean; italics?: boolean; code?
           ...(fmt.bold ? { bold: true } : {}),
           // The option is `italics`, not `italic`.
           ...(fmt.italics ? { italics: true } : {}),
-          ...(fmt.code ? { font: 'Consolas' } : {}),
+          // html.ts: `code{ … font-size: 0.92 × bodyPt; }`. Changing the font
+          // and not the size is what makes a monospaced word read as larger
+          // than the prose around it — Consolas sets a taller x-height at the
+          // same nominal size, which is the whole reason the stylesheet steps
+          // it down. The block-level DocCode style already steps down to 0.86,
+          // matching html.ts's separate `pre code` rule; these are two rules,
+          // not one, in both files.
+          ...(fmt.code ? { font: 'Consolas', size: halfPt(theme.type.bodyPt * 0.92) } : {}),
         }));
         break;
       case 'strong': out.push(...inline(n.children, { ...fmt, bold: true }, theme)); break;
@@ -210,9 +217,14 @@ function table(b: Extract<Block, { t: 'table' }>, theme: Theme): Table {
     width: { size: total, type: WidthType.DXA },
     columnWidths: widths,
     borders: NO_BORDERS,
+    // html.ts: `tr{ break-inside: avoid; }` — cantSplit is Word's word for it.
+    // A row split across a page break loses its meaning: the reader sees cells
+    // under a column heading two pages back, with no way to tell which row
+    // they belonged to. A whole table too tall for one page still has to
+    // break, which is why this protects rows and not the table.
     rows: [
-      new TableRow({ tableHeader: true, children: widths.map((_, i) => cell(b.head[i], i, true)) }),
-      ...b.rows.map((row) => new TableRow({ children: widths.map((_, i) => cell(row[i], i, false)) })),
+      new TableRow({ tableHeader: true, cantSplit: true, children: widths.map((_, i) => cell(b.head[i], i, true)) }),
+      ...b.rows.map((row) => new TableRow({ cantSplit: true, children: widths.map((_, i) => cell(row[i], i, false)) })),
     ],
   });
 }
@@ -257,6 +269,11 @@ function blocks(b: Block, theme: Theme): (Paragraph | Table)[] {
         // html.ts: `hr{ … margin: 14pt 0; … }` — copied, not re-derived; see
         // the comment on styles()'s paragraphStyles for why.
         spacing: { before: dxa(14), after: dxa(14) },
+        // html.ts: `hr{ … break-after: avoid; }` — keepNext is Word's word for
+        // it. A rule introduces what follows it, so a rule stranded alone at
+        // the foot of a page with its content pushed over reads as a divider
+        // between nothing and nothing; the pair moves together instead.
+        keepNext: true,
       })];
     case 'pagebreak':
       return [new Paragraph({ children: [new PageBreak()] })];

@@ -141,16 +141,24 @@ ingester that does not make that promise, or for hand-built IR that skips
   comparison whose reasoning is least obvious — a live href, not just text,
   compared against a relationship target — is the one that doesn't explain
   itself.
-- Several minors surfaced in task reviews and were judged not worth a fix
-  this phase: `styles.xml` gives every custom style `basedOn: 'Normal'`
-  though no `Normal` style is defined, making that inheritance a no-op;
-  the horizontal-rule paragraph is the only one with no style and no
-  `keepNext`, unlike HTML's `break-after: avoid`; inline code changes font
-  but not size, where HTML sets it to 0.92× the body size; the
-  relationship-integrity test passes vacuously if it finds zero `r:id`
-  attributes; table cells set no margins against Word's 108-dxa default,
-  and rows do not set `cantSplit` against HTML's `break-inside: avoid`;
-  and one unused `IParagraphOptions` type import
+- Three of the minors first parked here were fixed before the branch
+  merged: the horizontal-rule paragraph now carries `keepNext` (html.ts's
+  `hr{ break-after: avoid; }`), table rows carry `cantSplit` (its
+  `tr{ break-inside: avoid; }`), and inline code is set at 0.92× the body
+  size (its `code{ font-size: … }`). Each is a rule html.ts states with its
+  reasoning written down, and docx.ts already cites `// html.ts: …` beside
+  every spacing constant it copied — the convention was established, it had
+  simply not been applied to these.
+- Still parked, and judged not worth a fix this phase: `styles.xml` gives
+  every custom style `basedOn: 'Normal'` though no `Normal` style is
+  defined, making that inheritance a no-op; the relationship-integrity test
+  passes vacuously if it finds zero `r:id` attributes; table cells set no
+  margins against Word's 108-dxa default, where html.ts sets
+  `th,td{ padding: 4pt 6pt; }`; and `td{ vertical-align: top; }` has no Word
+  counterpart either. The last two are the same class as the three above and
+  were left alone only because they move table geometry, which is a change
+  to make deliberately rather than on merge eve; one unused
+  `IParagraphOptions` type import
   survives because no lint script exists to catch it.
 
 ## Before publishing
