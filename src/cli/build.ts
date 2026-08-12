@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { ingestMarkdown } from '../ingest/md.js';
+import { validateDoc } from '../ir/validate.js';
 import { renderMarkdown } from '../render/md.js';
 import { renderPdf } from '../render/pdf.js';
 import { loadTheme } from '../theme/resolve.js';
@@ -61,6 +62,25 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
 
   const source = await readFile(input, 'utf8');
   const { doc, dropped } = ingestMarkdown(source, args.title === undefined ? {} : { title: args.title });
+  // The gate between ingest and render. Every renderer assumes a well-formed
+  // Doc — an exhaustive switch over `Block` type-checks but says nothing about
+  // what actually arrives at runtime from an ingester, a hand-written IR file
+  // or (from phase 4) a sidecar's overrides. Checking once here means a
+  // renderer never has to.
+  //
+  // Exit 3, "refused", not 2 and not 1. Not 2: the command as typed is
+  // perfectly well formed, and there is no option the user could change to
+  // make it work, so telling them to fix their usage would be a lie. Not 1:
+  // nothing crashed — documentor read the document, understood it, and
+  // declined to draw something it cannot vouch for. 3 is the code that says
+  // "final, do not retry", which is exactly right: re-running will fail the
+  // same way until the document changes.
+  try {
+    validateDoc(doc);
+  } catch (e) {
+    io.err(`documentor: refusing to render — ${(e as Error).message}`);
+    return 3; // refused — see the exit code contract in src/bin/documentor.ts
+  }
   const theme = await loadTheme(args.theme);
   const epochSeconds = await resolveEpoch(process.env, input);
 
