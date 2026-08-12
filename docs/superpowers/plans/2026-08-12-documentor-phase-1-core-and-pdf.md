@@ -1578,6 +1578,7 @@ reach the network and cannot inject markup into its own rendering."
 - Consumes: `Doc`; `Theme`, `toMm`; `buildHtml`.
 - Produces:
   - `normalizePdfDates(buf: Buffer, epochSeconds: number): Buffer`
+  - `blockNonDataRequests(page: Page): Promise<void>` — aborts every request whose URL is not a `data:` or `about:` URL.
   - `renderPdf(doc: Doc, theme: Theme, opts: { epochSeconds: number; browser?: Browser }): Promise<Buffer>` — passing a `Browser` lets a test suite launch Chromium once instead of per render; when omitted, one is launched and closed internally.
   - `RUNNING_HEADER_PT: number` — the height the running header reserves in the top margin.
 
@@ -1668,7 +1669,7 @@ Expected: PASS, 5 tests.
 - [ ] **Step 5: Write `src/render/pdf.ts`**
 
 ```ts
-import { chromium, type Browser } from 'playwright-core';
+import { chromium, type Browser, type Page } from 'playwright-core';
 import type { Doc } from '../ir/types.js';
 import { toMm, type Theme } from '../theme/types.js';
 import { buildHtml, escapeHtml } from './html.js';
@@ -1685,6 +1686,25 @@ import { normalizePdfDates } from './normalize-pdf.js';
  * the call site, and why the baseline test rasterises.
  */
 export const RUNNING_HEADER_PT = 26;
+
+/**
+ * The second guard on "this renderer fetches nothing".
+ *
+ * `html.ts` already refuses to emit a remote `<img>`, but a promise enforced in
+ * one place is enforced nowhere: a future stylesheet, favicon or redirect would
+ * leak out silently, and the only symptom would be a PDF that quietly depends on
+ * somebody else's server — and appears in their logs. Aborting at the browser
+ * makes the property true rather than intended.
+ *
+ * Exported so a test can apply it to a page it owns and watch what happens.
+ */
+export async function blockNonDataRequests(page: Page): Promise<void> {
+  await page.route('**/*', (route) => {
+    const url = route.request().url();
+    if (url.startsWith('data:') || url.startsWith('about:')) return route.continue();
+    return route.abort();
+  });
+}
 
 /** Inline styles only: the header context cannot see the document's stylesheet. */
 function runningHeader(doc: Doc, theme: Theme): string {
@@ -1705,6 +1725,7 @@ export async function renderPdf(
   const ownsBrowser = opts.browser === undefined;
   try {
     const page = await browser.newPage();
+    await blockNonDataRequests(page);
     await page.setContent(html, { waitUntil: 'load' });
     // Without this the first page can rasterise with a fallback face even though
     // the font is embedded, because layout ran before the face was decoded.
@@ -1739,7 +1760,7 @@ Create `test/render/pdf.test.ts`:
 ```ts
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser } from 'playwright-core';
-import { renderPdf } from '../../src/render/pdf.js';
+import { blockNonDataRequests, renderPdf } from '../../src/render/pdf.js';
 import { resolveTheme } from '../../src/theme/resolve.js';
 import { ingestMarkdown } from '../../src/ingest/md.js';
 import { pdfText } from '../helpers/pdf-text.js';
@@ -1780,6 +1801,38 @@ describe('renderPdf', () => {
   it('prints the title once — in the header, not twice in the body', async () => {
     const text = (await pdfText(await render('# Report\n\nBody.\n'))).join(' ');
     expect(text.match(/Report/g)?.length).toBe(2); // the doc title and the running header
+  });
+
+  it('lets nothing off the machine, even when the document asks', async () => {
+    // A document is untrusted input. If this ever fails, a rendered PDF has
+    // become dependent on somebody else's server — and on their logs.
+    //
+    // The listener has to go on a page this test owns, because renderPdf makes
+    // its own; so the guard is exported and applied here to the same effect.
+    const page = await browser.newPage();
+    const attempted: string[] = [];
+    page.on('request', (r) => attempted.push(r.url()));
+    const failed: string[] = [];
+    page.on('requestfailed', (r) => failed.push(r.url()));
+
+    await blockNonDataRequests(page);
+    await page.setContent(
+      '<img src="https://example.invalid/chart.png"><link rel="stylesheet" href="https://example.invalid/a.css">',
+      { waitUntil: 'load' },
+    );
+    await page.close();
+
+    const remote = (us: string[]) => us.filter((u) => !u.startsWith('data:') && !u.startsWith('about:'));
+    // Chromium still *attempts* them — the point is that every attempt died at
+    // the route handler instead of reaching a socket.
+    expect(remote(attempted).length).toBeGreaterThan(0);
+    expect(remote(failed).sort()).toEqual(remote(attempted).sort());
+  });
+
+  it('draws a remote image as a placeholder rather than fetching it', async () => {
+    const text = (await pdfText(await render('# T\n\n![A chart](https://example.invalid/chart.png)\n'))).join(' ');
+    expect(text).toContain('A chart');
+    expect(text).toContain('example.invalid');
   });
 
   it('paginates a long document and numbers every page', async () => {
