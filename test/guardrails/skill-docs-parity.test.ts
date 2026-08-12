@@ -17,22 +17,40 @@ import { SIDECAR_KEYS } from '../../src/cli/sidecar.js';
 // source of truth, never against a second hand-copied list.
 //
 // Two things pinned:
-//   1. every --flag the skill names is a flag build's or inspect's own
-//      parser accepts (same technique docs-parity.test.ts already uses for
-//      README.md and --help);
+//   1. every --flag the skill names is checked against the parser that
+//      command line in the skill's own text says owns it — not "accepted by
+//      build OR inspect", which a flag both commands share can satisfy even
+//      after one of them stops accepting it. See "1a." below for how that
+//      OR-across-both bug was reproduced and why this file no longer has it.
 //   2. every sidecar field the skill documents is exactly SIDECAR_KEYS (both
 //      directions — a field the skill invents that the sidecar refuses, and
 //      a field the sidecar accepts that the skill never mentions, both fail
 //      this), and every `documents[].<field>` the skill tells the assistant
 //      to read from `inspect --json` is a key that command's real output
 //      for an `ok` document actually carries.
+//
+// A limitation this file does NOT cover, named rather than left to be
+// inferred from its absence: it cannot notice a new `inspect --json` field
+// that lands in the code and that the skill simply never mentions — the same
+// "code moved, docs stayed silent" direction README's own docs-parity guard
+// needed two attempts to close (see that file's own comment on why a
+// cell-by-cell walk alone missed a wholly new capability). Closing it here
+// would need the same second check docs-parity.test.ts uses for
+// FORMATS/READABLE_EXTS: iterate the real `ok`-document's own keys and demand
+// each one is either named in the skill or explicitly listed as "not worth
+// mentioning" — deliberately not built in this pass, since the skill's four
+// fields (title/subtitle/date/entity, counts, dropped, warnings) are already
+// everything inspectCore's DocInspection puts on an `ok` result other than
+// `file`, `status`, and `config`, which the skill has no reason to read
+// itself (the shell already gets `file` and `status` from the JSON's own
+// shape; `config` only echoes a filename the skill already wrote).
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const SKILL_PATH = join(ROOT, 'plugin', 'skills', 'documentor', 'SKILL.md');
 const SKILL = readFileSync(SKILL_PATH, 'utf8');
 
 // ---------------------------------------------------------------------------
-// 1. Flags
+// 1. Flags, checked against the parser the skill's own text says owns them
 // ---------------------------------------------------------------------------
 
 function extractFlags(text: string): string[] {
@@ -50,17 +68,75 @@ function isKnownOption(parse: (argv: string[]) => unknown, flag: string): boolea
   }
 }
 
-describe('SKILL.md flags are flags the CLI parsers actually accept', () => {
-  it('every flag mentioned in plugin/skills/documentor/SKILL.md is accepted by build or inspect', () => {
-    const flags = extractFlags(SKILL);
-    expect(flags.length, 'expected the skill to name at least one --flag').toBeGreaterThan(0);
-    const unknown = flags.filter(
-      (f) => !isKnownOption(parseArgs, f) && !isKnownOption(parseInspectArgs, f),
+// Captures the flags out of one of the skill's own "this is what accepts
+// these flags" sentences/fences — the anchor text is the same kind of
+// literal-string dependency extractFormatMatrix in docs-parity.test.ts
+// already relies on, so a reword that breaks this breaks loudly (the anchor
+// not found), not silently.
+function flagsAfter(anchor: string): string[] {
+  const idx = SKILL.indexOf(anchor);
+  if (idx === -1) {
+    throw new Error(`SKILL.md has no ${JSON.stringify(anchor)} — the section this test reads flags from moved or was reworded; update the anchor along with it`);
+  }
+  const end = SKILL.indexOf('\n\n', idx);
+  const chunk = SKILL.slice(idx, end === -1 ? undefined : end);
+  return extractFlags(chunk);
+}
+
+// Every flag the skill's "inspect" fence and its own "flags it accepts"
+// sentence name — these must be accepted by inspect's own parser
+// specifically, not "by inspect or build".
+const inspectOwnedFlags = new Set([
+  ...flagsAfter('documentor inspect <file> --json'),
+  ...flagsAfter('Other flags it accepts, matching'),
+]);
+
+// Same for build's fence and its own "Other flags:" sentence.
+const buildOwnedFlags = new Set([
+  ...flagsAfter('documentor build <file> --to pdf,docx'),
+  ...flagsAfter('Other flags: `--theme'),
+]);
+
+describe('SKILL.md flags are checked against the parser that should own them', () => {
+  it('every flag the skill shows on a `documentor inspect …` line is accepted by inspect', () => {
+    const rejected = [...inspectOwnedFlags].filter((f) => !isKnownOption(parseInspectArgs, f));
+    expect(
+      rejected,
+      `SKILL.md names ${rejected.join(', ')} as flag(s) \`inspect\` accepts, but inspect's own `
+      + `parseInspectArgs rejects ${rejected.length === 1 ? 'it' : 'them'} — the flag was renamed or `
+      + 'removed from inspect and the skill was not updated',
+    ).toEqual([]);
+  });
+
+  it('every flag the skill shows on a `documentor build …` line is accepted by build', () => {
+    const rejected = [...buildOwnedFlags].filter((f) => !isKnownOption(parseArgs, f));
+    expect(
+      rejected,
+      `SKILL.md names ${rejected.join(', ')} as flag(s) \`build\` accepts, but build's own `
+      + `parseArgs rejects ${rejected.length === 1 ? 'it' : 'them'} — the flag was renamed or removed `
+      + 'from build and the skill was not updated. This is the check that catches a flag renamed in '
+      + 'build.ts alone: a shared flag like --theme staying in inspect.ts is not enough to save it.',
+    ).toEqual([]);
+  });
+
+  // Belt-and-braces for anything the two extractions above did not claim —
+  // a flag token that shows up somewhere in SKILL.md outside either
+  // "flags it accepts" sentence or fence. None exist as of this writing
+  // (every flag the skill names lives in one of the four anchors above), so
+  // this set should be empty; if a future edit introduces a stray mention,
+  // this checks it the stricter way — against both parsers — rather than
+  // silently reintroducing the OR-across-both gap this file exists to close.
+  it('any flag not claimed by an inspect/build anchor is still checked, against both parsers', () => {
+    const claimed = new Set([...inspectOwnedFlags, ...buildOwnedFlags]);
+    const unclaimed = extractFlags(SKILL).filter((f) => !claimed.has(f));
+    const unknown = unclaimed.filter(
+      (f) => !isKnownOption(parseArgs, f) || !isKnownOption(parseInspectArgs, f),
     );
     expect(
       unknown,
-      `SKILL.md mentions ${unknown.join(', ')}, but neither build's parseArgs nor inspect's `
-      + `parseInspectArgs accepts ${unknown.length === 1 ? 'it' : 'them'} — update the skill or the parser`,
+      `SKILL.md mentions ${unknown.join(', ')} outside any recognised "flags it accepts" anchor, and at `
+      + 'least one of build/inspect rejects it — either extend the anchors above so this flag has a '
+      + 'known owner, or fix the flag/parser mismatch',
     ).toEqual([]);
   });
 });
