@@ -12,6 +12,12 @@
 // skill parses, and both come from the same `InspectResult` so they cannot
 // disagree. test/cli/inspect.test.ts is what proves that, not a convention
 // this file has to uphold by discipline alone.
+//
+// It also resolves a sidecar exactly the way build.ts does — through the
+// same config.ts `resolveConfig` — because two commands answering "what
+// will this print" differently for the same input is the defect `inspect`
+// exists to prevent (see docs/superpowers/specs/2026-08-12-sidecar-design.md,
+// "Verification": "inspect reads the sidecar too, and by the same rules").
 
 import { basename, extname, resolve } from 'node:path';
 import { stat } from 'node:fs/promises';
@@ -20,7 +26,8 @@ import type { Block, Doc, Inline } from '../ir/types.js';
 import { validateDoc } from '../ir/validate.js';
 import { loadTheme, type Theme } from '../theme/resolve.js';
 import { PAGE_PT } from '../theme/types.js';
-import { discoverInputs, ingest, READABLE_EXTS, type IngestOpts } from './build.js';
+import { checkFormats, discoverInputs, ingest, READABLE_EXTS, type IngestOpts } from './build.js';
+import { resolveConfig, type ConfigFlags, DEFAULT_THEME } from './config.js';
 
 type Io = { log: (s: string) => void; err: (s: string) => void };
 
@@ -60,8 +67,11 @@ export type Counts = {
  * document (exit 0), `refused` is one `build` would also refuse — it failed
  * `validateDoc`, the same gate `build` runs (exit 3) — and `failed` is one
  * this ingester could not read at all: a corrupt zip, a missing part, an
- * extension neither ingester handles (exit 1, the same "uncaught throw"
- * class `build` uses for the same failures).
+ * extension neither ingester handles, or (in a directory batch) a sidecar
+ * that did not resolve — see runInspect's own comment on why that last one
+ * is a per-document 'failed' in a batch but a hard usage-error exit for a
+ * single file (exit 1, the same "uncaught throw" class `build` uses for the
+ * same failures).
  */
 export type DocInspection =
   | {
@@ -70,31 +80,32 @@ export type DocInspection =
       title: string;
       // `title`/`subtitle`/`date`/`entity` are meta.doc fields verbatim
       // (subtitle/date/entity present only when the document — or
-      // `inspect`'s own --date/--entity — supplied one; exactOptional
-      // PropertyTypes means an absent fact is an absent key, never an
-      // explicit `undefined`). They exist here because all four print on
-      // the themed letterhead at build time, so a person deciding whether
-      // the build is ready to run wants to see exactly what will land
-      // there — not just "yes/no, one was found" but the actual text.
+      // `inspect`'s own --date/--entity/a sidecar — supplied one;
+      // exactOptionalPropertyTypes means an absent fact is an absent key,
+      // never an explicit `undefined`). They exist here because all four
+      // print on the themed letterhead at build time, so a person deciding
+      // whether the build is ready to run wants to see exactly what will
+      // land there — not just "yes/no, one was found" but the actual text.
       //
       // `inspect` accepts `--title`/`--date`/`--entity`, spelled and
-      // behaving exactly like `build`'s own flags, because each one changes
-      // what `build` would print and `inspect`'s whole purpose is to
-      // preview that before `build` runs:
+      // behaving exactly like `build`'s own flags, and now also `--config`/
+      // `--no-config`, because each one changes what `build` would print
+      // and `inspect`'s whole purpose is to preview that before `build`
+      // runs:
       //   - `entity` has no source *inside* a document at all — it can
-      //     only ever come from a caller-supplied value.
+      //     only ever come from a caller-supplied value (a flag or a
+      //     sidecar).
       //   - `date` can come from a document (the DOCX header/footer scan),
-      //     but an explicit `--date` must win over a scanned one at
-      //     inspect time exactly because it wins at build time (see
-      //     ingestDocx's own `opts.date ?? foundDate`).
+      //     but an explicit `--date`, then a sidecar's `date`, must win
+      //     over a scanned one at inspect time exactly because each does
+      //     at build time (see ingestDocx's own `opts.date ?? foundDate`
+      //     and config.ts's own precedence).
       //   - `title` can also come from a document — Markdown's h1, or a
       //     DOCX's own DocTitle body style — but a titleless `.docx` has
       //     *no* body title at all; `build.ts`'s own `ingest()` wrapper
       //     falls back to the file's name in that case, and an explicit
-      //     `--title` must outrank that fallback the same way it does at
-      //     build time. Without this, `inspect report.docx` would report
-      //     the filename-derived title while `build report.docx --title
-      //     "…"` produced a different one for the same input.
+      //     `--title` or sidecar `title` must outrank that fallback the
+      //     same way it does at build time.
       // Two commands answering "what will this print" differently for the
       // same input and the same intended flags is the exact failure this
       // command exists to prevent.
@@ -109,6 +120,13 @@ export type DocInspection =
       subtitle?: string;
       date?: string;
       entity?: string;
+      /** The sidecar's basename, present only when one was actually found
+       *  and used for this document — never for "no sidecar" or
+       *  `--no-config`. Per the design's own rule ("a sidecar that was used
+       *  must be named in the output"), which applies to `inspect` too:
+       *  a preview that silently used a sidecar is exactly the kind of
+       *  invisible decision the sidecar itself exists to prevent. */
+      config?: string;
       counts: Counts;
       /** Exactly what the ingester returned — not re-derived or re-worded.
        *  The ingesters own this vocabulary; a second phrasing of the same
@@ -117,13 +135,18 @@ export type DocInspection =
       dropped: string[];
       warnings: string[];
     }
-  | { file: string; status: 'refused'; reason: string; dropped: string[] }
+  | { file: string; status: 'refused'; reason: string; dropped: string[]; config?: string }
   | { file: string; status: 'failed'; reason: string };
 
 export type InspectResult = {
   /** The theme id the width warning (and nothing else) was computed against
-   *  — see computeWarnings' own comment on why a table-width warning needs
-   *  page geometry at all. */
+   *  for documents with no sidecar theme of their own — see
+   *  computeWarnings' own comment on why a table-width warning needs page
+   *  geometry at all. For a single-file run this is the theme actually
+   *  resolved for that input (flag, then a sidecar, then "plain"); for a
+   *  directory batch it is the flag-or-default theme used to walk the
+   *  directory, since a sidecar is not read until the walk that finds it
+   *  has already run — the same gap discoverInputs' own comment documents. */
   theme: string;
   documents: DocInspection[];
 };
@@ -246,14 +269,18 @@ function computeWarnings(doc: Doc, theme: Theme): string[] {
 }
 
 /**
- * Ingests, validates, and — only if both succeed — counts and inspects. The
- * three status branches below are exactly the three outcomes the report
- * commits to; see DocInspection's own doc comment for how each maps to an
- * exit code.
+ * Ingests, validates, and — only if both succeed — counts and inspects,
+ * against a configuration already fully resolved by the caller (flag,
+ * sidecar, and default all folded together — see runInspect's own two
+ * callers of this function for why resolution itself happens outside it).
+ * The three status branches below are exactly the three outcomes the
+ * report commits to; see DocInspection's own doc comment for how each maps
+ * to an exit code.
  */
-async function inspectDoc(
-  file: string, ext: '.docx' | '.md' | '.markdown', theme: Theme, opts: IngestOpts,
+async function inspectCore(
+  file: string, ext: '.docx' | '.md' | '.markdown', theme: Theme, opts: IngestOpts, sidecarPath: string | undefined,
 ): Promise<DocInspection> {
+  const config = sidecarPath === undefined ? {} : { config: basename(sidecarPath) };
   let doc: Doc;
   let dropped: string[];
   try {
@@ -264,7 +291,7 @@ async function inspectDoc(
   try {
     validateDoc(doc);
   } catch (e) {
-    return { file, status: 'refused', reason: (e as Error).message, dropped };
+    return { file, status: 'refused', reason: (e as Error).message, dropped, ...config };
   }
   return {
     file,
@@ -273,6 +300,7 @@ async function inspectDoc(
     ...(doc.meta.subtitle === undefined ? {} : { subtitle: doc.meta.subtitle }),
     ...(doc.meta.date === undefined ? {} : { date: doc.meta.date }),
     ...(doc.meta.entity === undefined ? {} : { entity: doc.meta.entity }),
+    ...config,
     counts: countBlocks(doc.blocks),
     dropped,
     warnings: computeWarnings(doc, theme),
@@ -309,13 +337,18 @@ function renderUnderstood(d: Extract<DocInspection, { status: 'ok' }>): string {
 }
 
 function renderOneHuman(d: DocInspection): string[] {
-  if (d.status === 'failed') return [`  failed: ${d.reason}`];
+  const lines: string[] = [];
+  if (d.status !== 'failed' && d.config !== undefined) lines.push(`  config:     ${d.config}`);
+  if (d.status === 'failed') {
+    lines.push(`  failed: ${d.reason}`);
+    return lines;
+  }
   if (d.status === 'refused') {
-    const lines = [`  refused: ${d.reason}`];
+    lines.push(`  refused: ${d.reason}`);
     lines.push(d.dropped.length ? `  dropped:    ${d.dropped.join('; ')}` : '  dropped:    nothing');
     return lines;
   }
-  const lines = [`  understood: ${renderUnderstood(d)}`];
+  lines.push(`  understood: ${renderUnderstood(d)}`);
   lines.push(d.dropped.length ? `  dropped:    ${d.dropped.join('; ')}` : '  dropped:    nothing');
   lines.push(d.warnings.length ? `  warnings:   ${d.warnings.join('; ')}` : '  warnings:   none');
   return lines;
@@ -336,12 +369,14 @@ export function renderHuman(result: InspectResult): string {
 }
 
 export function parseInspectArgs(argv: string[]): {
-  input?: string; theme: string; json: boolean; recursive: boolean; title?: string; date?: string; entity?: string;
+  input?: string; theme?: string; json: boolean; recursive: boolean; title?: string; date?: string; entity?: string;
+  config?: string; noConfig: boolean;
 } {
   const out: {
-    input?: string; theme: string; json: boolean; recursive: boolean; title?: string; date?: string; entity?: string;
+    input?: string; theme?: string; json: boolean; recursive: boolean; title?: string; date?: string; entity?: string;
+    config?: string; noConfig: boolean;
   } = {
-    theme: 'plain', json: false, recursive: false,
+    json: false, recursive: false, noConfig: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
@@ -369,11 +404,36 @@ export function parseInspectArgs(argv: string[]): {
     else if (a === '--title') out.title = next();
     else if (a === '--date') out.date = next();
     else if (a === '--entity') out.entity = next();
+    // Same spelling, same semantics, same precedence as build.ts's own
+    // --config/--no-config — see config.ts's own resolveConfig, the one
+    // function both commands call to answer "what does this input's
+    // configuration resolve to".
+    else if (a === '--config') out.config = next();
+    else if (a === '--no-config') out.noConfig = true;
     else if (a.startsWith('-')) throw new Error(`unknown option ${a}`);
     else if (out.input === undefined) out.input = a;
     else throw new Error(`unexpected argument ${a}`);
   }
+  if (out.config !== undefined && out.noConfig) {
+    throw new Error('--config and --no-config cannot both be given');
+  }
   return out;
+}
+
+/** Same conditional-spread construction build.ts's own configFlagsFrom
+ *  does, kept as inspect's own copy rather than shared: the two commands'
+ *  parsed-args shapes differ (no --to/--plain-names here), so there is no
+ *  single function that could serve both without also taking a shape
+ *  neither owns more of than the other. */
+function configFlagsFrom(args: ReturnType<typeof parseInspectArgs>): ConfigFlags {
+  return {
+    noConfig: args.noConfig,
+    ...(args.config === undefined ? {} : { configPath: args.config }),
+    ...(args.title === undefined ? {} : { title: args.title }),
+    ...(args.date === undefined ? {} : { date: args.date }),
+    ...(args.entity === undefined ? {} : { entity: args.entity }),
+    ...(args.theme === undefined ? {} : { theme: args.theme }),
+  };
 }
 
 /**
@@ -384,9 +444,13 @@ export function parseInspectArgs(argv: string[]): {
  *   0  every document inspected read cleanly (an `ok` batch of one or many)
  *   1  something could not be read at all — a bad option value aside, this
  *      is the same "uncaught throw" class `build` reports as 1: a missing
- *      file, a corrupt zip, an unreadable subdirectory in a batch
- *   2  usage error — no input, an extension neither ingester reads, or (for
- *      a directory) nothing readable found at all; the command as typed
+ *      file, a corrupt zip, an unreadable subdirectory in a batch, or (in a
+ *      batch) one input's own sidecar that did not resolve
+ *   2  usage error — no input, an extension neither ingester reads, a
+ *      sidecar that does not resolve for a *single-file* run (bad JSON, an
+ *      unknown key, a --config file that does not exist — see config.ts's
+ *      own resolveConfig), --config against a directory, or (for a
+ *      directory) nothing readable found at all; the command as typed
  *      cannot be carried out, the same meaning `build` gives this code
  *   3  refused — `validateDoc` would also refuse this document at build
  *      time; inspect still reports what dropped along the way, but prints
@@ -403,26 +467,28 @@ export async function runInspect(argv: string[], io: Io): Promise<number> {
     return 2;
   }
   if (args.input === undefined) {
-    io.err('documentor: inspect needs an input file or directory\n\n  documentor inspect <file|dir> [--theme plain] [--json] [--recursive] [--title <s>] [--date <s>] [--entity <s>]');
+    io.err('documentor: inspect needs an input file or directory\n\n  documentor inspect <file|dir> [--theme plain] [--json] [--recursive] [--title <s>] [--date <s>] [--entity <s>] [--config <file>] [--no-config]');
     return 2;
   }
 
-  const theme = await loadTheme(args.theme);
   const inputArg = resolve(args.input);
   const inputStat = await stat(inputArg).catch(() => undefined);
-  // Same construction build.ts's own ingestOptsFrom does — kept inline here
-  // rather than shared, since it is three conditional spreads, not logic
-  // either command owns more of than the other.
-  const opts: IngestOpts = {
-    ...(args.title === undefined ? {} : { title: args.title }),
-    ...(args.date === undefined ? {} : { date: args.date }),
-    ...(args.entity === undefined ? {} : { entity: args.entity }),
-  };
 
   let documents: DocInspection[];
   let batchFailed = false;
+  let reportedTheme: string;
+
   if (inputStat?.isDirectory()) {
-    const discovered = await discoverInputs(inputArg, args.recursive, theme.id);
+    // Same contradiction build.ts's own runBuild refuses, for the same
+    // reason: --config names one file, and a directory batch has no single
+    // document for it to describe.
+    if (args.config !== undefined) {
+      io.err(`documentor: --config names one sidecar file, but ${inputArg} is a directory — one explicit file cannot describe every document in a batch. Drop --config (each input's own <stem>.documentor.json is found automatically beside it), or point both --config and the input at a single file.`);
+      return 2;
+    }
+    const discoveryTheme = await loadTheme(args.theme ?? DEFAULT_THEME);
+    reportedTheme = discoveryTheme.id;
+    const discovered = await discoverInputs(inputArg, args.recursive, discoveryTheme.id);
     if (discovered.inputs.length === 0) {
       io.err(`documentor: no readable input under ${inputArg} (looked for ${[...READABLE_EXTS].join(', ')}${args.recursive ? ', recursively' : ''})`);
       return 2;
@@ -430,7 +496,27 @@ export async function runInspect(argv: string[], io: Io): Promise<number> {
     documents = [];
     for (const file of discovered.inputs) {
       const ext = extname(file).toLowerCase() as '.md' | '.markdown' | '.docx';
-      documents.push(await inspectDoc(file, ext, theme, opts));
+      try {
+        const resolved = await resolveConfig(file, configFlagsFrom(args));
+        // inspect has no --to flag of its own to validate a format against,
+        // but a sidecar can still carry a `to` this build cannot write —
+        // checked here, through the exact function build.ts's own runBuild
+        // checks a resolved `to` with, so `inspect` cannot report a clean
+        // preview for a document `build` is about to refuse (see this
+        // file's own module comment on why that disagreement is precisely
+        // the defect `inspect` exists to prevent).
+        const formatCheck = checkFormats(resolved.to);
+        if ('error' in formatCheck) throw new Error(formatCheck.error);
+        const theme = await loadTheme(resolved.theme);
+        documents.push(await inspectCore(file, ext, theme, resolved.ingestOpts, resolved.sidecarPath));
+      } catch (e) {
+        // A sidecar that does not resolve (a theme or format it names that
+        // does not exist) means this one document was never read at all —
+        // the same class of loss an unreadable .docx zip already is, folded
+        // into 'failed' rather than aborting the batch. See DocInspection's
+        // own comment on why this differs from the single-file case below.
+        documents.push({ file, status: 'failed', reason: (e as Error).message });
+      }
     }
     batchFailed = discovered.unreadableDirs.length > 0;
   } else {
@@ -439,10 +525,32 @@ export async function runInspect(argv: string[], io: Io): Promise<number> {
       io.err(`documentor: cannot read ${ext || 'a file with no extension'} yet — inspect reads .md and .docx`);
       return 2;
     }
-    documents = [await inspectDoc(inputArg, ext, theme, opts)];
+    // A single-file run treats a sidecar that does not resolve as a usage
+    // error (exit 2), the same way build.ts's own runBuild does: the fix is
+    // to correct what the operator wrote, not something a batch's
+    // per-document resilience should paper over for the one document the
+    // caller actually asked about.
+    let resolved;
+    try {
+      resolved = await resolveConfig(inputArg, configFlagsFrom(args));
+    } catch (e) {
+      io.err(`documentor: ${(e as Error).message}`);
+      return 2;
+    }
+    // Same reasoning as the batch branch above: a sidecar's `to` is
+    // validated here, through build.ts's own `checkFormats`, so a single
+    // `inspect` run cannot green-light a `build` that is about to exit 2.
+    const formatCheck = checkFormats(resolved.to);
+    if ('error' in formatCheck) {
+      io.err(`documentor: ${formatCheck.error}`);
+      return 2;
+    }
+    const theme = await loadTheme(resolved.theme);
+    reportedTheme = theme.id;
+    documents = [await inspectCore(inputArg, ext, theme, resolved.ingestOpts, resolved.sidecarPath)];
   }
 
-  const result: InspectResult = { theme: theme.id, documents };
+  const result: InspectResult = { theme: reportedTheme, documents };
   io.log(args.json ? JSON.stringify(result, null, 2) : renderHuman(result));
 
   if (batchFailed || documents.some((d) => d.status === 'failed')) return 1;

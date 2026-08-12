@@ -10,6 +10,7 @@ import { renderPdf } from '../render/pdf.js';
 import { renderDocx } from '../render/docx.js';
 import { loadTheme, type Theme } from '../theme/resolve.js';
 import { resolveEpoch } from './timestamp.js';
+import { resolveConfig, SidecarResolutionError, type ConfigFlags, DEFAULT_THEME, DEFAULT_TO } from './config.js';
 
 type Io = { log: (s: string) => void; err: (s: string) => void };
 // Exported so the top-level --help text can name exactly what this build
@@ -21,6 +22,25 @@ export const FORMATS: ReadonlySet<Format> = new Set(FORMAT_LIST);
 /** Narrows a user-supplied string to a format this build actually renders. */
 function isFormat(s: string): s is Format {
   return (FORMATS as ReadonlySet<string>).has(s);
+}
+
+/** Checks a resolved `to` list — whether it came from `--to` or a sidecar's
+ *  own `to` field, it is validated here, in the one place that already
+ *  knows every format this build can write, rather than a second check
+ *  living beside `readSidecar` (see that file's own comment on why a value
+ *  the sidecar accepts and the CLI rejects must not be possible). Exported
+ *  so `inspect` runs a sidecar's `to` through the exact same check — it has
+ *  no `--to` flag of its own to validate against, but a sidecar can still
+ *  carry a format this build cannot write, and `inspect` must refuse that
+ *  the same way `build` would rather than reporting a clean preview for a
+ *  build that is about to fail. */
+export function checkFormats(to: readonly string[]): Format[] | { error: string } {
+  const formats: Format[] = [];
+  for (const f of to) {
+    if (!isFormat(f)) return { error: `cannot write ${JSON.stringify(f)} yet — this build knows ${[...FORMATS].join(', ')}` };
+    formats.push(f);
+  }
+  return formats;
 }
 
 /**
@@ -56,7 +76,7 @@ async function renderTo(
   }
 }
 
-// The three fields both ingesters accept as overrides. Exported as its own
+// The four fields both ingesters accept as overrides. Exported as its own
 // type — rather than passing the CLI's own `ReturnType<typeof parseArgs>`
 // through, as this used to — because `inspect` needs `ingest` too (it must
 // read exactly what `build` would read, or the two could disagree about what
@@ -65,15 +85,12 @@ async function renderTo(
 // uses is what makes it callable from a second command without also
 // threading that command's unrelated flags (--to, --out, --plain-names, …)
 // through a parameter that would just go unread.
-export type IngestOpts = { title?: string; date?: string; entity?: string };
-
-function ingestOptsFrom(args: { title?: string; date?: string; entity?: string }): IngestOpts {
-  return {
-    ...(args.title === undefined ? {} : { title: args.title }),
-    ...(args.date === undefined ? {} : { date: args.date }),
-    ...(args.entity === undefined ? {} : { entity: args.entity }),
-  };
-}
+//
+// `subtitle` has no CLI flag on either command — it can only ever arrive
+// through a sidecar (see config.ts's own comment on why that still gives it
+// the right precedence over the document's own DocSubtitle with no extra
+// code here).
+export type IngestOpts = { title?: string; subtitle?: string; date?: string; entity?: string };
 
 /**
  * One spot for "which ingester, read how". Both ingesters return the same
@@ -111,14 +128,14 @@ export async function ingest(
 }
 
 export function parseArgs(argv: string[]): {
-  input?: string; to: string[]; theme: string; out?: string; title?: string; date?: string; entity?: string;
-  plainNames: boolean; recursive: boolean;
+  input?: string; to?: string[]; theme?: string; out?: string; title?: string; date?: string; entity?: string;
+  plainNames?: boolean; recursive: boolean; config?: string; noConfig: boolean;
 } {
   const out: {
-    input?: string; to: string[]; theme: string; out?: string; title?: string; date?: string; entity?: string;
-    plainNames: boolean; recursive: boolean;
+    input?: string; to?: string[]; theme?: string; out?: string; title?: string; date?: string; entity?: string;
+    plainNames?: boolean; recursive: boolean; config?: string; noConfig: boolean;
   } = {
-    to: ['pdf'], theme: 'plain', plainNames: false, recursive: false,
+    recursive: false, noConfig: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
@@ -155,11 +172,39 @@ export function parseArgs(argv: string[]): {
     // nested project, without being asked; opting in for the data-room case
     // costs one flag, opting out of an unwanted descent costs a rerun.
     else if (a === '--recursive') out.recursive = true;
+    // --config names one sidecar explicitly; --no-config skips discovery of
+    // any. See docs/superpowers/specs/2026-08-12-sidecar-design.md,
+    // "Discovery". Both are read here, unresolved against a default — the
+    // one place that decides what a missing flag falls back to is
+    // config.ts's resolveConfig, not this parser.
+    else if (a === '--config') out.config = next();
+    else if (a === '--no-config') out.noConfig = true;
     else if (a.startsWith('-')) throw new Error(`unknown option ${a}`);
     else if (out.input === undefined) out.input = a;
     else throw new Error(`unexpected argument ${a}`);
   }
+  if (out.config !== undefined && out.noConfig) {
+    throw new Error('--config and --no-config cannot both be given');
+  }
   return out;
+}
+
+/** Builds the `ConfigFlags` resolveConfig needs from one parsed argv — the
+ *  same conditional-spread shape every optional-field pass in this codebase
+ *  uses under exactOptionalPropertyTypes, kept in one place so build's
+ *  single-file path and its batch path cannot construct it two different
+ *  ways. */
+function configFlagsFrom(args: ReturnType<typeof parseArgs>): ConfigFlags {
+  return {
+    noConfig: args.noConfig,
+    ...(args.config === undefined ? {} : { configPath: args.config }),
+    ...(args.title === undefined ? {} : { title: args.title }),
+    ...(args.date === undefined ? {} : { date: args.date }),
+    ...(args.entity === undefined ? {} : { entity: args.entity }),
+    ...(args.theme === undefined ? {} : { theme: args.theme }),
+    ...(args.to === undefined ? {} : { to: args.to }),
+    ...(args.plainNames === undefined ? {} : { plainNames: args.plainNames }),
+  };
 }
 
 export async function runBuild(argv: string[], io: Io): Promise<number> {
@@ -171,18 +216,8 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
     return 2;
   }
   if (args.input === undefined) {
-    io.err(`documentor: build needs an input file or directory\n\n  documentor build <file|dir> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>] [--title <s>] [--date <s>] [--entity <s>] [--plain-names] [--recursive]`);
+    io.err(`documentor: build needs an input file or directory\n\n  documentor build <file|dir> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>] [--title <s>] [--date <s>] [--entity <s>] [--plain-names] [--recursive] [--config <file>] [--no-config]`);
     return 2;
-  }
-  // Narrowed here, once, so that everything downstream carries the union type
-  // and the dispatch in renderTo can be checked for exhaustiveness at all.
-  const formats: Format[] = [];
-  for (const f of args.to) {
-    if (!isFormat(f)) {
-      io.err(`documentor: cannot write ${JSON.stringify(f)} yet — this build knows ${[...FORMATS].join(', ')}`);
-      return 2;
-    }
-    formats.push(f);
   }
 
   // A directory argument is dispatched to its own function entirely, rather
@@ -192,7 +227,18 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
   // is this fork, before any of its own logic runs.
   const inputArg = resolve(args.input);
   const inputStat = await stat(inputArg).catch(() => undefined);
-  if (inputStat?.isDirectory()) return runBuildBatch(inputArg, args, formats, io);
+  if (inputStat?.isDirectory()) {
+    // --config names one file; a directory batch has no single document for
+    // it to describe. This is the design's own contradiction, made to say
+    // so rather than silently picking a reading (e.g. applying it to every
+    // input, which --config's own contract — "only meaningful for a single
+    // input" — rules out).
+    if (args.config !== undefined) {
+      io.err(`documentor: --config names one sidecar file, but ${inputArg} is a directory — one explicit file cannot describe every document in a batch. Drop --config (each input's own <stem>.documentor.json is found automatically beside it), or point both --config and the input at a single file.`);
+      return 2;
+    }
+    return runBuildBatch(inputArg, args, io);
+  }
 
   const input = resolve(args.input);
   const ext = extname(input).toLowerCase();
@@ -201,7 +247,25 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
     return 2;
   }
 
-  const { doc, dropped } = await ingest(ext, input, ingestOptsFrom(args));
+  let resolved;
+  try {
+    resolved = await resolveConfig(input, configFlagsFrom(args));
+  } catch (e) {
+    io.err(`documentor: ${(e as Error).message}`);
+    return 2;
+  }
+  const formatCheck = checkFormats(resolved.to);
+  if ('error' in formatCheck) {
+    io.err(`documentor: ${formatCheck.error}`);
+    return 2;
+  }
+  const formats = formatCheck;
+
+  // A sidecar that was used must be named in the output — a file that
+  // silently changes what is produced is the same failure as a silent drop.
+  if (resolved.sidecarPath !== undefined) io.log(`documentor: using ${basename(resolved.sidecarPath)}`);
+
+  const { doc, dropped } = await ingest(ext, input, resolved.ingestOpts);
   // The gate between ingest and render. Every renderer assumes a well-formed
   // Doc — an exhaustive switch over `Block` type-checks but says nothing about
   // what actually arrives at runtime from an ingester, a hand-written IR file
@@ -221,7 +285,7 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
     io.err(`documentor: refusing to render — ${(e as Error).message}`);
     return 3; // refused — see the exit code contract in src/bin/documentor.ts
   }
-  const theme = await loadTheme(args.theme);
+  const theme = await loadTheme(resolved.theme);
   const epochSeconds = await resolveEpoch(process.env, input);
 
   if (dropped.length) {
@@ -242,7 +306,7 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
   // dismissed as untestable.
   let refused = false;
   for (const format of formats) {
-    const target = join(dir, args.plainNames ? `${stem}.${format}` : `${stem}.${theme.id}.${format}`);
+    const target = join(dir, resolved.plainNames ? `${stem}.${format}` : `${stem}.${theme.id}.${format}`);
     if (resolve(target) === input) {
       io.err(`documentor: refusing to overwrite the input file ${input}`);
       refused = true; // refused — see the exit code contract in src/bin/documentor.ts
@@ -303,7 +367,10 @@ export type Discovered = {
  * `--plain-names` output writing `md` or `docx` (identical name to a real
  * source, no marker at all) is closed a different way: runBuildBatch refuses
  * that combination outright rather than relying on a filename heuristic that
- * cannot see it.
+ * cannot see it. A sidecar that gives one file in the batch a *different*
+ * theme than the one this walk was called with carries the same open gap:
+ * this scan runs once, before any sidecar is read, using only the theme a
+ * flag or default would resolve to — see runBuildBatch's own comment.
  *
  * Exported so `inspect` can reuse this walk instead of writing a second one —
  * see this file's own header comment on why READABLE_EXTS is exported too.
@@ -356,14 +423,17 @@ export async function discoverInputs(dir: string, recursive: boolean, themeId: s
 /** Where a document's outputs land, and what to call them — the one
  * computation collision-detection and processFile must agree on, since a
  * collision the pre-pass didn't see is a collision the write loop would
- * silently commit. */
+ * silently commit. Takes `plainNames`/`formats`/`theme` explicitly, resolved
+ * per file (flag, sidecar, or default — see config.ts), rather than reading
+ * them off a shared `args`, since two files in the same batch can resolve to
+ * different values when their sidecars disagree. */
 function targetsFor(
-  input: string, args: ReturnType<typeof parseArgs>, formats: readonly Format[], theme: Theme,
+  input: string, outArg: string | undefined, plainNames: boolean, formats: readonly Format[], theme: Theme,
 ): { outDir: string; targets: string[] } {
-  const outDir = args.out === undefined ? dirname(input) : resolve(args.out);
+  const outDir = outArg === undefined ? dirname(input) : resolve(outArg);
   const stem = basename(input, extname(input));
   const targets = formats.map((format) =>
-    resolve(join(outDir, args.plainNames ? `${stem}.${format}` : `${stem}.${theme.id}.${format}`)));
+    resolve(join(outDir, plainNames ? `${stem}.${format}` : `${stem}.${theme.id}.${format}`)));
   return { outDir, targets };
 }
 
@@ -371,6 +441,13 @@ type FileResult =
   | { input: string; kind: 'written'; written: string[]; dropped: string[] }
   | { input: string; kind: 'refused'; written: string[]; dropped: string[]; reason: string }
   | { input: string; kind: 'failed'; reason: string };
+
+/** One file's fully-resolved configuration, computed once per file before
+ *  any ingesting or rendering starts — see runBuildBatch's own pre-pass
+ *  comment for why. */
+type FileConfig = {
+  theme: Theme; formats: Format[]; plainNames: boolean; ingestOpts: IngestOpts; sidecarPath?: string;
+};
 
 /**
  * One document's worth of the single-file body above, reshaped to return a
@@ -382,7 +459,7 @@ type FileResult =
  * that makes a batch result trustworthy at all on a real folder.
  */
 async function processFile(
-  input: string, args: ReturnType<typeof parseArgs>, formats: Format[], theme: Theme, browser: Browser | undefined,
+  input: string, cfg: FileConfig, outArg: string | undefined, browser: Browser | undefined,
 ): Promise<FileResult> {
   try {
     const ext = extname(input).toLowerCase();
@@ -394,7 +471,7 @@ async function processFile(
       throw new Error(`cannot read ${ext || 'a file with no extension'} yet — this build reads .md and .docx`);
     }
     const epochSeconds = await resolveEpoch(process.env, input);
-    const { doc, dropped } = await ingest(ext, input, ingestOptsFrom(args));
+    const { doc, dropped } = await ingest(ext, input, cfg.ingestOpts);
     try {
       validateDoc(doc);
     } catch (e) {
@@ -407,17 +484,17 @@ async function processFile(
     // the single source of truth for "what does this input's output path
     // look like", with the pre-pass calling out to it instead of the other
     // way around.
-    const { outDir, targets } = targetsFor(input, args, formats, theme);
+    const { outDir, targets } = targetsFor(input, outArg, cfg.plainNames, cfg.formats, cfg.theme);
     await mkdir(outDir, { recursive: true });
     const written: string[] = [];
     let refusedReason: string | undefined;
-    for (const [i, format] of formats.entries()) {
+    for (const [i, format] of cfg.formats.entries()) {
       const target = targets[i]!;
       if (target === resolve(input)) {
         refusedReason = `refusing to overwrite the input file ${input}`;
         continue; // one colliding format must not stop the others from being written
       }
-      const bytes = await renderTo(format, doc, theme, epochSeconds, browser);
+      const bytes = await renderTo(format, doc, cfg.theme, epochSeconds, browser);
       await writeFile(target, bytes);
       written.push(target);
     }
@@ -439,7 +516,7 @@ async function processFile(
  * all three instead of leaving them implicit in the log above it.
  */
 function printSummary(
-  results: readonly FileResult[], discovered: Discovered, outDir: string | undefined, io: Io,
+  results: readonly FileResult[], discovered: Discovered, outDir: string | undefined, sidecarCount: number, io: Io,
 ): void {
   // Every bucket below is disjoint — each result lands in exactly one — so
   // these counts can be printed independently without one silently
@@ -455,6 +532,11 @@ function printSummary(
 
   io.log('');
   io.log(`documentor: batch summary — ${results.length} document(s)`);
+  // A sidecar that was used must be named in the output — the design's own
+  // rule, for a batch spelled as a count rather than a per-file line (see
+  // this file's own header comment on why: 86 "using report.documentor.json"
+  // lines is exactly the scroll this summary exists to replace).
+  io.log(`  ${sidecarCount} had a sidecar`);
   io.log(`  ${fullyWritten.length} written`);
   if (partial.length) {
     io.log(`  ${partial.length} partially written (one or more formats refused):`);
@@ -514,26 +596,29 @@ function printSummary(
 }
 
 async function runBuildBatch(
-  dir: string, args: ReturnType<typeof parseArgs>, formats: Format[], io: Io,
+  dir: string, args: ReturnType<typeof parseArgs>, io: Io,
 ): Promise<number> {
-  const theme = await loadTheme(args.theme);
+  // discoverInputs needs *a* theme id for its own-output-skip heuristic
+  // before any file's sidecar can be read at all — sidecars are per-file,
+  // discovered only once the walk that finds the files has already run.
+  // This resolves only the flag-or-default theme (never a sidecar's), which
+  // is the same documented gap discoverInputs' own comment already carries:
+  // a sidecar that changes one file's theme is not recognised as this
+  // build's own output on a rerun over that folder.
+  const discoveryTheme = await loadTheme(args.theme ?? DEFAULT_THEME);
 
-  // discoverInputs' own-output guard only recognises the default naming
-  // scheme (`<stem>.<themeId>.<ext>`); `--plain-names` output for a readable
-  // extension (md, docx) is spelled identically to a genuine source file, so
-  // no filename heuristic can tell them apart on a rerun. That gap is real
-  // only when the output can land back inside the tree this run itself
-  // scans — i.e. no --out, since output then defaults to beside each input.
-  // An --out pointed elsewhere genuinely closes it (the next scan of `dir`
-  // never looks in --out's directory), so the condition checks for that
-  // rather than blocking every --plain-names batch and then telling the
-  // user to do the one thing (`--out`) that would have been safe.
-  if (args.plainNames && args.out === undefined && formats.some((f) => f === 'md' || f === 'docx')) {
+  // The CLI-flag-level version of the plain-names/own-output danger: caught
+  // here, before any file is even discovered, exactly as it always has been
+  // — a sidecar can also produce this danger for one file, and that case is
+  // caught per file below instead of aborting the whole batch over a single
+  // document's own decision.
+  const cliTo = args.to ?? [...DEFAULT_TO];
+  if (args.plainNames === true && args.out === undefined && cliTo.some((f) => f === 'md' || f === 'docx')) {
     io.err('documentor: --plain-names is refused for a directory batch writing md or docx with no --out — both are also readable input extensions, so a rerun over this folder could not tell this run\'s own output from a fresh source document; drop --plain-names, or pass --out to write outside this folder');
     return 2;
   }
 
-  const discovered = await discoverInputs(dir, args.recursive, theme.id);
+  const discovered = await discoverInputs(dir, args.recursive, discoveryTheme.id);
   const files = discovered.inputs;
   if (files.length === 0) {
     io.err(`documentor: no readable input under ${dir} (looked for .md, .markdown, .docx${args.recursive ? ', recursively' : ''})`);
@@ -541,23 +626,105 @@ async function runBuildBatch(
   }
 
   const outDir = args.out === undefined ? undefined : resolve(args.out);
-  const results: FileResult[] = [];
+  const configFlags = configFlagsFrom(args);
 
-  // Every target this run would write, computed for every file before any
-  // of them is ingested or rendered. This is the fix for the batch's worst
-  // failure mode: two sources that collapse to the same
-  // `<stem>.<theme>.<format>` (a name derived from the stem alone, which
-  // drops both the source extension and, with --out, the source directory)
-  // used to overwrite each other with no warning, and the summary counted
-  // both as written even though only one file's bytes survived on disk.
-  // Refusing both sides of a collision — rather than picking one to
-  // disambiguate with an invented suffix — is the same policy the
-  // single-file overwrite guard already uses: predictable, and it never
-  // requires guessing which of two documents the operator actually wanted
-  // at that name.
-  const bySources = new Map<string, string[]>(); // resolved target -> every input that would write it
+  // Every file's configuration — sidecar included — resolved up front, once,
+  // before anything is ingested or rendered. This is what lets collision
+  // detection, the browser decision, and the plain-names/own-output guard
+  // all see the *actual* per-file theme/formats a sidecar might set, rather
+  // than the batch's CLI-level defaults. A file whose sidecar does not
+  // resolve (bad JSON, an unknown key, a format or theme this build does
+  // not accept) is folded straight into a 'failed' result here instead of
+  // aborting the whole batch — the same resilience discoverInputs' own
+  // broken-subdirectory handling already gives: one bad document must not
+  // stop the rest.
+  const perFile = new Map<string, FileConfig>();
+  const preResults = new Map<string, Extract<FileResult, { kind: 'failed' }>>();
+  // Tracks every file a sidecar was actually *found* for, independent of
+  // whether it went on to resolve — a sidecar that was found but rejected
+  // (an unknown key, a bad theme) still had a sidecar; the summary's own
+  // count claims exactly that, not "resolved cleanly". SidecarResolutionError
+  // carries the path it found even when what it did with that path is what
+  // failed (see config.ts's own comment on why), which is what makes this
+  // possible without re-deriving sidecar discovery a second time here.
+  const hadSidecar = new Set<string>();
   for (const file of files) {
-    const { targets } = targetsFor(file, args, formats, theme);
+    try {
+      const resolved = await resolveConfig(file, configFlags);
+      if (resolved.sidecarPath !== undefined) hadSidecar.add(file);
+      const formatCheck = checkFormats(resolved.to);
+      if ('error' in formatCheck) throw new Error(formatCheck.error);
+      if (resolved.plainNames && outDir === undefined && formatCheck.some((f) => f === 'md' || f === 'docx')) {
+        const via = resolved.sidecarPath === undefined ? 'plainNames' : basename(resolved.sidecarPath);
+        throw new Error(`--plain-names (from ${via}) would write md or docx with no --out — a rerun over this folder could not tell this run's own output from a fresh source document`);
+      }
+      const theme = await loadTheme(resolved.theme);
+      perFile.set(file, {
+        theme, formats: formatCheck, plainNames: resolved.plainNames, ingestOpts: resolved.ingestOpts,
+        ...(resolved.sidecarPath === undefined ? {} : { sidecarPath: resolved.sidecarPath }),
+      });
+    } catch (e) {
+      if (e instanceof SidecarResolutionError && e.sidecarPath !== undefined) hadSidecar.add(file);
+      preResults.set(file, { input: file, kind: 'failed', reason: (e as Error).message });
+    }
+  }
+
+  // A discovered file that is itself the resolved output path of some
+  // *other* discovered file in this same run is not a fresh source — it is
+  // this build's own prior output, written under a theme a sidecar chose.
+  // discoverInputs' own walk-time filter cannot see that: it runs once,
+  // before any sidecar is read, against only the flag-or-default theme id
+  // (see its own comment on the gap this closes). Every file's *actual*
+  // resolved theme/formats is known now, though, so this asks the same
+  // question that filter already asks — "does this file's own name match
+  // what this build would call its own output?" — against the real
+  // per-file targets instead of one assumed theme id, and it fires
+  // precisely on the case a --theme flag cannot: an *identical* rerun of
+  // the same command, with a sidecar theme in play, that would otherwise
+  // re-ingest its own prior output as a fresh document and write it again
+  // under a second, compounding name. A false positive here is possible
+  // for the same reason discoverInputs' own filter can have one (a genuine
+  // source that happens to be named like this build's output) — handled
+  // the same way: reported by name in the summary via `skippedOwnOutput`,
+  // never silently dropped.
+  const producedBy = new Map<string, string[]>(); // resolved path -> every file whose own config would write it
+  for (const [file, cfg] of perFile) {
+    const { targets } = targetsFor(file, args.out, cfg.plainNames, cfg.formats, cfg.theme);
+    for (const target of targets) {
+      const list = producedBy.get(target) ?? [];
+      list.push(file);
+      producedBy.set(target, list);
+    }
+  }
+  const selfOutput = new Set<string>();
+  for (const file of perFile.keys()) {
+    const producers = producedBy.get(resolve(file));
+    if (producers !== undefined && producers.some((p) => p !== file)) selfOutput.add(file);
+  }
+  for (const file of selfOutput) {
+    perFile.delete(file);
+    hadSidecar.delete(file);
+  }
+  const discoveredForSummary: Discovered = selfOutput.size === 0
+    ? discovered
+    : { ...discovered, skippedOwnOutput: [...discovered.skippedOwnOutput, ...selfOutput] };
+
+  // Every target this run would write, recomputed from the filtered
+  // `perFile` — a file just excluded as this build's own prior output must
+  // not also contribute a phantom target to collision detection below.
+  // This is the fix for the batch's worst failure mode: two sources that
+  // collapse to the same `<stem>.<theme>.<format>` (a name derived from the
+  // stem alone, which drops both the source extension and, with --out, the
+  // source directory) used to overwrite each other with no warning, and the
+  // summary counted both as written even though only one file's bytes
+  // survived on disk. Refusing both sides of a collision — rather than
+  // picking one to disambiguate with an invented suffix — is the same
+  // policy the single-file overwrite guard already uses: predictable, and
+  // it never requires guessing which of two documents the operator actually
+  // wanted at that name.
+  const bySources = new Map<string, string[]>(); // resolved target -> every input that would write it
+  for (const [file, cfg] of perFile) {
+    const { targets } = targetsFor(file, args.out, cfg.plainNames, cfg.formats, cfg.theme);
     for (const target of targets) {
       const list = bySources.get(target) ?? [];
       list.push(file);
@@ -575,16 +742,32 @@ async function runBuildBatch(
     }
   }
 
-  // Only launched when a requested format actually needs Chromium — a
-  // directory of .md/.docx sources written --to md or --to docx has no
-  // reason to carry Playwright's browser dependency at all (measured:
-  // launch=1, newPage=0 before this fix), and a batch that omits pdf
+  // Only launched when a resolved format actually needs Chromium — computed
+  // from every file's *own* resolved formats (a sidecar can add or drop
+  // `pdf` for one file), not just the batch's CLI-level --to. A directory
+  // of .md/.docx sources written --to md or --to docx has no reason to
+  // carry Playwright's browser dependency at all (measured: launch=1,
+  // newPage=0 before this fix), and a batch that omits pdf everywhere
   // should not fail with an "install chromium" message a single-file build
   // of the same input would never have hit.
-  const needsBrowser = formats.includes('pdf');
+  const needsBrowser = [...perFile.values()].some((cfg) => cfg.formats.includes('pdf'));
   const browser = needsBrowser ? await chromium.launch() : undefined;
+  const results: FileResult[] = [];
+  let sidecarCount = 0;
   try {
     for (const file of files) {
+      // Excluded as this build's own prior output above — not a document
+      // this batch's own count includes at all, the same way discoverInputs'
+      // own skippedOwnOutput files never reach this loop either.
+      if (selfOutput.has(file)) continue;
+      if (hadSidecar.has(file)) sidecarCount++;
+      const pre = preResults.get(file);
+      if (pre !== undefined) {
+        results.push(pre);
+        io.err(`documentor: ${file} — failed: ${pre.reason}`);
+        continue;
+      }
+      const cfg = perFile.get(file)!;
       const collision = collidesWith.get(file);
       if (collision !== undefined) {
         const reason = `output target collides with ${[...collision].map((o) => basename(o)).join(', ')} — both would write the same file, so neither was written`;
@@ -592,7 +775,7 @@ async function runBuildBatch(
         io.err(`documentor: ${file} — refused: ${reason}`);
         continue;
       }
-      const result = await processFile(file, args, formats, theme, browser);
+      const result = await processFile(file, cfg, args.out, browser);
       results.push(result);
       if (result.kind === 'failed') io.err(`documentor: ${file} — failed: ${result.reason}`);
       else if (result.kind === 'refused') io.err(`documentor: ${file} — refused: ${result.reason}`);
@@ -601,7 +784,7 @@ async function runBuildBatch(
     if (browser !== undefined) await browser.close();
   }
 
-  printSummary(results, discovered, outDir, io);
+  printSummary(results, discoveredForSummary, outDir, sidecarCount, io);
 
   // 1 outranks 3 outranks 0: a `failed` entry is the batch's analogue of the
   // single-file body's uncaught throw (exit 1, "a bug, a missing file,
@@ -613,6 +796,8 @@ async function runBuildBatch(
   // subdirectory is folded into the `failed` class: like a failed document,
   // it means part of the batch's own intended input was never even seen,
   // which is strictly worse than a document this build read and declined.
+  // A file whose sidecar did not resolve gets the same treatment, for the
+  // same reason: it too is a document this build never got to read at all.
   if (results.some((r) => r.kind === 'failed') || discovered.unreadableDirs.length > 0) return 1;
   if (results.some((r) => r.kind === 'refused')) return 3;
   return 0;

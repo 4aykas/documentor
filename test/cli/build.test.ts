@@ -33,8 +33,8 @@ async function docxFixture(doc: Doc, name = 'report.docx'): Promise<string> {
 }
 
 describe('parseArgs', () => {
-  it('defaults to pdf and the plain theme', () => {
-    expect(parseArgs(['a.md'])).toEqual({ input: 'a.md', to: ['pdf'], theme: 'plain', plainNames: false, recursive: false });
+  it('leaves to/theme/plainNames unset when not given — the defaults now live in config.ts\'s resolveConfig, the one place a flag, a sidecar, and a fallback are weighed together', () => {
+    expect(parseArgs(['a.md'])).toEqual({ input: 'a.md', recursive: false, noConfig: false });
   });
   it('reads --plain-names', () => {
     expect(parseArgs(['a.md', '--plain-names']).plainNames).toBe(true);
