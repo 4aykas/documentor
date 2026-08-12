@@ -1,0 +1,7 @@
+{
+  "name": "documentor",
+  "version": "0.1.0",
+  "description": "Re-issue an existing Markdown or Word document as a well-typeset PDF, Word, or Markdown file.",
+  "license": "MIT",
+  "keywords": ["documents", "pdf", "docx", "typesetting", "branding"]
+}
