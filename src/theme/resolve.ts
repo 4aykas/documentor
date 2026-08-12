@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,6 +6,34 @@ import { PAGE_PT, type PageSize, type Theme } from './types.js';
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const PAGE_SIZES = new Set<PageSize>(['A4', 'Letter']);
+const PACKAGE_NAME = '@tebin/documentor';
+
+/**
+ * Finds inline paint smuggled into a logo SVG in any of the forms it can
+ * take: a fill/stroke attribute (fill="none" included — "none" is still an
+ * inline decision, not a class), a fill:/stroke: declaration inside a
+ * style="..." attribute, or one inside an embedded <style> element. Returns
+ * where it was found so the refusal explains itself, since the whole point
+ * of refusing is that a silently-ignored theme colour is otherwise invisible.
+ */
+function findInlinePaint(svg: string): { where: string; found: string } | null {
+  const attr = svg.match(/\b(fill|stroke)\s*=\s*(["'])[^"']*\2/i);
+  if (attr) return { where: `a "${attr[1]}" attribute`, found: attr[0] };
+
+  const styleAttr = svg.match(/\bstyle\s*=\s*"([^"]*)"|\bstyle\s*=\s*'([^']*)'/i);
+  if (styleAttr) {
+    const decl = (styleAttr[1] ?? styleAttr[2] ?? '').match(/\b(fill|stroke)\s*:/i);
+    if (decl) return { where: `"${decl[1]}:" inside a style attribute`, found: decl[0] };
+  }
+
+  const styleEl = svg.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
+  if (styleEl) {
+    const decl = (styleEl[1] ?? '').match(/\b(fill|stroke)\s*:/i);
+    if (decl) return { where: `"${decl[1]}:" inside a <style> element`, found: decl[0] };
+  }
+
+  return null;
+}
 
 function bad(where: string, why: string): never {
   throw new Error(`invalid theme at ${where}: ${why}`);
@@ -55,11 +83,15 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
     if (typeof l['svg'] !== 'string' || !l['svg'].includes('<svg')) {
       bad('logo.svg', 'expected inline SVG markup');
     }
-    if (/\bfill\s*=/.test(l['svg'])) {
-      // The theme recolours the logo through CSS custom properties. An inline
-      // fill silently wins over that, so the logo would stop following the
-      // theme with nothing to show for it.
-      bad('logo.svg', 'inline fill attributes are not allowed; paint by class');
+    // A logo paints by class only: every colour comes from the host
+    // stylesheet's custom properties, and a path that should not be filled
+    // gets a class whose rule sets fill: none, not an inline attribute. An
+    // inline fill or stroke — attribute, style="", or embedded <style> —
+    // silently wins over the class, so the logo would stop following the
+    // theme with nothing visible to explain why.
+    const paint = findInlinePaint(l['svg']);
+    if (paint) {
+      bad('logo.svg', `inline paint is not allowed; found ${paint.where} (${JSON.stringify(paint.found)}) — paint by class instead`);
     }
     logo = {
       svg: l['svg'],
@@ -107,21 +139,31 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
 
 /**
  * The package root, so a bare theme id resolves whether run from src or dist.
- * Walks up from this file to the first directory holding both package.json
- * and themes/, rather than counting '..' segments: that count depends on the
- * build's output layout (rootDir, whether dist mirrors src/), which changes
- * independently of this file and would silently break the lookup again.
+ * Walks up from this file to the first ancestor whose package.json declares
+ * this package's own name, rather than counting '..' segments: that count
+ * depends on the build's output layout (rootDir, whether dist mirrors src/),
+ * which changes independently of this file and would silently break the
+ * lookup again. Checking the name (not just presence of package.json +
+ * themes/) keeps a monorepo root that happens to have both from being
+ * mistaken for this package when installed as a dependency.
  */
 function packageRoot(): string {
-  let dir = dirname(fileURLToPath(import.meta.url));
+  const startedAt = dirname(fileURLToPath(import.meta.url));
+  let dir = startedAt;
   while (true) {
-    if (existsSync(join(dir, 'package.json')) && existsSync(join(dir, 'themes'))) {
-      return dir;
+    const pkgPath = join(dir, 'package.json');
+    if (existsSync(pkgPath) && existsSync(join(dir, 'themes'))) {
+      try {
+        const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { name?: unknown };
+        if (pkg.name === PACKAGE_NAME) return dir;
+      } catch {
+        // Malformed package.json can't be this package's own; keep walking.
+      }
     }
     const parentDir = dirname(dir);
     if (parentDir === dir) {
       throw new Error(
-        `could not locate the documentor package root (looked for package.json + themes/ above ${dirname(fileURLToPath(import.meta.url))})`,
+        `could not locate the ${PACKAGE_NAME} package root (looked for a package.json named "${PACKAGE_NAME}" alongside a themes/ directory, walking up from ${startedAt})`,
       );
     }
     dir = parentDir;

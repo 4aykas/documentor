@@ -37,4 +37,39 @@ describe('resolveTheme', () => {
   it('says which theme it could not find', async () => {
     await expect(loadTheme('nope')).rejects.toThrow(/nope/);
   });
+
+  it('accepts a logo svg that paints by class only', () => {
+    const t = resolveTheme({
+      id: 'x',
+      logo: { svg: '<svg><path class="mark" d="M0 0" /></svg>' },
+    });
+    expect(t.logo?.svg).toContain('class="mark"');
+  });
+
+  it('rejects a logo with an inline fill attribute, including fill="none"', () => {
+    expect(() =>
+      resolveTheme({ id: 'x', logo: { svg: '<svg><path fill="none" d="M0 0" /></svg>' } }),
+    ).toThrow(/logo\.svg/);
+  });
+
+  it('rejects a logo with an inline stroke attribute', () => {
+    expect(() =>
+      resolveTheme({ id: 'x', logo: { svg: '<svg><path stroke="#000000" d="M0 0" /></svg>' } }),
+    ).toThrow(/logo\.svg/);
+  });
+
+  it('rejects a logo with fill smuggled through a style attribute', () => {
+    expect(() =>
+      resolveTheme({ id: 'x', logo: { svg: '<svg><path style="fill:#000000" d="M0 0" /></svg>' } }),
+    ).toThrow(/logo\.svg/);
+  });
+
+  it('rejects a logo with paint declared in an embedded <style> element', () => {
+    expect(() =>
+      resolveTheme({
+        id: 'x',
+        logo: { svg: '<svg><style>.mark { fill: #000000; }</style><path class="mark" d="M0 0" /></svg>' },
+      }),
+    ).toThrow(/logo\.svg/);
+  });
 });
