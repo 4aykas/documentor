@@ -1,4 +1,4 @@
-import { chromium, type Browser, type Page } from 'playwright-core';
+import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
 import type { Doc } from '../ir/types.js';
 import { toMm, type Theme } from '../theme/types.js';
 import { buildHtml, escapeHtml } from './html.js';
@@ -26,7 +26,10 @@ export const RUNNING_HEADER_PT = 26;
  * somebody else's server — and appears in their logs. Aborting at the browser
  * makes the property true rather than intended.
  *
- * Exported so a test can apply it to a page it owns and watch what happens.
+ * Exported so a test can apply it to a page it owns and watch what happens —
+ * but that alone would leave the wiring untested, so test/render/pdf.ts also
+ * watches the page renderPdf makes internally, through a caller-supplied
+ * context (see the `context` option below).
  */
 export async function blockNonDataRequests(page: Page): Promise<void> {
   await page.route('**/*', (route) => {
@@ -58,16 +61,26 @@ async function runningHeader(doc: Doc, theme: Theme): Promise<string> {
 </div>`;
 }
 
+/**
+ * `browser` and `context` are both ways for a caller to supply the Chromium it
+ * already has, rather than paying a launch per document — the CLI will batch
+ * that way, and every test file already does. `context` is the more specific
+ * of the two: a BrowserContext emits `page`, `request` and `requestfailed` for
+ * every page opened inside it, which is the only way an outside observer can
+ * watch the page this function creates for itself. `browser.newPage()` hides
+ * its context, so a guard applied to that page is unobservable — and an
+ * unobservable guard is an untestable one.
+ */
 export async function renderPdf(
   doc: Doc,
   theme: Theme,
-  opts: { epochSeconds: number; browser?: Browser },
+  opts: { epochSeconds: number; browser?: Browser; context?: BrowserContext },
 ): Promise<Buffer> {
   const html = await buildHtml(doc, theme, { headerHeightPt: RUNNING_HEADER_PT });
-  const browser = opts.browser ?? (await chromium.launch());
-  const ownsBrowser = opts.browser === undefined;
+  const browser = opts.context !== undefined ? undefined : opts.browser ?? (await chromium.launch());
+  const ownsBrowser = opts.context === undefined && opts.browser === undefined;
   try {
-    const page = await browser.newPage();
+    const page = opts.context !== undefined ? await opts.context.newPage() : await browser!.newPage();
     // Own try/finally around the page, nested inside the browser's: when the
     // caller supplies the browser (every test file, and how a CLI would
     // batch many documents through one browser process), the outer finally
@@ -107,6 +120,6 @@ export async function renderPdf(
       await page.close();
     }
   } finally {
-    if (ownsBrowser) await browser.close();
+    if (ownsBrowser) await browser!.close();
   }
 }

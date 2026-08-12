@@ -69,6 +69,47 @@ describe('renderPdf', () => {
     expect(remote(failed).sort()).toEqual(remote(attempted).sort());
   });
 
+  it('aborts a remote request made by the page renderPdf opens for itself', async () => {
+    // The test above proves the guard works; on its own it does not prove the
+    // guard is *wired in* — delete the blockNonDataRequests call from
+    // renderPdf and that test still passes, because it watches a page it made
+    // itself. This one watches the page renderPdf makes.
+    //
+    // A BrowserContext reports request events for every page opened inside it,
+    // so handing renderPdf a context this test owns is enough to observe its
+    // internal page without mocking anything.
+    //
+    // The remote request is smuggled in through the theme's logo, which is
+    // inline SVG spliced into the document verbatim: html.ts refuses a remote
+    // `image` block, but it does not parse a theme's SVG, and an <image href>
+    // inside one is a fetch. That is exactly the leak this second line of
+    // defence exists for, so it is what the test uses.
+    const HOST = 'documentor-must-never-fetch.invalid';
+    const leaky = resolveTheme({
+      id: 'leaky',
+      colors: { brandOnLight: '#DA291C' },
+      logo: { svg: `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="12"><image href="https://${HOST}/mark.png" width="40" height="12"/></svg>`, heightPt: 12 },
+    });
+
+    const context = await browser.newContext();
+    const seen: { url: string; error: string }[] = [];
+    context.on('requestfailed', (r) => seen.push({ url: r.url(), error: r.failure()?.errorText ?? '' }));
+    context.on('response', (r) => seen.push({ url: r.url(), error: 'RESPONDED' }));
+    try {
+      await renderPdf(ingestMarkdown('# T\n\nBody.\n').doc, leaky, { epochSeconds: EPOCH, context });
+    } finally {
+      await context.close();
+    }
+
+    const remote = seen.filter((s) => s.url.includes(HOST));
+    expect(remote.length, 'the logo image was never requested — this test no longer tests anything').toBeGreaterThan(0);
+    for (const r of remote) {
+      // net::ERR_FAILED is what route.abort() produces. ERR_NAME_NOT_RESOLVED
+      // would mean the request left the process and the guard did nothing.
+      expect(r.error, `${r.url} escaped the route guard`).toBe('net::ERR_FAILED');
+    }
+  });
+
   it('draws a remote image as a placeholder rather than fetching it', async () => {
     const text = (await pdfText(await render('# T\n\n![A chart](https://example.invalid/chart.png)\n'))).join(' ');
     expect(text).toContain('A chart');
