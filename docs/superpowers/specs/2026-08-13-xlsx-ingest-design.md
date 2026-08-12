@@ -49,10 +49,22 @@ other two ingesters have.
   directly, and the fact is reported once per document — a workbook last saved
   by something that did not compute could carry a stale number, and the person
   re-issuing it should know that is possible.
-- **The first row is the header** when it looks like one — every cell filled
-  and no cell numeric. Otherwise the table has no header row and that is
-  reported, because a table whose first data row is styled as a heading is a
-  quiet misreading.
+- **The first row is the header** when it looks like one. The first rule —
+  every cell filled and no cell numeric — was too strict against real sheets:
+  after preambles and empty columns were dealt with, 37 sheets still reported
+  no header, and the shareholders register is one of them because a single
+  column carries no label. A column without a heading is ordinary; a table
+  whose real header is carried into the data is not.
+
+  So the rule loosens on the fill requirement and keeps the numeric one, which
+  is what actually separates a header from a row of values. How far it loosens
+  is a threshold, and a threshold is measured, not chosen: over the corpus,
+  compare each candidate row's fill ratio against the rows beneath it and pick
+  the value that recognises the registers without promoting a first data row.
+  Whatever it is, it is named in the code with the number it was measured at.
+
+  Where no row qualifies, the table has no header and that is reported, because
+  a table whose first data row is styled as a heading is a quiet misreading.
 - **Empty leading rows and columns are trimmed**, and fully empty rows inside
   the used range are kept: a blank row inside a register usually separates
   groups, and deleting it changes what the table says.
