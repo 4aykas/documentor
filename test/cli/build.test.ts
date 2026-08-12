@@ -204,13 +204,17 @@ describe('runBuild', () => {
   });
 
   it('refuses an input extension it cannot read yet, naming what it does read', async () => {
+    // .csv, not .xlsx: this build reads .xlsx now (phase 3's ingest work —
+    // see src/ingest/xlsx.ts), so it no longer names an extension the ingest
+    // dispatch itself rejects.
     const dir = await mkdtemp(join(tmpdir(), 'documentor-x-'));
-    const file = join(dir, 'a.xlsx');
-    await writeFile(file, 'not really an xlsx');
+    const file = join(dir, 'a.csv');
+    await writeFile(file, 'not really a csv');
     const { io, err } = collect();
     expect(await runBuild([file], io)).toBe(2);
     expect(err.join('\n')).toMatch(/\.md/);
     expect(err.join('\n')).toMatch(/\.docx/);
+    expect(err.join('\n')).toMatch(/\.xlsx/);
   });
 
   it('produces identical bytes on two runs', async () => {

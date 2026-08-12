@@ -412,12 +412,15 @@ describe('runInspect: single file', () => {
 
 describe('runInspect: exit codes', () => {
   it('exits 2 for an extension neither ingester reads', async () => {
+    // .csv, not .xlsx: inspect reads .xlsx now too (see src/ingest/xlsx.ts),
+    // so a bad .xlsx is a *read* failure (exit 1 — see the next test), not a
+    // usage error over the extension itself.
     const dir = await mkdtemp(join(tmpdir(), 'documentor-inspect-'));
-    const file = join(dir, 'ledger.xlsx');
+    const file = join(dir, 'ledger.csv');
     await writeFile(file, 'pretend spreadsheet bytes');
     const { io, err } = collect();
     expect(await runInspect([file], io)).toBe(2);
-    expect(err.join('\n')).toMatch(/\.xlsx/);
+    expect(err.join('\n')).toMatch(/\.csv/);
   });
 
   it('exits 2 with no input', async () => {
