@@ -326,7 +326,7 @@ describe('ingestDocx — hand-built fixtures (what the round trip cannot reach)'
     // Policy: an insertion reads as accepted (Word's own default display) —
     // its `<w:r>` is ordinary content to the run scanner, `<w:ins>` wrapper
     // or not — a deletion reads as rejected and contributes no text. Both are
-    // defensible; neither may be invisible on a due-diligence document, so
+    // defensible; neither may be invisible in a document under review, so
     // this asserts the paragraph is reported exactly once, naming both
     // counts — and, per round 2, exactly once overall: the deletion's own
     // `<w:delText>` used to also fall through to a second, generic

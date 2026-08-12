@@ -10,7 +10,7 @@ what those documents actually contain decides what the ingester must read.
 
 ## What the corpus is
 
-A due-diligence data room. Each request item carries a short Word document that
+A structured request list. Each item carries a short Word document that
 restates the request and answers it — the marker is `TEBIN REPLY`,
 `TEBIN EXPLANATION` or `TEBIN COMMENT` — on a letterhead that predates the
 current theme. Re-issuing them is exactly the tool's stated purpose: content

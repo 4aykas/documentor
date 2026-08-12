@@ -1,8 +1,8 @@
 // DOCX (word/document.xml, OOXML) → IR. Scoped by measurement, not ambition —
 // see docs/superpowers/specs/2026-08-12-docx-ingest-slice-design.md, written
-// from a corpus of 86 due-diligence reply letters. No document in that corpus
-// has a table, and only three use a heading style at all: the bodies are flat
-// runs of paragraphs and list items, so that is what this file reads.
+// from a corpus of 86 short reply letters on a legacy letterhead. No document
+// in it has a table, and only three use a heading style at all: the bodies are
+// flat runs of paragraphs and list items, so that is what this file reads.
 //
 // XML, not a DOM parser: bringing in one (fast-xml-parser, xmldom, …) would be
 // this project's first parsing dependency, for a shape of document that is
@@ -446,7 +446,7 @@ function runAtoms(runXml: string, sink: Sink): { fmt: Fmt; atoms: Atom[] } {
  * cannot see) — the same thing Word itself shows by default. A deletion is
  * read as rejected: its text lives in `<w:delText>`, which nothing here
  * recognises, so it contributes nothing to the body. Both are defensible
- * choices, but silent is not — on a due-diligence document, an unaccepted
+ * choices, but silent is not — in a document under review, an unaccepted
  * redline reading as final without comment is a real defect, so this names
  * exactly what happened rather than leaving it to be inferred from a generic
  * leftover-content note (which is what a deletion falls through to anyway,

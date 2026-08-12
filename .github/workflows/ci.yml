@@ -23,9 +23,15 @@ jobs:
       # rather than skipping — it is the only check that touches the artefact
       # users actually install.
       - run: npm run build
-      - name: Test (excluding the image baseline)
+      # The rendered-page baselines are byte-compared, and a PNG produced from
+      # the same PDF differs across platforms and Chromium builds. Comparing
+      # them off Windows would cry wolf on every run, which is how a gate stops
+      # being read; the design says compare snapshots within one platform. Both
+      # baseline files are excluded together — adding a third and forgetting it
+      # here is how this line goes stale.
+      - name: Test (excluding the image baselines)
         if: matrix.os != 'windows-latest'
-        run: npx vitest run --exclude 'test/baseline/kitchen-sink.test.ts'
+        run: npx vitest run --exclude 'test/baseline/**'
       - name: Test (with the image baseline)
         if: matrix.os == 'windows-latest'
         run: npx vitest run
