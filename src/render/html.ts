@@ -145,11 +145,7 @@ function firstPageHeader(doc: Doc, theme: Theme): string {
   }`;
 }
 
-export async function buildHtml(
-  doc: Doc,
-  theme: Theme,
-  opts: { headerHeightPt: number },
-): Promise<string> {
+export async function buildHtml(doc: Doc, theme: Theme): Promise<string> {
   const faces = await arimoFaceCss();
   const { colors: c, type: ty, page } = theme;
   const trim = PAGE_PT[page.size];
@@ -168,7 +164,7 @@ export async function buildHtml(
    call's own margin option, which Chromium honours instead of this rule
    once preferCSSPageSize is false; the two are computed the same way on
    purpose, but this one is not what ships. */
-@page{ size: ${page.size}; margin: ${toMm(page.marginPt + opts.headerHeightPt)} ${toMm(page.marginPt)} ${toMm(page.marginPt)} ${toMm(page.marginPt)}; }
+@page{ size: ${page.size}; margin: ${toMm(page.marginPt)}; }
 *{ box-sizing: border-box; }
 html,body{ margin:0; padding:0; }
 body{

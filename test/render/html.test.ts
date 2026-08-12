@@ -12,7 +12,7 @@ const doc: Doc = {
     { t: 'table', head: [[{ t: 'text', v: 'a' }]], rows: [[[{ t: 'text', v: '1' }]]], align: ['r'] },
   ],
 };
-const build = () => buildHtml(doc, theme, { headerHeightPt: 40 });
+const build = () => buildHtml(doc, theme);
 
 /**
  * The property under test is "the renderer fetches nothing", not merely
@@ -70,9 +70,13 @@ describe('buildHtml', () => {
     expect(await build()).toMatch(/text-align:\s*right/);
   });
 
-  it('reserves the header height in the page margin', async () => {
-    // 48pt margin + 40pt header = 88pt = 31.04mm
-    expect(await build()).toContain('31.04mm');
+  it('uses the theme\'s own margin on every side — no extra band for the header', async () => {
+    // The running header no longer reserves any extra top-margin band (see
+    // the comment above the `margin` object in src/render/pdf.ts): the
+    // @page rule this renders is just the theme's marginPt, once, applied
+    // to all four sides, rather than a bigger value for top alone.
+    // 48pt = 16.93mm.
+    expect(await build()).toContain('@page{ size: A4; margin: 16.93mm; }');
   });
 
   it('omits the logo block entirely when the theme has none', async () => {
@@ -88,7 +92,7 @@ describe('buildHtml', () => {
         { t: 'list', ordered: true, depth: 0, start: 2, items: [[{ t: 'text', v: 'b' }]] },
       ],
     };
-    const html = await buildHtml(withList, theme, { headerHeightPt: 40 });
+    const html = await buildHtml(withList, theme);
     expect(html).toContain('<ol class="d0" start="2">');
     // A first fragment starting at 1 must not carry a redundant attribute.
     expect(html).toContain('<ol class="d0">');
@@ -100,7 +104,7 @@ describe('buildHtml', () => {
       meta: { title: 'T', lang: 'en' },
       blocks: [{ t: 'image', src: 'https://example.com/chart.png', alt: 'Sales chart' }],
     };
-    const html = await buildHtml(withImg, theme, { headerHeightPt: 40 });
+    const html = await buildHtml(withImg, theme);
     expect(html).not.toContain('<img');
     expect(html).toContain('Sales chart');
     expect(html).toContain('example.com');
@@ -111,7 +115,7 @@ describe('buildHtml', () => {
       meta: { title: 'T', lang: 'en' },
       blocks: [{ t: 'image', src: 'data:image/png;base64,AAAA', alt: 'Inline chart' }],
     };
-    const html = await buildHtml(withImg, theme, { headerHeightPt: 40 });
+    const html = await buildHtml(withImg, theme);
     expect(html).toMatch(/<img src="data:image\/png;base64,AAAA"/);
   });
 
@@ -120,8 +124,8 @@ describe('buildHtml', () => {
       meta: { title: 'T', lang: 'en' },
       blocks: [{ t: 'image', src: './chart.png', alt: 'Relative chart' }],
     };
-    await expect(buildHtml(withImg, theme, { headerHeightPt: 40 })).resolves.not.toThrow();
-    const html = await buildHtml(withImg, theme, { headerHeightPt: 40 });
+    await expect(buildHtml(withImg, theme)).resolves.not.toThrow();
+    const html = await buildHtml(withImg, theme);
     expect(html).not.toContain('<img');
     expect(html).toContain('Relative chart');
   });
@@ -135,7 +139,7 @@ describe('buildHtml', () => {
         { t: 'image', src: './chart.png', alt: 'Relative' },
       ],
     };
-    const html = await buildHtml(mixed, theme, { headerHeightPt: 40 });
+    const html = await buildHtml(mixed, theme);
     assertNoExternalResource(html);
   });
 
@@ -144,7 +148,7 @@ describe('buildHtml', () => {
       meta: { title: 'T', lang: 'en', entity: 'Acme Sp. z o.o.', date: '2026-08-12' },
       blocks: [],
     };
-    const html = await buildHtml(withMeta, theme, { headerHeightPt: 40 });
+    const html = await buildHtml(withMeta, theme);
     expect(html).toContain('Acme Sp. z o.o.');
     expect(html).toContain('2026-08-12');
     // Inside the muted letterhead column, not floating somewhere else.
@@ -165,7 +169,7 @@ describe('link schemes', () => {
       meta: { title: 'T', lang: 'en' },
       blocks: [{ t: 'para', text: [{ t: 'link', href, children: [{ t: 'text', v: 'Click me' }] }] }],
     };
-    return buildHtml(d, theme, { headerHeightPt: 40 });
+    return buildHtml(d, theme);
   };
 
   // A link is followed by a reader, not loaded by the renderer, so the bar is

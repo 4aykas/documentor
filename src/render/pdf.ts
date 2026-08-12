@@ -6,58 +6,6 @@ import { buildHtml, escapeHtml } from './html.js';
 import { arimoFaceCss } from './fonts.js';
 
 /**
- * How much of the top margin the running header occupies, beyond the
- * theme's own margin.
- *
- * Chromium draws header and footer templates in the page margin, in a context
- * that has none of the page's CSS. If the margin is smaller than the header,
- * the header is not dropped — it is drawn **over the body text**, and text
- * extraction cannot see the collision because both PDFs extract identically.
- * Measured 2026-08-12; it is why this constant exists rather than a guess at
- * the call site, and why the baseline test rasterises.
- *
- * Set to 0 on 2026-08-12 by a sweep, not a guess: 0, 4, 8 and 12 were each
- * rendered on the kitchen-sink fixture (TEBIN theme), page 2 rasterised at
- * 4x, and the PNG decoded by hand (real ink, not pdfjs coordinates — the
- * instrument that got the earlier negative-margin question wrong) to find
- * the header's own inked rows and the body's first inked row:
- *
- *   band(pt) | header ink (pt from top) | body ink starts (pt) | gap (pt)
- *   0        | 15.75–22.25              | 55.25                 | 33.00
- *   4        | 15.75–22.25              | 59.00                 | 36.75
- *   8        | 15.75–22.25              | 62.75                 | 40.50
- *   12       | 15.75–22.25              | 67.25                 | 45.00
- *
- * The header's ink sits at a fixed offset from the page's physical top edge
- * in every row — confirming, rather than assuming, that Chromium anchors the
- * header template independently of the margin box it's given, which is the
- * premise the whole sweep rests on. The chosen value is the smallest band
- * where the header's ink does not touch the body **and** at least 12pt of
- * clear space remains (a legibility floor, not a collision margin) — and
- * that was already true at 0: the theme's own margin alone gives a 33pt gap,
- * so no extra band is needed at all.
- *
- * A header long enough to wrap onto multiple lines was checked separately,
- * because it is the one way a 0pt band could still fail: Chromium does not
- * clip an oversized header template, it lets it **overprint the body** —
- * confirmed by forcing a ~1000-character mixed-script title (30 repeats of
- * the kitchen-sink title) to wrap onto 7 lines, which visibly overlapped
- * page 2's first heading. Each wrapped line adds a consistent ~7.5pt (the
- * spacing measured between stacked header lines in that test); a real title
- * long enough to wrap even once did not occur until roughly 100 mixed-script
- * characters (3 repeats of the kitchen-sink title still fit on one line, ~32
- * characters), far past any title this project's fixtures or the owner's
- * documents use — the kitchen-sink title itself never wraps. If it ever did
- * wrap to two lines, extrapolating the measured 7.5pt/line still leaves
- * 20+pt of clearance at this 0pt band. The real risk is not this constant —
- * it is a pathologically long title, which would eventually overprint the
- * body at *any* band width, because the header grows downward from a fixed
- * point near the page's physical top regardless of how much room it's given.
- * That is a title-length problem, not something this constant can fix.
- */
-export const RUNNING_HEADER_PT = 0;
-
-/**
  * The second guard on "this renderer fetches nothing".
  *
  * `html.ts` already refuses to emit a remote `<img>`, but a promise enforced in
@@ -178,7 +126,7 @@ export async function renderPdf(
   theme: Theme,
   opts: { epochSeconds: number; browser?: Browser; context?: BrowserContext },
 ): Promise<Buffer> {
-  const html = await buildHtml(doc, theme, { headerHeightPt: RUNNING_HEADER_PT });
+  const html = await buildHtml(doc, theme);
   const browser = opts.context !== undefined ? undefined : opts.browser ?? (await chromium.launch());
   const ownsBrowser = opts.context === undefined && opts.browser === undefined;
   try {
@@ -202,9 +150,32 @@ export async function renderPdf(
       // (it's a Node CLI), so `document` is not a type it knows about.
       // Playwright evaluates a string in the page's own context regardless.
       await page.evaluate('document.fonts.ready');
+      // The top margin is the theme's own — no extra band reserved for the
+      // running header, and none is needed. Chromium draws the header
+      // template from a fixed offset near the page's *physical* top edge,
+      // independent of the margin passed here: a sweep over 0, 4, 8 and
+      // 12pt of extra band (2026-08-12, kitchen-sink fixture, TEBIN theme,
+      // page 2 rasterised and decoded by hand for real ink) found the
+      // header's own ink holding at 15.75–22.25pt from the top at every
+      // value, while the body's first ink already started at 55.25pt with
+      // no extra band at all — a 33pt gap, comfortably past the 12pt
+      // legibility floor the sweep was judged against. That is why this is
+      // just `theme.page.marginPt`, on all four sides, rather than a
+      // constant added to top alone.
+      //
+      // What no margin value can fix: an oversized header is not clipped,
+      // it **overprints the body** — proved by forcing a ~1000-character
+      // mixed-script title to wrap onto 7 lines and watching it overlap a
+      // later page's own heading. Text extraction cannot see this collision
+      // (a good and a broken file extract identically); only rasterising
+      // can, which is why the baseline test does. The risk belongs to a
+      // pathologically long document title, not to this margin — the header
+      // grows downward from a fixed point near the physical page top no
+      // matter how much room the margin gives it, so no margin value here
+      // guards against a title long enough to wrap multiple times.
       const margin = {
         // page.pdf() rejects `pt`; mm is the unit the theme converts into.
-        top: toMm(theme.page.marginPt + RUNNING_HEADER_PT),
+        top: toMm(theme.page.marginPt),
         bottom: toMm(theme.page.marginPt),
         left: toMm(theme.page.marginPt),
         right: toMm(theme.page.marginPt),

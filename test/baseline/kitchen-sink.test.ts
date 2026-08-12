@@ -76,11 +76,9 @@ describe('kitchen sink baseline', () => {
   it('the running header does not collide with the body, from page 2 on', async () => {
     // The collision is invisible to text extraction, so this asserts on the
     // geometry instead: no glyph may sit above the top margin. Page 1 is
-    // excluded on purpose: it is stitched in from the empty-header render and
-    // carries no running header at all, so its letterhead is meant to sit in
-    // the band this check polices for every other page — see the negative
-    // margin on .sheet-head in html.ts. Checking page 1 here would fail on
-    // exactly the content this change intentionally moved into that space.
+    // excluded on purpose: it is stitched in from the empty-header render
+    // and carries no running header at all, so it has nothing to collide
+    // with. Checking it here would only ever pass trivially.
     const theme = await loadTheme('plain');
     const { doc } = ingestMarkdown(source);
     const buf = await renderPdf(doc, theme, { epochSeconds: EPOCH, browser });
