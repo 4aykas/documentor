@@ -1,7 +1,7 @@
 import { Document, ExternalHyperlink, Packer, Paragraph, TextRun } from 'docx';
 import { describe, expect, it } from 'vitest';
 import { normalizeDocx } from '../../src/render/normalize-docx.js';
-import { docxEntries, docxPart } from '../helpers/docx-parts.js';
+import { docxEntries, docxEntryDates, docxPart } from '../helpers/docx-parts.js';
 
 const EPOCH = 1_000_000_000;
 
@@ -56,6 +56,17 @@ describe('normalizeDocx', () => {
     expect(part).toContain('r:id="rIdLink1"');
     expect(rels).toContain('Id="rIdLink1"');
     expect(rels).toContain('Target="https://tebin.pro/"');
+  });
+
+  it('pins every zip entry to the epoch, not the wall clock', async () => {
+    // The DOS timestamp JSZip stores has two-second resolution, so two builds
+    // run back to back usually land in the same bucket anyway — the
+    // byte-identity test above cannot tell a pinned stamp from an unpinned one
+    // that got lucky. This asserts the stamp directly, on every entry.
+    const dates = await docxEntryDates(await normalizeDocx(Buffer.from(await build()), EPOCH));
+    dates.forEach((d, i) => {
+      expect(d.getTime(), `entry ${i} carries ${d.toISOString()} instead of the epoch`).toBe(EPOCH * 1000);
+    });
   });
 
   it('keeps every entry the package had', async () => {
