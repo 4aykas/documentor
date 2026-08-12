@@ -11,9 +11,9 @@ const BIN = join(ROOT, 'src', 'bin', 'documentor.ts');
 //
 // On Windows, shell: true feeds the argv to cmd.exe by concatenating them
 // with spaces rather than quoting each one (Node warns about this), so an
-// unquoted absolute BIN path breaks the moment the repo lives under a
-// directory with a space in it — as this one does ("OneDrive - TEBIN").
-// Quoting BIN keeps it a single token.
+// unquoted absolute BIN path breaks the moment the checkout lives under a
+// directory whose path contains a space — as it does on the machine this was
+// developed on. Quoting BIN keeps it a single token.
 const QUOTED_BIN = process.platform === 'win32' ? `"${BIN}"` : BIN;
 const run = (...args: string[]) =>
   spawnSync('npx', ['tsx', QUOTED_BIN, ...args], { encoding: 'utf8', shell: process.platform === 'win32' });

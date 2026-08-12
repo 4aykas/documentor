@@ -15,10 +15,10 @@ import type { Theme } from '../../src/theme/types.js';
 
 // The brief's plain `new URL('.', import.meta.url).pathname` strips the
 // leading slash off a Windows drive path but leaves the rest of the
-// pathname percent-encoded, so a repo path containing spaces (this one:
-// "OneDrive - TEBIN") resolves to a literal "%20" in the filesystem path
-// and every read below fails with ENOENT. fileURLToPath decodes correctly
-// on every platform.
+// pathname percent-encoded, so a checkout under a directory whose path
+// contains a space resolves to a literal "%20" in the filesystem path and
+// every read below fails with ENOENT. fileURLToPath decodes correctly on
+// every platform.
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const BASELINE = join(HERE, '__baseline__');
 const ACTUAL = join(HERE, '__actual__');

@@ -17,7 +17,7 @@
 - **The PDF renderer fetches nothing.** Every asset — CSS, font, logo — is inlined into the HTML string before Chromium sees it.
 - **No `Date.now()`, no `new Date()` with no argument, anywhere in `src/`.** Timestamps come from `SOURCE_DATE_EPOCH` (seconds, as a string) or the input file's mtime. A test enforces this by grep.
 - **Byte-identical output.** `build` run twice on the same input must produce identical bytes. This is a test, not an aspiration.
-- **Caches live outside the synced tree.** The repo sits inside `OneDrive - TEBIN`. `vitest.config.ts` sets `cacheDir` to `join(tmpdir(), 'documentor-vite-cache')`. See `onedrive-sync-dev-traps`.
+- **Caches live outside the synced tree.** The repo sits inside a synced OneDrive folder. `vitest.config.ts` sets `cacheDir` to `join(tmpdir(), 'documentor-vite-cache')`. See the post-mortem on developing inside a synced folder.
 - **`page.pdf()` margins reject `pt`.** Accepted units are `px`, `in`, `cm`, `mm`. The theme stores points; the PDF renderer converts with `pt * 0.352778 → mm`.
 - **Never assert on a PDF by searching its bytes for a phrase.** Chromium embeds fonts as Identity-H subsets, so the operands are glyph indices. Text assertions go through `pdfjs-dist/legacy`; appearance assertions go through a raster.
 - **Copy is in English.** Code comments explain *why*, not *what*.
@@ -196,7 +196,7 @@ export type Block =
   | { t: 'heading'; level: 1 | 2 | 3; text: Inline[] }
   | { t: 'para'; text: Inline[] }
   | { t: 'list'; ordered: boolean; depth: number; items: Inline[][] }
-  | { t: 'table'; head: Inline[][]; rows: Inline[][][]; align: Align[]; landscape?: boolean }
+  | { t: 'table'; head: Inline[][]; rows: Inline[][][]; align: Align[] }
   | { t: 'image'; src: string; alt: string; widthPt?: number }
   | { t: 'code'; lang?: string; text: string }
   | { t: 'quote'; paras: Inline[][] }
@@ -1904,7 +1904,7 @@ cannot see the page's CSS."
 - Consumes: `ingestMarkdown`, `resolveTheme`, `renderPdf`, `pdfText`.
 - Produces: `rasterPages(buf: Buffer, scale?: number): Promise<Buffer[]>` in `test/helpers/raster.ts`.
 
-Why this task exists: in `tebin-expenses` roughly 500 tests missed a defect in **every one** of five generated documents, because they asserted figures were *present* and never that they *fit*. The spike reproduced exactly that — a header colliding with the title, with identical extracted text either way.
+Why this task exists: in an earlier internal project roughly 500 tests missed a defect in **every one** of five generated documents, because they asserted figures were *present* and never that they *fit*. The spike reproduced exactly that — a header colliding with the title, with identical extracted text either way.
 
 - [ ] **Step 1: Create the fixture**
 
