@@ -20,7 +20,7 @@ Phase 1 reads Markdown and writes PDF and Markdown. Word, Excel, and reading
 
 ## Reproducible by construction
 
-The same input produces byte-identical output, on every platform:
+The same input produces byte-identical output on the same platform:
 
 - timestamps come from `SOURCE_DATE_EPOCH` or the input file's mtime, never the
   clock;
@@ -28,6 +28,13 @@ The same input produces byte-identical output, on every platform:
   Arial does not silently re-wrap every line;
 - the renderer fetches nothing — CSS, fonts and logos are inlined before the
   browser sees the page.
+
+Output may still differ between platforms, because the renderer does: PDFs are
+drawn by Chromium, and Chromium's build, its text shaping and its rasteriser
+are not identical on Windows, macOS and Linux. That is why the visual baseline
+images in this repository are pinned to one platform. Reproducibility here
+means "the same machine, twice", which is what a rebuild a year later actually
+needs; it is not a promise of a byte-for-byte match across operating systems.
 
 ## Themes
 
