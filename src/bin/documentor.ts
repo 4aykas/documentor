@@ -7,10 +7,13 @@ import { runDoctor } from '../cli/doctor.js';
 // here still named only pdf and md.
 const USAGE = `documentor — re-issue an existing document as a well-typeset one
 
-  documentor build <file> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>] [--title <s>] [--date <s>] [--entity <s>] [--plain-names]
+  documentor build <file|dir> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>] [--title <s>] [--date <s>] [--entity <s>] [--plain-names] [--recursive]
   documentor doctor
 
-Output lands beside the input as <name>.<theme>.<ext>, or <name>.<ext> with --plain-names.`;
+Output lands beside the input as <name>.<theme>.<ext>, or <name>.<ext> with --plain-names.
+A directory input builds every .md/.markdown/.docx file it contains (its own
+top level only, unless --recursive), reusing one browser for the batch and
+printing a summary of what was written, refused, failed, or dropped.`;
 
 /**
  * The exit code contract, documented in this one place because callers script
@@ -20,14 +23,23 @@ Output lands beside the input as <name>.<theme>.<ext>, or <name>.<ext> with --pl
  * instead treat as final.
  *
  *   0  success
- *   1  unexpected failure (an uncaught throw — a bug, a missing file, etc.)
+ *   1  unexpected failure (an uncaught throw — a bug, a missing file, etc.;
+ *      for a directory batch, also any single document that failed this way
+ *      — a batch never invents a new code for "some of these, some of
+ *      those", it reports the more serious class the same way one document
+ *      only ever gets one code)
  *   2  usage error (bad option, missing argument, unsupported format or
- *      input extension — the command as typed cannot be carried out)
+ *      input extension, or a directory batch with nothing readable in it —
+ *      the command as typed cannot be carried out)
  *   3  refused (documentor understood the request and declined to carry it
- *      out — e.g. the computed output path would overwrite the input)
+ *      out — e.g. the computed output path would overwrite the input; for a
+ *      directory batch, also when some documents wrote and others were only
+ *      refused, with none failing outright)
  *
  * `runBuild` returns 2 and 3 itself; this file only owns 0 (nothing ran) and
- * 1 (the catch-all for anything that threw instead of returning a code).
+ * 1 (the catch-all for anything that threw instead of returning a code) —
+ * except that a directory batch computes its own 1 the same way, since one
+ * bad document must not let an uncaught throw end the whole batch.
  */
 
 const io = { log: (s: string) => console.log(s), err: (s: string) => console.error(s) };
