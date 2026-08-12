@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { FORMATS } from '../../src/cli/build.js';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const BIN = join(ROOT, 'src', 'bin', 'documentor.ts');
@@ -23,6 +24,14 @@ describe('the exit-code contract', () => {
     const r = run('--help');
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('documentor build');
+  });
+
+  it('names every format the build actually accepts', () => {
+    // Pins the --help text to FORMATS itself, not a hand-copied list — this
+    // is exactly the assertion missing when docx shipped without --help
+    // learning about it.
+    const r = run('--help');
+    for (const format of FORMATS) expect(r.stdout).toContain(format);
   });
 
   it('exits 2 with no command', () => {

@@ -9,7 +9,9 @@ import { loadTheme } from '../theme/resolve.js';
 import { resolveEpoch } from './timestamp.js';
 
 type Io = { log: (s: string) => void; err: (s: string) => void };
-const FORMATS = new Set(['pdf', 'md', 'docx']); // xlsx arrives in phase 3
+// Exported so the top-level --help text can name exactly what this build
+// accepts, rather than carrying its own copy that can drift out of sync.
+export const FORMATS = new Set(['pdf', 'md', 'docx']); // xlsx arrives in phase 3
 
 export function parseArgs(argv: string[]): {
   input?: string; to: string[]; theme: string; out?: string; title?: string;
@@ -44,7 +46,7 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
     return 2;
   }
   if (args.input === undefined) {
-    io.err('documentor: build needs an input file\n\n  documentor build <file> [--to pdf,docx,md] [--theme plain] [--out <dir>]');
+    io.err(`documentor: build needs an input file\n\n  documentor build <file> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>]`);
     return 2;
   }
   for (const f of args.to) {
