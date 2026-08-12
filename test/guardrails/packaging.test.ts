@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PACKAGE_NAME } from '../../src/theme/resolve.js';
+import { PACKAGE_NAME, bundledThemeIds } from '../../src/theme/resolve.js';
 
 // What an installed copy contains is decided by package.json alone, and it is
 // the one thing the whole suite cannot see: every other test runs against the
@@ -46,10 +46,10 @@ describe('what an installed copy contains', () => {
     expect(shippedUnder('themes/plain/theme.json')).toBeDefined();
 
     // And each id a user can pass must actually be in there, not just the one
-    // the default happens to use.
-    const ids = readdirSync(join(ROOT, 'themes'), { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name);
+    // the default happens to use. The list comes from the resolver's own
+    // enumeration, so a theme added to themes/ is covered without anyone
+    // remembering this test exists.
+    const ids = bundledThemeIds();
     expect(ids.length).toBeGreaterThan(0);
     for (const id of ids) {
       expect(shippedUnder(`themes/${id}/theme.json`)).toBeDefined();

@@ -1,6 +1,6 @@
 import { chromium } from 'playwright-core';
 import { arimoFaceCss } from '../render/fonts.js';
-import { loadTheme } from '../theme/resolve.js';
+import { bundledThemeIds, loadTheme } from '../theme/resolve.js';
 
 type Check = { name: string; ok: boolean; detail: string; fix?: string };
 
@@ -40,11 +40,23 @@ export async function runDoctor(io: { log: (s: string) => void }): Promise<numbe
     checks.push({ name: 'Font', ok: false, detail: (e as Error).message, fix: 'npm install' });
   }
 
-  try {
-    const theme = await loadTheme('plain');
-    checks.push({ name: 'Theme', ok: true, detail: `${theme.name} (${theme.page.size})` });
-  } catch (e) {
-    checks.push({ name: 'Theme', ok: false, detail: (e as Error).message, fix: 'reinstall the package' });
+  // Every bundled theme, not just the default. A theme is a file that ships in
+  // the package and can therefore arrive damaged — truncated in transit, or
+  // missing the logo it names, which fails every render that uses it. Checking
+  // only `plain` would report Ready on an installation whose brand theme is
+  // unusable, and the brand theme is the one most people were handed this for.
+  for (const id of bundledThemeIds()) {
+    try {
+      const theme = await loadTheme(id);
+      checks.push({ name: `Theme ${id}`, ok: true, detail: `${theme.name} (${theme.page.size})` });
+    } catch (e) {
+      checks.push({
+        name: `Theme ${id}`,
+        ok: false,
+        detail: (e as Error).message,
+        fix: 'reinstall the package',
+      });
+    }
   }
 
   const width = Math.max(...checks.map((c) => c.name.length));

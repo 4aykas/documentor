@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -180,6 +180,19 @@ function packageRoot(): string {
     }
     dir = parentDir;
   }
+}
+
+/**
+ * The theme ids this package ships, read from the directory the resolver
+ * itself looks in rather than from a list someone has to remember to extend.
+ * A theme added to themes/ is therefore checked by `doctor` and by the
+ * packaging guardrail the moment it exists.
+ */
+export function bundledThemeIds(): string[] {
+  return readdirSync(join(packageRoot(), 'themes'), { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .sort();
 }
 
 export async function loadTheme(idOrPath: string): Promise<Theme> {
