@@ -70,6 +70,40 @@ describe('ingestMarkdown', () => {
     expect(() => validateDoc(doc)).not.toThrow();
   });
 
+  it('emits a lone image with no phantom paragraph', () => {
+    const { doc } = ingestMarkdown('# T\n\n![a](x.png)\n');
+    expect(doc.blocks).toEqual([{ t: 'image', src: 'x.png', alt: 'a' }]);
+  });
+
+  it('keeps both text runs around an inline image and puts the image after the paragraph', () => {
+    const { doc } = ingestMarkdown('# T\n\nHello ![a](x.png) world.\n');
+    expect(doc.blocks).toEqual([
+      { t: 'para', text: [{ t: 'text', v: 'Hello ' }, { t: 'text', v: ' world.' }] },
+      { t: 'image', src: 'x.png', alt: 'a' },
+    ]);
+  });
+
+  it('preserves the order of two images in one paragraph', () => {
+    const { doc } = ingestMarkdown('# T\n\nA ![i1](1.png) B ![i2](2.png) C\n');
+    expect(doc.blocks.slice(1)).toEqual([
+      { t: 'image', src: '1.png', alt: 'i1' },
+      { t: 'image', src: '2.png', alt: 'i2' },
+    ]);
+  });
+
+  it('drops an image inside a table cell instead of emitting a phantom block', () => {
+    const { doc, dropped } = ingestMarkdown('# T\n\n| a |\n|---|\n| ![a](x.png) |\n');
+    expect(doc.blocks).toEqual([{ t: 'table', head: [[{ t: 'text', v: 'a' }]], rows: [[[]]], align: ['l'] }]);
+    expect(dropped.join(' ')).toMatch(/image/i);
+  });
+
+  it('records list item membership loss when a code block is lifted out of a list item', () => {
+    const { doc, dropped } = ingestMarkdown('# T\n\n- one\n\n  ```js\n  x\n  ```\n');
+    expect(doc.blocks.map((b) => b.t)).toEqual(['list', 'code']);
+    expect(doc.blocks[1]).toMatchObject({ lang: 'js', text: 'x' });
+    expect(dropped.join(' ')).toMatch(/list item/i);
+  });
+
   it('keeps Ukrainian and Polish text intact', () => {
     const { doc } = ingestMarkdown('# T\n\nПривіт, ґуля. Zażółć gęślą jaźń.');
     expect(doc.blocks[0]).toEqual({

@@ -7,7 +7,15 @@ import type { Align, Block, Ingested, Inline } from '../ir/types.js';
 
 type Sink = { blocks: Block[]; dropped: string[] };
 
-function inlinesOf(tokens: Token[] | undefined, sink: Sink): Inline[] {
+// `images`, when supplied, collects any image tokens found instead of
+// dropping them, letting the caller decide what an image means in its
+// context (a paragraph turns it into a sibling block; anywhere else in the
+// IR an inline image cannot be represented at all). Passing it as an
+// out-array rather than pushing blocks as a side effect keeps `inlinesOf`
+// order-neutral: the caller controls exactly when and whether the images it
+// collected become blocks, instead of an image jumping ahead of the block
+// that is still being built.
+function inlinesOf(tokens: Token[] | undefined, sink: Sink, images?: Tokens.Image[]): Inline[] {
   const out: Inline[] = [];
   for (const tok of tokens ?? []) {
     switch (tok.type) {
@@ -15,22 +23,22 @@ function inlinesOf(tokens: Token[] | undefined, sink: Sink): Inline[] {
       case 'escape': {
         const t = tok as Tokens.Text;
         // marked nests tokens under a text token when the text contains markup.
-        if (t.tokens?.length) out.push(...inlinesOf(t.tokens, sink));
+        if (t.tokens?.length) out.push(...inlinesOf(t.tokens, sink, images));
         else out.push({ t: 'text', v: t.text });
         break;
       }
       case 'strong':
-        out.push({ t: 'strong', children: inlinesOf((tok as Tokens.Strong).tokens, sink) });
+        out.push({ t: 'strong', children: inlinesOf((tok as Tokens.Strong).tokens, sink, images) });
         break;
       case 'em':
-        out.push({ t: 'em', children: inlinesOf((tok as Tokens.Em).tokens, sink) });
+        out.push({ t: 'em', children: inlinesOf((tok as Tokens.Em).tokens, sink, images) });
         break;
       case 'codespan':
         out.push({ t: 'code', children: [{ t: 'text', v: (tok as Tokens.Codespan).text }] });
         break;
       case 'link': {
         const l = tok as Tokens.Link;
-        out.push({ t: 'link', href: l.href, children: inlinesOf(l.tokens, sink) });
+        out.push({ t: 'link', href: l.href, children: inlinesOf(l.tokens, sink, images) });
         break;
       }
       case 'br':
@@ -39,15 +47,21 @@ function inlinesOf(tokens: Token[] | undefined, sink: Sink): Inline[] {
       case 'del':
         // The IR has no strikethrough. Keep the words, say the styling went.
         sink.dropped.push('strikethrough styling (the text was kept)');
-        out.push(...inlinesOf((tok as Tokens.Del).tokens, sink));
+        out.push(...inlinesOf((tok as Tokens.Del).tokens, sink, images));
         break;
       case 'html':
         sink.dropped.push(`inline html: ${truncate((tok as Tokens.HTML).text)}`);
         break;
       case 'image': {
-        // An image inside a paragraph becomes its own block; see blockOf.
         const im = tok as Tokens.Image;
-        sink.blocks.push({ t: 'image', src: im.href, alt: im.text });
+        if (images) {
+          images.push(im);
+        } else {
+          // The IR has no inline image type, and this position (heading, list
+          // item, table cell, quote) has no block-level fallback either, so
+          // there is nowhere faithful to put it.
+          sink.dropped.push(`image here has no representation: alt="${truncate(im.text)}" src=${truncate(im.href)}`);
+        }
         break;
       }
       default:
@@ -66,24 +80,41 @@ function truncate(s: string, n = 40): string {
 
 const ALIGN_OF: Record<string, Align> = { left: 'l', right: 'r', center: 'c' };
 
+// A list item can hold more than inline text: a nested list, or (in a
+// "loose" list) a whole code block or blockquote. The IR's list item is
+// text-only, so anything but a nested list is lifted out to become a
+// sibling block, and a nested list is lifted out to become sibling `list`
+// blocks at depth + 1. Either way membership in the item is lost, which is
+// why "other" content records a `dropped` entry naming what moved.
+type Deferred = { kind: 'list'; list: Tokens.List; depth: number } | { kind: 'other'; token: Token; depth: number };
+
 function pushList(tok: Tokens.List, depth: number, sink: Sink): void {
   // A nested list becomes a sibling block carrying a greater depth, because the
   // IR is flat. The renderers indent from `depth`.
   const items: Inline[][] = [];
-  const deferred: { list: Tokens.List; depth: number }[] = [];
+  const deferred: Deferred[] = [];
   for (const item of tok.items) {
     const own: Token[] = [];
     for (const child of item.tokens) {
-      if (child.type === 'list') deferred.push({ list: child as Tokens.List, depth: depth + 1 });
+      // `space` tokens are just the blank line between a "loose" item's
+      // paragraph and its next block; marked emits them as formatting noise,
+      // not content, so they are skipped the same way blockOf skips them.
+      if (child.type === 'space') continue;
+      if (child.type === 'list') deferred.push({ kind: 'list', list: child as Tokens.List, depth: depth + 1 });
       else if (child.type === 'text' || child.type === 'paragraph') own.push(child);
-      else deferred.push({ list: child as unknown as Tokens.List, depth: depth + 1 });
+      else deferred.push({ kind: 'other', token: child, depth: depth + 1 });
     }
     items.push(inlinesOf(own, sink));
   }
   sink.blocks.push({ t: 'list', ordered: Boolean(tok.ordered), depth, items });
   for (const d of deferred) {
-    if ((d.list as Token).type === 'list') pushList(d.list, d.depth, sink);
-    else blockOf(d.list as unknown as Token, sink);
+    if (d.kind === 'list') {
+      pushList(d.list, d.depth, sink);
+    } else {
+      const raw = 'raw' in d.token && typeof d.token.raw === 'string' ? truncate(d.token.raw) : d.token.type;
+      sink.dropped.push(`list item membership: a ${d.token.type} moved out of its list item and became a sibling block: ${raw}`);
+      blockOf(d.token, sink);
+    }
   }
 }
 
@@ -102,13 +133,15 @@ function blockOf(tok: Token, sink: Sink): void {
     }
     case 'paragraph': {
       const p = tok as Tokens.Paragraph;
-      const before = sink.blocks.length;
-      const text = inlinesOf(p.tokens, sink);
-      // inlinesOf may have pushed image blocks; a paragraph that was only an
-      // image must not also emit an empty paragraph.
-      const onlyImages = text.every((n) => n.t === 'text' && n.v.trim() === '');
-      if (sink.blocks.length > before && onlyImages) return;
-      if (text.length) sink.blocks.push({ t: 'para', text });
+      // Images are collected rather than emitted inline (see inlinesOf), so
+      // the paragraph's own text and the images it contained can be ordered
+      // deliberately: the paragraph first (if it has real text), then the
+      // images that were embedded in it, in source order.
+      const images: Tokens.Image[] = [];
+      const text = inlinesOf(p.tokens, sink, images);
+      const hasText = text.some((n) => n.t !== 'text' || n.v.trim() !== '');
+      if (hasText) sink.blocks.push({ t: 'para', text });
+      for (const im of images) sink.blocks.push({ t: 'image', src: im.href, alt: im.text });
       return;
     }
     case 'list':
@@ -134,7 +167,10 @@ function blockOf(tok: Token, sink: Sink): void {
       const paras: Inline[][] = [];
       for (const child of q.tokens) {
         if (child.type === 'paragraph') paras.push(inlinesOf((child as Tokens.Paragraph).tokens, sink));
-        else if (child.type !== 'space') sink.dropped.push(`inside a quote: ${child.type}`);
+        else if (child.type !== 'space') {
+          const raw = 'raw' in child && typeof child.raw === 'string' ? truncate(child.raw) : '';
+          sink.dropped.push(`inside a quote: ${child.type}: ${raw}`);
+        }
       }
       sink.blocks.push({ t: 'quote', paras });
       return;
