@@ -21,7 +21,12 @@ export type SidecarData = {
   plainNames?: boolean;
 };
 
-const SIDECAR_KEYS = new Set<string>(['title', 'subtitle', 'date', 'entity', 'theme', 'to', 'plainNames']);
+// Exported so anything that documents the sidecar format — the skill's
+// SKILL.md, and the guardrail test that checks it against this file — reads
+// the field list from its one source of truth rather than a hand-copied set
+// that could drift the way README/--help already have (see
+// test/guardrails/docs-parity.test.ts's own module comment).
+export const SIDECAR_KEYS = new Set<string>(['title', 'subtitle', 'date', 'entity', 'theme', 'to', 'plainNames']);
 
 /** `<stem>.documentor.json`, beside the input — the design's own naming
  *  rule, spelled out once so automatic discovery here and any future writer
