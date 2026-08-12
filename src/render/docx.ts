@@ -206,6 +206,12 @@ function table(b: Extract<Block, { t: 'table' }>, theme: Theme): Table {
         bottom: { style: BorderStyle.SINGLE, size: eighthPt(head ? 1 : 0.5), color: hex(theme.colors.rule) },
         top: NO_BORDER, left: NO_BORDER, right: NO_BORDER,
       },
+      // html.ts: `th,td{ padding: 4pt 6pt }`. Word's own default cell margins
+      // are not this — left/right default close enough to pass unnoticed, but
+      // top/bottom default to 0, and a table has no shading to make the gap
+      // read as intentional the way the code block's does. Every cell sits
+      // tight against the rule above it without this.
+      margins: { top: dxa(4), bottom: dxa(4), left: dxa(6), right: dxa(6), marginUnitType: WidthType.DXA },
       children: [new Paragraph({
         style: head ? 'DocTableHeader' : 'DocTableCell',
         alignment: ALIGN[b.align[i] ?? 'l'],
@@ -256,10 +262,41 @@ function blocks(b: Block, theme: Theme): (Paragraph | Table)[] {
       }));
     }
     case 'table': return [table(b, theme)];
-    case 'code':
+    case 'code': {
       // One paragraph per line: a single paragraph with soft breaks would
       // shade as one block in Word but wrap differently from the PDF.
-      return b.text.split('\n').map((line) => new Paragraph({ style: 'DocCode', children: [new TextRun({ text: line })] }));
+      //
+      // html.ts: `pre{ padding: 8pt 10pt; }`, on a block whose shading is a
+      // per-paragraph fill with no interior of its own. The 10pt horizontal
+      // half repeats on every line — indent moves the text in from a shaded
+      // rectangle that Word draws to the full column width regardless of
+      // indent, which is what makes it read as padding rather than a margin
+      // that dragged the shading in with it. The 8pt vertical half belongs
+      // only to the first and last paragraph: applied to every line it would
+      // open a gap between each one and the block would read as separate
+      // shaded lines rather than one block.
+      const lines = b.text.split('\n');
+      const last = lines.length - 1;
+      return lines.map((line, i) => new Paragraph({
+        style: 'DocCode',
+        indent: { left: dxa(10), right: dxa(10) },
+        // Every attribute spelled out on every line, not merged with the
+        // style's own `{ line: 240, after: 0 }` — whether Word resolves a
+        // partial `w:spacing` override attribute-by-attribute against the
+        // style or replaces the element outright is not this file's call to
+        // rely on.
+        spacing: {
+          line: 240,
+          before: i === 0 ? dxa(8) : 0,
+          // html.ts: `pre{ padding-bottom: 8pt; }`, then the same gap a
+          // paragraph leaves after itself (`p{ margin: 0 0 0.7×bodyPt; }`,
+          // DocBody's own `after`) so the block does not sit tighter to what
+          // follows it than ordinary prose would.
+          after: i === last ? dxa(8) + dxa(theme.type.bodyPt * 0.7) : 0,
+        },
+        children: [new TextRun({ text: line })],
+      }));
+    }
     case 'quote':
       return b.paras.map((p) => new Paragraph({ style: 'DocQuote', children: inline(p, {}, theme) }));
     case 'rule':

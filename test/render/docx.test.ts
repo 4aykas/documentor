@@ -68,6 +68,24 @@ describe('renderDocx', () => {
     expect(xml).toContain('Widget');
   });
 
+  it('gives table cells the same internal margins html.ts paints', async () => {
+    // html.ts: `th,td{ padding: 4pt 6pt }`. Word's own cell-margin default is
+    // not this — left/right happen to be close, but top/bottom default to 0 —
+    // so it has to be set explicitly, in DXA (twentieths of a point):
+    // 4pt = 80, 6pt = 120.
+    const xml = await body(doc({
+      t: 'table',
+      head: [[{ t: 'text', v: 'Item' }]],
+      rows: [[[{ t: 'text', v: 'Widget' }]]],
+      align: ['l'],
+    }));
+    const margins = [...xml.matchAll(/<w:tcMar><w:top w:type="dxa" w:w="(\d+)"\/><w:left w:type="dxa" w:w="(\d+)"\/><w:bottom w:type="dxa" w:w="(\d+)"\/><w:right w:type="dxa" w:w="(\d+)"\/><\/w:tcMar>/g)];
+    expect(margins, 'expected one <w:tcMar> per cell (header + one row)').toHaveLength(2);
+    for (const m of margins) {
+      expect(m.slice(1)).toEqual(['80', '120', '80', '120']);
+    }
+  });
+
   it('refuses a table with no columns rather than writing an empty grid', async () => {
     // ir/validate.ts rejects this before the CLI could deliver it, so the only
     // way here is hand-built IR — which is exactly the caller that gets no
@@ -131,6 +149,49 @@ describe('renderDocx', () => {
     ] }));
     expect(theme.type.bodyPt, 'the literal below assumes a 10pt body').toBe(10);
     expect(xml).toMatch(/<w:rFonts w:ascii="Consolas"[^>]*\/><w:sz w:val="18"\/>/);
+  });
+
+  describe('a code block', () => {
+    // html.ts: `pre{ padding: 8pt 10pt; }`, on a block Word paginates as one
+    // paragraph per line (see the comment in docx.ts's `blocks()`). 10pt is
+    // 200 DXA, and it has to repeat on every line — indent is per-paragraph,
+    // there is no single "block" node to hang it on once.
+    it('indents every line of the block by the horizontal padding', async () => {
+      const xml = await body(doc({ t: 'code', text: 'one\ntwo\nthree' }));
+      const indents = [...xml.matchAll(/<w:ind w:left="(\d+)" w:right="(\d+)"\/>/g)];
+      expect(indents, 'expected one indent per code line').toHaveLength(3);
+      for (const m of indents) expect(m.slice(1)).toEqual(['200', '200']);
+    });
+
+    it('puts the vertical padding on the first and last line only, not every line', async () => {
+      // This is the assertion that would pass even if the vertical padding
+      // were wrongly applied per-line: a naive `toContain('w:before="160"')`
+      // stays true whether one paragraph carries it or three do. Counting the
+      // non-zero spacing paragraphs is what tells them apart.
+      const xml = await body(doc({ t: 'code', text: 'one\ntwo\nthree' }));
+      const spacings = [...xml.matchAll(/<w:spacing w:after="(\d+)" w:before="(\d+)" w:line="240"\/>/g)]
+        .map((m) => ({ after: Number(m[1]), before: Number(m[2]) }));
+      expect(spacings).toHaveLength(3);
+      // First line: html.ts's 8pt top padding (160 DXA), no bottom spacing.
+      expect(spacings[0]).toEqual({ before: 160, after: 0 });
+      // Middle line: neither — a middle line carrying either would mean the
+      // padding leaked into the run instead of staying at the block's ends.
+      expect(spacings[1]).toEqual({ before: 0, after: 0 });
+      // Last line: html.ts's 8pt bottom padding, plus the same gap a
+      // paragraph leaves after itself (DocBody's `after`, 0.7 × the test
+      // theme's 10pt body = 7pt) so the block does not sit tighter to what
+      // follows than prose does. (8 + 7)pt = 300 DXA.
+      expect(theme.type.bodyPt, 'the literal above assumes a 10pt body').toBe(10);
+      expect(spacings[2]).toEqual({ before: 0, after: 300 });
+    });
+
+    it('leaves no vertical padding at all on a single-line block’s spacing before', async () => {
+      // A one-line block is its own first and last paragraph at once: before
+      // carries the top padding, after carries the bottom padding plus the
+      // trailing gap, and there is no line in between to leak into.
+      const xml = await body(doc({ t: 'code', text: 'solo' }));
+      expect(xml).toContain('<w:spacing w:after="300" w:before="160" w:line="240"/>');
+    });
   });
 
   it('sets the document up for a different first page', async () => {
