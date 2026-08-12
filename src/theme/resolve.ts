@@ -17,7 +17,7 @@ const PNG_DATA_URI = /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/;
  * where it was found so the refusal explains itself, since the whole point
  * of refusing is that a silently-ignored theme colour is otherwise invisible.
  */
-function findInlinePaint(svg: string): { where: string; found: string } | null {
+export function findInlinePaint(svg: string): { where: string; found: string } | null {
   const attr = svg.match(/\b(fill|stroke)\s*=\s*(["'])[^"']*\2/i);
   if (attr) return { where: `a "${attr[1]}" attribute`, found: attr[0] };
 

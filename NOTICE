@@ -1,0 +1,15 @@
+documentor is licensed under the MIT License; see LICENSE.
+
+It also contains TEBIN brand assets, which are not:
+
+  brand/tebin/logo-full.svg
+  brand/tebin/logo-full.png
+  the "logo" field of themes/tebin/theme.json
+
+  © TEBIN — all rights reserved.
+
+The design tokens in brand/tebin/tokens.dtcg.json are MIT, as published by the
+tebin-style design system.
+
+Using this software does not grant any right to use the TEBIN name or marks.
+Replace the theme with your own.
