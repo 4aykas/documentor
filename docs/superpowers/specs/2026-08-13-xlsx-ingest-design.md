@@ -63,11 +63,25 @@ other two ingesters have.
 
 ## What it refuses, and why refusing is the feature
 
-- **A sheet with any merged cell is refused**, naming the sheet and the count.
-  Flattening a merge — value in the first cell, blanks in the rest — produces a
-  table that looks right and says something different from the original, which
-  is the worst available outcome for a document that is evidence. The IR cannot
-  hold a span, so the honest answer is to decline and say so.
+- **A sheet whose merges span rows is refused**, naming the sheet and the
+  count. A span down a column groups the rows it covers, and flattening it —
+  value in the first cell, blanks in the rest — deletes which rows belonged to
+  the group while leaving a table that looks perfectly well-formed. That is the
+  worst available outcome for a document that is evidence.
+- **A merge within a single row is flattened and reported**, by sheet and by
+  range. Measured over the corpus rather than assumed: of 79 sheets carrying a
+  merge, 43 carry only single-row ones, and 23 of the 54 affected files are
+  entirely so. A single-row span put in the first cell with blanks after it is
+  what the sheet already shows a reader, so refusing those would decline a
+  third of the corpus to avoid a loss that does not occur. The report is the
+  price — loud, per range, so a reader who cares can check the one row where a
+  spanning label now sits under the first column's header.
+
+  This is the project's standing rule applied, not an exception to it: loss
+  that is named is acceptable, loss that is silent is not. The first version of
+  this design refused both kinds, on the reasoning that the IR has no span; the
+  measurement is what separated the case where that costs meaning from the case
+  where it costs only a mention.
 - **A sheet beyond a row or column limit is refused**, naming the size. The
   limit is a page's worth of reading, not a technical ceiling: a table nobody
   can read on paper has not been re-issued, it has been reformatted into
@@ -98,7 +112,8 @@ large sheets are where a real engine earns its place.
   number, a date, a formula with a cached value, an empty leading column, a
   fully empty row — built as a zip in the test rather than committed as a
   binary nobody can diff.
-- Both refusals: a merged sheet and an oversized one, each naming its sheet.
+- Both refusals: a row-spanning merge and an oversized sheet, each naming its
+  sheet; and a single-row merge flattened, with its range in `dropped`.
 - A multi-sheet workbook produces headings in sheet order.
 - The corpus itself: all 68 files ingested, with `dropped` and refusals
   collected, so the real distribution of what this cannot carry is visible as a
