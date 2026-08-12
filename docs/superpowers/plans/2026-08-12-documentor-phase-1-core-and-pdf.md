@@ -2590,6 +2590,55 @@ describe.skipIf(!existsSync(ENTRY))('the built CLI', () => {
 
 Note the `skipIf`: a test that silently passes when it did not run is worse than no test. CI runs `npm run build` before `npx vitest run`, so add that step to the workflow below and confirm in the job log that this spec reports as run, not skipped.
 
+- [ ] **Step 2c: Write the exit-code contract test**
+
+Create `test/cli/exit-codes.test.ts`. Task 9 turned the exit codes into a documented contract — `0` success, `1` unexpected failure, `2` usage error, `3` refused — but nothing exercises `src/bin/documentor.ts` itself, so the contract is a comment rather than a promise. Scripts depend on these numbers; a change that quietly renumbers them breaks callers with no test going red.
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { spawnSync } from 'node:child_process';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = fileURLToPath(new URL('../../', import.meta.url));
+const BIN = join(ROOT, 'src', 'bin', 'documentor.ts');
+
+// tsx rather than the built output: this asserts the entry point's contract,
+// and dist-smoke.test.ts already covers the compiled artefact.
+const run = (...args: string[]) =>
+  spawnSync('npx', ['tsx', BIN, ...args], { encoding: 'utf8', shell: process.platform === 'win32' });
+
+describe('the exit-code contract', () => {
+  it('exits 0 and prints usage for --help', () => {
+    const r = run('--help');
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('documentor build');
+  });
+
+  it('exits 2 with no command', () => {
+    expect(run().status).toBe(2);
+  });
+
+  it('exits 2 for an unknown command', () => {
+    const r = run('frobnicate');
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain('frobnicate');
+  });
+
+  it('exits 2 for a build with no input file', () => {
+    expect(run('build').status).toBe(2);
+  });
+
+  it('exits 1 when the input does not exist', () => {
+    const r = run('build', 'no-such-file.md');
+    expect(r.status).toBe(1);
+    expect(r.stderr).not.toContain('    at '); // a message, not a stack trace
+  });
+});
+```
+
+These spawn a process each, so they are slower than the rest of the suite. That is the price of testing an entry point; five of them is affordable.
+
 - [ ] **Step 3: Write `.github/workflows/ci.yml`**
 
 The baseline image comparison is pinned to **one** platform: PNGs rasterised from the same PDF differ across platforms, so comparing them everywhere would redden CI for its own reasons rather than for a real change. That platform is `windows-latest`, because the baseline is generated on the developer's Windows machine in Task 8 — pinning it to Linux instead would mean the committed images could never match, which is a check that fails for its own reasons in the other direction.
