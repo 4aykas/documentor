@@ -168,15 +168,42 @@ export function cellsFromDocx(xml: string): string[] {
   return [...xml.matchAll(/<w:tc>([\s\S]*?)<\/w:tc>/g)].map((m) => norm(textOf(m[1] ?? '')));
 }
 
-function runsWith(xml: string, mark: string): string[] {
-  return [...xml.matchAll(/<w:r>([\s\S]*?)<\/w:r>/g)]
-    .filter((m) => (m[1] ?? '').includes(mark))
-    .map((m) => norm(textOf(m[1] ?? '')))
-    .filter((t) => t !== '');
+/**
+ * Every span carrying `mark`, with adjacent runs merged back into one.
+ *
+ * The merge is the whole point, and it is not a convenience: without it the
+ * two sides of the emphasis comparison count different things. `emphasisFromIr`
+ * yields one entry per emphasis *node*, and `**bold *and italic***` is a single
+ * `strong` node — but render/docx.ts deliberately carries formatting down to
+ * the leaves so that nested emphasis arrives as one run that is both, which
+ * means Word receives two runs (`bold `, then `and italic` which is also
+ * italic). Comparing runs against nodes then reports "the renderers disagree"
+ * for a renderer that is doing exactly what it promised, and points the reader
+ * at the wrong file. Merging is the direction that reconstructs the span the
+ * IR describes; splitting the IR side would instead pin today's run boundaries,
+ * which are an implementation detail of how formatting is carried down.
+ *
+ * Runs are merged within a paragraph and never across one: two emphasised
+ * spans in different paragraphs are two spans however adjacent they happen to
+ * be in the XML. The text is joined before it is whitespace-normalised, so the
+ * space that ends one run and begins the span's next word survives.
+ */
+function markedSpans(xml: string, mark: string): string[] {
+  const out: string[] = [];
+  for (const p of paragraphs(xml)) {
+    let span: string | null = null;
+    for (const m of p.xml.matchAll(/<w:r>([\s\S]*?)<\/w:r>/g)) {
+      const run = m[1] ?? '';
+      if (run.includes(mark)) span = (span ?? '') + textOf(run);
+      else if (span !== null) { out.push(span); span = null; }
+    }
+    if (span !== null) out.push(span);
+  }
+  return out.map(norm).filter((t) => t !== '');
 }
 
-export const boldRunsFromDocx = (xml: string): string[] => runsWith(xml, '<w:b/>');
-export const italicRunsFromDocx = (xml: string): string[] => runsWith(xml, '<w:i/>');
+export const boldRunsFromDocx = (xml: string): string[] => markedSpans(xml, '<w:b/>');
+export const italicRunsFromDocx = (xml: string): string[] => markedSpans(xml, '<w:i/>');
 
 export function linkTargetsFromRels(rels: string): string[] {
   return [...rels.matchAll(/Target="([^"]+)" TargetMode="External"/g)].map((m) => m[1]!);

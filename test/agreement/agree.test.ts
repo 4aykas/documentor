@@ -11,7 +11,7 @@ import { pdfText } from '../helpers/pdf-text.js';
 import { pdfRuns } from '../helpers/pdf-runs.js';
 import { renderDocx } from '../../src/render/docx.js';
 import { docxPart } from '../helpers/docx-parts.js';
-import type { Block } from '../../src/ir/types.js';
+import type { Block, Doc } from '../../src/ir/types.js';
 import {
   type Run, classify, expectSameSequence, norm, runsFromMarkdown,
   boldRunsFromDocx, cellsFromDocx, docTitleFromDocx, emphasisFromIr, flattenInline, headingsFromDocx,
@@ -190,14 +190,69 @@ describe('Word says what the others say', () => {
     expectSameSequence('table cell', { label: 'IR', items: expected }, { label: 'Word', items: cellsFromDocx(xml) });
   });
 
-  it('carries the emphasis the IR asked for, which the PDF cannot show', async () => {
-    // Compared against the IR rather than against Markdown: the IR is the
-    // contract a renderer is meant to honour, and PDF text extraction reports
-    // no weight or style at all, so there is no third opinion to reconcile.
-    const { doc } = ingestMarkdown(source);
+  /**
+   * One Markdown source through the ingester and the Word renderer. Taking a
+   * source rather than reading the fixture is what lets the emphasis shapes
+   * below be pinned at all: the kitchen sink's rendering is held by baseline
+   * images a person approved, so a shape it does not have has to be built here
+   * instead of added there.
+   */
+  async function wordFrom(markdownSource: string): Promise<{ doc: Doc; xml: string }> {
+    const { doc } = ingestMarkdown(markdownSource);
     const xml = await docxPart(await renderDocx(doc, await loadTheme('plain'), { epochSeconds: EPOCH }), 'word/document.xml');
+    return { doc, xml };
+  }
+
+  /**
+   * Compared against the IR rather than against Markdown: the IR is the
+   * contract a renderer is meant to honour, and PDF text extraction reports
+   * no weight or style at all, so there is no third opinion to reconcile.
+   */
+  function expectEmphasisAgrees(doc: Doc, xml: string): void {
     expectSameSequence('bold run', { label: 'IR', items: emphasisFromIr(doc, 'strong') }, { label: 'Word', items: boldRunsFromDocx(xml) });
     expectSameSequence('italic run', { label: 'IR', items: emphasisFromIr(doc, 'em') }, { label: 'Word', items: italicRunsFromDocx(xml) });
+  }
+
+  it('carries the emphasis the IR asked for, which the PDF cannot show', async () => {
+    const { doc, xml } = await wordFrom(source);
+    expectEmphasisAgrees(doc, xml);
+  });
+
+  it('reports one span for emphasis that nests, not one per formatting change', async () => {
+    // The fixture's emphasis is one bold word and one italic word, so on its
+    // own this comparison only ever sees emphasis wrapping a single text node
+    // — the one shape where a run and an emphasis node happen to coincide.
+    // render/docx.ts promises that `**bold *and italic***` arrives as one run
+    // that is both, which it does by carrying the formatting down to the
+    // leaves; Word therefore receives two runs where the IR has one `strong`.
+    // Both are right, and only the extractor's unit was wrong.
+    const { doc, xml } = await wordFrom('# T\n\nA line with **bold *and italic* inside** it.\n');
+    // Asserted, not merely compared: two empty sequences agree with each
+    // other perfectly and would prove nothing about either side.
+    expect(emphasisFromIr(doc, 'strong')).toEqual(['bold and italic inside']);
+    expect(boldRunsFromDocx(xml)).toEqual(['bold and italic inside']);
+    expect(emphasisFromIr(doc, 'em')).toEqual(['and italic']);
+    expectEmphasisAgrees(doc, xml);
+  });
+
+  it('reports one span for emphasis broken by an inline code span', async () => {
+    // The same unit mismatch by a different route: inline code changes the
+    // run's font (and, since this branch, its size), so an emphasis containing
+    // one is three Word runs for a single IR node.
+    const { doc, xml } = await wordFrom('# T\n\nA line with **bold `code` more** in it.\n');
+    expect(emphasisFromIr(doc, 'strong')).toEqual(['bold code more']);
+    expect(boldRunsFromDocx(xml)).toEqual(['bold code more']);
+    expectEmphasisAgrees(doc, xml);
+  });
+
+  it('keeps two emphasised spans apart when only plain text separates them', async () => {
+    // The merge must not run away: adjacency in the XML is not sameness. Two
+    // bold words with ordinary prose between them are two spans, and an
+    // extractor that merged everything carrying the mark would pass the two
+    // tests above while quietly reporting one span for a whole document.
+    const { doc, xml } = await wordFrom('# T\n\n**First** ordinary words **second**.\n');
+    expect(boldRunsFromDocx(xml)).toEqual(['First', 'second']);
+    expectEmphasisAgrees(doc, xml);
   });
 
   it('points every link where the IR points it, which the PDF cannot show', async () => {
