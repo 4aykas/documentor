@@ -14,6 +14,29 @@ const doc: Doc = {
 };
 const build = () => buildHtml(doc, theme, { headerHeightPt: 40 });
 
+/**
+ * The property under test is "the renderer fetches nothing", not merely
+ * "no <link> tag". Any src= or href= whose value is not a data: URI is a
+ * network request Chromium would make at print time — except the href of
+ * an <a>, which is a link a reader may follow, not a resource the renderer
+ * loads on their behalf.
+ */
+function assertNoExternalResource(html: string): void {
+  expect(html).not.toMatch(/<link\b/);
+  expect(html).not.toMatch(/url\((?!data:)/);
+  const tagRe = /<(\w+)((?:\s+[^<>]*)?)>/g;
+  for (const tagMatch of html.matchAll(tagRe)) {
+    const tag = tagMatch[1];
+    const attrs = tagMatch[2] ?? '';
+    for (const attrMatch of attrs.matchAll(/\b(src|href)="([^"]*)"/g)) {
+      const attr = attrMatch[1];
+      const value = attrMatch[2] ?? '';
+      if (tag === 'a' && attr === 'href') continue;
+      expect(value.startsWith('data:')).toBe(true);
+    }
+  }
+}
+
 describe('buildHtml', () => {
   it('escapes text so a document cannot inject markup', async () => {
     const html = await build();
@@ -32,9 +55,7 @@ describe('buildHtml', () => {
 
   it('references no external resource', async () => {
     const html = await build();
-    expect(html).not.toMatch(/<link\b/);
-    expect(html).not.toMatch(/src="https?:/);
-    expect(html).not.toMatch(/url\((?!data:)/);
+    assertNoExternalResource(html);
   });
 
   it('inlines the font faces', async () => {
@@ -72,6 +93,50 @@ describe('buildHtml', () => {
     // A first fragment starting at 1 must not carry a redundant attribute.
     expect(html).toContain('<ol class="d0">');
     expect(html).toContain('<ul class="d1">');
+  });
+
+  it('renders a non-data image as a placeholder, not a fetched <img>', async () => {
+    const withImg: Doc = {
+      meta: { title: 'T', lang: 'en' },
+      blocks: [{ t: 'image', src: 'https://example.com/chart.png', alt: 'Sales chart' }],
+    };
+    const html = await buildHtml(withImg, theme, { headerHeightPt: 40 });
+    expect(html).not.toContain('<img');
+    expect(html).toContain('Sales chart');
+    expect(html).toContain('example.com');
+  });
+
+  it('still renders a data: image as a real <img>', async () => {
+    const withImg: Doc = {
+      meta: { title: 'T', lang: 'en' },
+      blocks: [{ t: 'image', src: 'data:image/png;base64,AAAA', alt: 'Inline chart' }],
+    };
+    const html = await buildHtml(withImg, theme, { headerHeightPt: 40 });
+    expect(html).toMatch(/<img src="data:image\/png;base64,AAAA"/);
+  });
+
+  it('treats an unparseable src (e.g. a relative path) as a placeholder without throwing', async () => {
+    const withImg: Doc = {
+      meta: { title: 'T', lang: 'en' },
+      blocks: [{ t: 'image', src: './chart.png', alt: 'Relative chart' }],
+    };
+    await expect(buildHtml(withImg, theme, { headerHeightPt: 40 })).resolves.not.toThrow();
+    const html = await buildHtml(withImg, theme, { headerHeightPt: 40 });
+    expect(html).not.toContain('<img');
+    expect(html).toContain('Relative chart');
+  });
+
+  it('guards the no-fetch property even when the document mixes remote, data and relative images', async () => {
+    const mixed: Doc = {
+      meta: { title: 'T', lang: 'en' },
+      blocks: [
+        { t: 'image', src: 'https://example.com/chart.png', alt: 'Remote' },
+        { t: 'image', src: 'data:image/png;base64,AAAA', alt: 'Inline' },
+        { t: 'image', src: './chart.png', alt: 'Relative' },
+      ],
+    };
+    const html = await buildHtml(mixed, theme, { headerHeightPt: 40 });
+    assertNoExternalResource(html);
   });
 });
 

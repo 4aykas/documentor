@@ -31,6 +31,34 @@ function inline(nodes: Inline[]): string {
 
 const ALIGN_CSS = { l: 'left', r: 'right', c: 'center' } as const;
 
+/**
+ * Embedding a remote image would mean Chromium fetches it at print time —
+ * a deliberate, opt-in network step that phase 1 does not have. Silently
+ * reaching out to whatever host a document's markup happens to name breaks
+ * both reproducibility (output now depends on a server staying up) and
+ * trust (rendering someone else's document would make a request to a third
+ * party on their behalf). Only a `data:` URI is already fully inline, so
+ * only that renders as a real <img>; everything else becomes a visible
+ * placeholder that a reader can immediately read as "not embedded".
+ */
+function imageMarkup(src: string, alt: string, widthPt?: number): string {
+  if (src.startsWith('data:')) {
+    return `<figure><img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}"${
+      widthPt ? ` style="width: ${widthPt}pt"` : ''
+    }></figure>`;
+  }
+  let host = '';
+  try {
+    host = new URL(src).host;
+  } catch {
+    // Not a parseable URL — e.g. a relative path like "./chart.png". Falls
+    // through to the placeholder with alt text only, rather than throwing.
+  }
+  return `<figure class="img-placeholder"><div class="img-placeholder-box">${escapeHtml(alt)}${
+    host ? `<span class="img-placeholder-host">${escapeHtml(host)}</span>` : ''
+  }</div></figure>`;
+}
+
 function block(b: Block): string {
   switch (b.t) {
     case 'heading':
@@ -61,9 +89,7 @@ function block(b: Block): string {
       return `<table class="${b.landscape ? 'landscape' : ''}"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
     }
     case 'image':
-      return `<figure><img src="${escapeHtml(b.src)}" alt="${escapeHtml(b.alt)}"${
-        b.widthPt ? ` style="width: ${b.widthPt}pt"` : ''
-      }></figure>`;
+      return imageMarkup(b.src, b.alt, b.widthPt);
     case 'code':
       return `<pre><code>${escapeHtml(b.text)}</code></pre>`;
     case 'quote':
@@ -145,6 +171,8 @@ code{ font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size
 pre code{ font-size: ${(ty.bodyPt * 0.86).toFixed(1)}pt; }
 hr{ border: 0; border-top: 0.75pt solid var(--rule); margin: 14pt 0; }
 figure{ margin: 0 0 10pt; break-inside: avoid; }
+.img-placeholder-box{ border: 0.75pt solid var(--rule); color: var(--muted); padding: 10pt 12pt; font-size: ${(ty.bodyPt * 0.95).toFixed(1)}pt; }
+.img-placeholder-host{ display: block; margin-top: 3pt; font-size: ${(ty.bodyPt * 0.85).toFixed(1)}pt; }
 img{ max-width: 100%; height: auto; }
 table{ width: 100%; max-width: ${colWidthPt}pt; border-collapse: collapse; margin: 0 0 12pt; font-size: ${(ty.bodyPt * 0.95).toFixed(1)}pt; }
 /* A row that splits across a page break loses its meaning; a whole table that
