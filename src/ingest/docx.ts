@@ -23,6 +23,20 @@
 //     `<w:ins>` around it — a deliberate policy here (see `runText`'s
 //     comment), not an accident, but only because it is impossible for a
 //     regex to see the wrapper in the first place.
+//   - An attribute on a paragraph-level wrapper carries meaning a nested run
+//     never sees: `<w:fldSimple w:instr='HYPERLINK "url"'>text</w:fldSimple>`
+//     puts the href in `w:instr`, not in any `<w:t>`, so a scan that only
+//     ever looks *inside* a run (the leftover check in `runAtoms`) finds
+//     nothing wrong — the run regex still matches the nested `<w:r>` for
+//     "text" wherever it sits, and the href is gone with no trace. Fixed
+//     structurally, not by special-casing `fldSimple`: `paragraphSegments`
+//     now runs the same leftover check `runAtoms` already ran per-run, once
+//     more over the paragraph as a whole, so *any* unrecognised
+//     paragraph-level wrapper — `<w:smartTag>`, `<w:customXml>`, a future one
+//     nobody has written a case for yet — is reported instead of silently
+//     discarding whatever it wrapped, even though only `fldSimple` gets its
+//     meaning actually carried forward (see `paragraphSegments`'s own
+//     comment on why the complex `fldChar` form gets the same treatment).
 //   - `<w:pPrChange>`: a paragraph's own `<w:pPr>` can contain a nested
 //     `<w:pPrChange><w:pPr>…</w:pPr></w:pPrChange>` recording what the
 //     paragraph's properties were *before* a tracked format change. The
@@ -287,7 +301,20 @@ function paraProps(pXml: string): ParaProps {
 }
 
 function runsRegionOf(pXml: string): string {
-  return pXml.replace(/<w:pPr>[\s\S]*?<\/w:pPr>/, '');
+  // Strips the paragraph's own `<w:p>…</w:p>` wrapper along with its
+  // `<w:pPr>`, not just the latter: the wrapper never mattered while the
+  // only leftover check lived inside `runAtoms` (scoped to one `<w:r>`'s own
+  // insides, which never sees the paragraph tag around it at all), but the
+  // paragraph-level leftover check in `paragraphSegments` scans this whole
+  // string — leaving `<w:p>`/`</w:p>` in place would make *every* paragraph
+  // report itself as unread content, the same shape of bug the run-level
+  // check's own history warns about (its doc comment: "made every ordinary
+  // run report itself as unread content" before the `<w:r>` wrapper was
+  // stripped there).
+  return pXml
+    .replace(/^<w:p\b[^>]*>/, '')
+    .replace(/<\/w:p>$/, '')
+    .replace(/<w:pPr>[\s\S]*?<\/w:pPr>/, '');
 }
 
 // ---------------------------------------------------------------------------
@@ -472,6 +499,55 @@ function reportTrackedChanges(runsXml: string, sink: Sink): void {
   sink.dropped.push(`paragraph contains ${parts.join(' and ')}`);
 }
 
+/** Reads an XML attribute's value from a tag's attribute substring, tolerant
+ *  of either quote style — `w:instr="…"` or `w:instr='…'` — because a field
+ *  instruction routinely contains a double-quoted URL (`HYPERLINK "url"`),
+ *  which forces Word to write the *attribute itself* single-quoted so the
+ *  URL's own quotes don't need escaping. A single-quote-only reader (every
+ *  other attribute read in this file uses a literal `"([^"]*)"`) would miss
+ *  exactly the shape this function exists to read. */
+function attrValue(attrsXml: string, name: string): string | undefined {
+  const m = new RegExp(`\\b${name}=(?:"([^"]*)"|'([^']*)')`).exec(attrsXml);
+  if (!m) return undefined;
+  return m[1] !== undefined ? m[1] : m[2];
+}
+
+/**
+ * A field instruction is free-text, not markup — `HYPERLINK "url" \l "frag"
+ * \o "tooltip"` — so the URL is whatever sits inside the first double-quoted
+ * span after the `HYPERLINK` keyword, and everything after it (a bookmark
+ * switch `\l`, a tooltip switch `\o "…"`, both optional and in either order)
+ * must not leak into the href. Capturing only that first quoted span, rather
+ * than "everything up to the closing tag", is what keeps a switch out of the
+ * link target without needing to enumerate every switch OOXML defines.
+ */
+function parseHyperlinkInstr(instr: string): { href: string } | null {
+  const m = /\bHYPERLINK\s+"([^"]*)"/i.exec(instr);
+  return m ? { href: m[1] ?? '' } : null;
+}
+
+/**
+ * Splits the XML span of a complex field (`fldChar begin` … `fldChar
+ * separate` … `fldChar end`, each in its own `<w:r>`, per OOXML's field
+ * grammar) into the instruction text and the display-text region. The
+ * instruction can itself be split across several adjacent `<w:instrText>`
+ * runs — Word does this the same way it splits ordinary text runs (see this
+ * file's header comment on run-splitting) — so every occurrence is
+ * concatenated, not just the first. When `separate`/`end` cannot be found
+ * (a malformed or truncated field), the display region comes back empty
+ * rather than guessing at a boundary.
+ */
+function splitComplexField(spanXml: string): { instr: string; displayXml: string } {
+  let instr = '';
+  for (const m of spanXml.matchAll(/<w:instrText\b[^>]*>([\s\S]*?)<\/w:instrText>|<w:instrText\/>/g)) {
+    instr += decodeXmlEntities(m[1] ?? '');
+  }
+  const sepIdx = spanXml.search(/<w:fldChar\b[^>]*\bw:fldCharType="separate"/);
+  const endIdx = spanXml.search(/<w:fldChar\b[^>]*\bw:fldCharType="end"/);
+  const displayXml = sepIdx !== -1 && endIdx !== -1 && endIdx > sepIdx ? spanXml.slice(sepIdx, endIdx) : '';
+  return { instr, displayXml };
+}
+
 type Segment = { kind: 'text'; inlines: Inline[] } | { kind: 'image'; src: string; alt: string } | { kind: 'pagebreak' };
 
 /** Splits a paragraph's runs region into ordered segments: text, an image, or
@@ -520,18 +596,31 @@ function paragraphSegments(
   //     word of body text, so it belongs with the other silent atoms rather
   //     than in `dropped` (which the design reserves for content, per the
   //     corpus's own review round 1).
+  // Named groups, not positional `m[1]`/`m[2]`: three of these alternatives
+  // now carry their own captures (hyperlink, fldSimple, the complex-field
+  // span), and indexing them by position would silently shift the moment a
+  // fourth was added — a name says what it is at the call site instead of
+  // relying on alternation order staying memorised.
+  //
+  // `<w:fldSimple>` and the `fldChar begin`/`instrText`/`separate`/`fldChar
+  // end` span both get a case here for the same reason `<w:hyperlink>` does:
+  // Word wrote a link this way for every version before 2007, and still does
+  // for mail-merge and cross-reference fields, so a `HYPERLINK` field is
+  // ordinary Word output, not a corruption — see this function's own comment
+  // below on why both forms are handled identically instead of one being
+  // carried and the other merely reported.
   const unitRe =
-    /<w:bookmarkStart\b[^>]*\/>|<w:bookmarkEnd\b[^>]*\/>|<w:proofErr\b[^>]*\/>|<w:hyperlink\b([^>]*)>([\s\S]*?)<\/w:hyperlink>|<w:r\b[^>]*\/>|<w:r\b[^>]*>[\s\S]*?<\/w:r>/g;
+    /<w:bookmarkStart\b[^>]*\/>|<w:bookmarkEnd\b[^>]*\/>|<w:proofErr\b[^>]*\/>|<w:hyperlink\b(?<hlAttrs>[^>]*)>(?<hlInner>[\s\S]*?)<\/w:hyperlink>|<w:fldSimple\b(?<fsAttrs>[^>]*)>(?<fsInner>[\s\S]*?)<\/w:fldSimple>|(?<cfSpan><w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:fldChar\b[^>]*\bw:fldCharType="begin"[^>]*\/>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>[\s\S]*?<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:fldChar\b[^>]*\bw:fldCharType="end"[^>]*\/>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>)|<w:r\b[^>]*\/>|<w:r\b[^>]*>[\s\S]*?<\/w:r>/g;
   for (const m of runs.matchAll(unitRe)) {
     if (m[0].startsWith('<w:bookmarkStart') || m[0].startsWith('<w:bookmarkEnd') || m[0].startsWith('<w:proofErr')) continue;
 
-    if (m[1] !== undefined) {
+    if (m.groups?.hlAttrs !== undefined) {
       // A hyperlink. Its target is the relationship its `r:id` names — never
       // the visible text, which is what makes phishing via a mismatched link
       // text/href possible in the first place — so the href is looked up,
       // not read off the run.
-      const rId = /\br:id="([^"]*)"/.exec(m[1])?.[1];
-      const inner = m[2] ?? '';
+      const rId = /\br:id="([^"]*)"/.exec(m.groups.hlAttrs)?.[1];
+      const inner = m.groups.hlInner ?? '';
       const children = innerRunsToInlines(inner, sink, opts.context);
       const rel = rId !== undefined ? rels.get(rId) : undefined;
       if (rel === undefined) {
@@ -544,6 +633,58 @@ function paragraphSegments(
         // design draws for the date and the letterhead — read faithfully,
         // judge later.
         current.push({ t: 'link', href: rel.target, children });
+      }
+      continue;
+    }
+
+    if (m.groups?.fsAttrs !== undefined) {
+      // `<w:fldSimple w:instr='HYPERLINK "url"'>text</w:fldSimple>` — the
+      // pre-2007 (and still current, for mail-merge/cross-reference fields)
+      // way Word writes a link: target and display text both live on this
+      // one element, target in the `w:instr` attribute rather than any
+      // nested run, so it is built into the same `link` node `<w:hyperlink>`
+      // becomes above, not a second inline shape.
+      const instrRaw = attrValue(m.groups.fsAttrs, 'w:instr');
+      const instr = instrRaw !== undefined ? decodeXmlEntities(instrRaw) : undefined;
+      const children = innerRunsToInlines(m.groups.fsInner ?? '', sink, opts.context);
+      const link = instr !== undefined ? parseHyperlinkInstr(instr) : null;
+      if (link) {
+        current.push({ t: 'link', href: link.href, children });
+      } else {
+        // Not every field is a HYPERLINK (PAGE, REF, SEQ, DATE, …); this
+        // ingester only knows how to carry the one kind, so any other kind
+        // is named and its already-computed field *result* text is kept —
+        // the same "keep the text, name what was lost" shape the
+        // no-resolvable-relationship hyperlink case above uses.
+        sink.dropped.push(`field code this ingester does not carry (kept its text): ${truncate(instr ?? '(no w:instr)')}`);
+        current.push(...children);
+      }
+      continue;
+    }
+
+    if (m.groups?.cfSpan !== undefined) {
+      // The same HYPERLINK field, written the "complex" way: `fldChar
+      // begin`/`instrText`/`fldChar separate`/`fldChar end` spread across
+      // several sibling runs instead of one `<w:fldSimple>` element. Before
+      // this case existed, `fldSimple` was silent (fell through with no
+      // dropped entry — the very defect this change closes) while this form
+      // was noisy *four times over* (`runAtoms`'s leftover check firing once
+      // per run: the begin run, the instrText run, the separate run, the end
+      // run) and *still* lost the href — the same link, invisible in one
+      // spelling and shouting in the other. Handling both the same way here
+      // — carry a HYPERLINK, name and keep the text of anything else, exactly
+      // once — is the fix for the incoherence, not just the noise: a second
+      // link node, an unrepresentable field, or the leftover-content flood
+      // would each have been defensible in isolation, but only "handle both
+      // forms identically" leaves nothing for a reader to reconcile.
+      const { instr, displayXml } = splitComplexField(m.groups.cfSpan);
+      const link = parseHyperlinkInstr(instr);
+      const children = innerRunsToInlines(displayXml, sink, opts.context);
+      if (link) {
+        current.push({ t: 'link', href: link.href, children });
+      } else {
+        sink.dropped.push(`complex field code this ingester does not carry (kept its text): ${truncate(instr)}`);
+        current.push(...children);
       }
       continue;
     }
@@ -595,6 +736,33 @@ function paragraphSegments(
     }
   }
   flush();
+
+  // The paragraph-level mirror of `runAtoms`'s own leftover check: everything
+  // `unitRe` recognised has now been consumed above, so whatever text is left
+  // in `runs` once that pattern is stripped out is a *paragraph*-level
+  // element this ingester has no case for — an unrecognised field type, a
+  // `<w:smartTag>` or `<w:customXml>` wrapper, anything future Word output
+  // adds. Before this check existed, that leftover simply vanished: the run
+  // regex inside `unitRe`/`runAtoms` still matches a nested `<w:r>` wherever
+  // it sits in the string, ancestor tags or not (see this file's header
+  // comment), so the *text* survived by accident while the *wrapper's own
+  // meaning* — an attribute holding a target, a semantic tag on the content —
+  // was discarded with nothing in `dropped` to say so. This is what turns
+  // that unbounded, silent class of loss into a bounded, loud one: it cannot
+  // name what a wrapper meant (it doesn't know the shape), but it can and
+  // does say something was there and was not read.
+  //
+  // `<w:ins>`/`<w:del>` are the one paragraph-level wrapper already named
+  // deliberately, not by omission (see `reportTrackedChanges` and the file
+  // header comment on why the regex can't see them around an ordinary run
+  // either way) — stripped here before the generic check runs so a tracked
+  // change is not reported twice under two different, differently-worded
+  // messages for the same thing.
+  const leftover = runs.replace(unitRe, '').replace(/<\/?w:ins\b[^>]*>|<\/?w:del\b[^>]*>/g, '');
+  if (/<w:\w/.test(leftover)) {
+    sink.dropped.push(`paragraph content this ingester does not read: ${truncate(leftover)}`);
+  }
+
   return segments;
 }
 
