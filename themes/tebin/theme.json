@@ -9,7 +9,8 @@
       "page",
       "type",
       "letterhead",
-      "logo.heightPt"
+      "logo.heightPt",
+      "font.embed"
     ]
   },
   "colors": {

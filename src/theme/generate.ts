@@ -130,7 +130,7 @@ export function buildTheme(args: {
       version: args.sourceVersion,
       // Everything the brand does not decide, named here so a reader of this
       // file can tell authority from taste without going to look.
-      notFromBrand: ['page', 'type', 'letterhead', 'logo.heightPt'],
+      notFromBrand: ['page', 'type', 'letterhead', 'logo.heightPt', 'font.embed'],
     },
     colors: {
       // A fill colour, and large display type. Not a small-text colour: no
