@@ -70,3 +70,93 @@ export function recolourLogo(svg: string, tokens: Tokens): string {
   }
   return out;
 }
+
+/**
+ * The DTCG file groups tokens by type; a theme wants a flat lookup. Group and
+ * name are joined with a dash for everything but colours, which are the common
+ * case and keep their bare names: `brand`, `grey-lighter`, `font-document`.
+ */
+export function readTokens(dtcgJson: string): Tokens {
+  const parsed = JSON.parse(dtcgJson) as Record<string, Record<string, { $value?: unknown }>>;
+  const out: Tokens = {};
+  for (const [group, members] of Object.entries(parsed)) {
+    for (const [name, token] of Object.entries(members)) {
+      const value = token.$value;
+      const flat = Array.isArray(value) ? value[0] : value;
+      if (typeof flat !== 'string') continue;
+      out[group === 'color' ? name : `${group}-${name}`] = flat;
+    }
+  }
+  if (!out['brand']) {
+    throw new Error('token source carries no color.brand — this is not a brand token file, and the generator will not default a brand colour');
+  }
+  return out;
+}
+
+/** Fails loudly rather than falling back: an absent token is a snapshot problem. */
+function token(tokens: Tokens, name: string): string {
+  const v = tokens[name];
+  if (!v) throw new Error(`token source carries no ${name}`);
+  return v;
+}
+
+/**
+ * The letterhead, the page geometry and the type scale have no brand token
+ * behind them — the 2017 brand book does not price them. They are the theme
+ * author's, and `$generated.notFromBrand` says so in the file itself, the same
+ * way the brand pack marks `ink` and `topbar` as not specified in the book.
+ */
+const LETTERHEAD = [
+  'TEBIN.PRO Sp. z o.o.',
+  'Plac Hołdu Pruskiego 9, 70-550 Szczecin, Poland',
+  'www.tebin.pro | info@tebin.pro',
+  'NIP: 9552562516 | REGON: 521434962',
+];
+
+export function buildTheme(args: {
+  tokens: Tokens;
+  logoSvg: string;
+  logoPngBase64: string;
+  sourceId: string;
+  sourceVersion: string;
+}): unknown {
+  const { tokens } = args;
+  return {
+    id: 'tebin',
+    name: 'TEBIN',
+    $generated: {
+      by: 'npm run theme:tebin',
+      source: args.sourceId,
+      version: args.sourceVersion,
+      // Everything the brand does not decide, named here so a reader of this
+      // file can tell authority from taste without going to look.
+      notFromBrand: ['page', 'type', 'letterhead', 'logo.heightPt'],
+    },
+    colors: {
+      // A fill colour, and large display type. Not a small-text colour: no
+      // single red clears AA on both a light and a dark surface, and the brand
+      // publishes a separate #C7251A for red text on white.
+      brandOnLight: token(tokens, 'brand'),
+      // The brand publishes one red. A renderer needing a dark-surface red must
+      // fail loudly rather than reuse this one.
+      brandOnDark: null,
+      ink: token(tokens, 'ink'),
+      muted: token(tokens, 'grey'),
+      rule: token(tokens, 'grey-lighter'),
+    },
+    font: { document: token(tokens, 'font-document'), embed: 'arimo' },
+    logo: {
+      svg: recolourLogo(args.logoSvg, tokens),
+      heightPt: 11,
+      png: `data:image/png;base64,${args.logoPngBase64}`,
+    },
+    page: { size: 'A4', marginPt: 48 },
+    type: { bodyPt: 10, leading: 1.45, h1Pt: 18, h2Pt: 13, h3Pt: 11, smallPt: 8 },
+    letterhead: LETTERHEAD,
+  };
+}
+
+/** One serialisation, so the writer and the in-sync test cannot disagree. */
+export function themeJson(theme: unknown): string {
+  return `${JSON.stringify(theme, null, 2)}\n`;
+}
