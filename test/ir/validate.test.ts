@@ -30,4 +30,14 @@ describe('validateDoc', () => {
     const doc = { ...good, blocks: [good.blocks[0], { t: 'nope' }] };
     expect(() => validateDoc(doc)).toThrow(/blocks\[1\]/);
   });
+
+  it('accepts an ordered list with a positive integer start', () => {
+    const doc = { ...good, blocks: [{ t: 'list', ordered: true, depth: 0, items: [[]], start: 3 }] };
+    expect(() => validateDoc(doc)).not.toThrow();
+  });
+
+  it('rejects a list start that is not a positive integer', () => {
+    const doc = { ...good, blocks: [{ t: 'list', ordered: true, depth: 0, items: [[]], start: 0 }] };
+    expect(() => validateDoc(doc)).toThrow(/blocks\[0\]\.start/);
+  });
 });

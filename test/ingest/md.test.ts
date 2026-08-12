@@ -104,6 +104,46 @@ describe('ingestMarkdown', () => {
     expect(dropped.join(' ')).toMatch(/list item/i);
   });
 
+  it('splits a list around a nested sublist instead of reordering it to the end', () => {
+    const { doc } = ingestMarkdown('# T\n\n- one\n  - deeper\n- two\n');
+    expect(doc.blocks).toEqual([
+      { t: 'list', ordered: false, depth: 0, items: [[{ t: 'text', v: 'one' }]] },
+      { t: 'list', ordered: false, depth: 1, items: [[{ t: 'text', v: 'deeper' }]] },
+      { t: 'list', ordered: false, depth: 0, items: [[{ t: 'text', v: 'two' }]] },
+    ]);
+  });
+
+  it('continues ordered numbering across a split caused by a nested sublist', () => {
+    const { doc } = ingestMarkdown('# T\n\n1. a\n   - nested\n2. b\n');
+    expect(doc.blocks).toEqual([
+      { t: 'list', ordered: true, depth: 0, items: [[{ t: 'text', v: 'a' }]] },
+      { t: 'list', ordered: false, depth: 1, items: [[{ t: 'text', v: 'nested' }]] },
+      { t: 'list', ordered: true, depth: 0, items: [[{ t: 'text', v: 'b' }]], start: 2 },
+    ]);
+  });
+
+  it('honours a source list that starts at a number other than 1', () => {
+    const { doc } = ingestMarkdown('# T\n\n3. a\n4. b\n');
+    expect(doc.blocks).toEqual([
+      {
+        t: 'list',
+        ordered: true,
+        depth: 0,
+        items: [[{ t: 'text', v: 'a' }], [{ t: 'text', v: 'b' }]],
+        start: 3,
+      },
+    ]);
+  });
+
+  it('flattens two levels of nesting in source order', () => {
+    const { doc } = ingestMarkdown('# T\n\n- one\n  - two\n    - three\n');
+    expect(doc.blocks).toEqual([
+      { t: 'list', ordered: false, depth: 0, items: [[{ t: 'text', v: 'one' }]] },
+      { t: 'list', ordered: false, depth: 1, items: [[{ t: 'text', v: 'two' }]] },
+      { t: 'list', ordered: false, depth: 2, items: [[{ t: 'text', v: 'three' }]] },
+    ]);
+  });
+
   it('keeps Ukrainian and Polish text intact', () => {
     const { doc } = ingestMarkdown('# T\n\nПривіт, ґуля. Zażółć gęślą jaźń.');
     expect(doc.blocks[0]).toEqual({

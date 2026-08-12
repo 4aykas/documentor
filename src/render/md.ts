@@ -36,8 +36,9 @@ function block(b: Block): string {
       return inline(b.text);
     case 'list': {
       const pad = '  '.repeat(b.depth);
+      const start = b.start ?? 1;
       return b.items
-        .map((it, i) => `${pad}${b.ordered ? `${i + 1}.` : '-'} ${inline(it)}`)
+        .map((it, i) => `${pad}${b.ordered ? `${start + i}.` : '-'} ${inline(it)}`)
         .join('\n');
     }
     case 'table': {
@@ -73,6 +74,12 @@ export function renderMarkdown(doc: Doc): string {
   const parts: { text: string; block: Block | null }[] = [
     { text: `# ${doc.meta.title}`, block: null },
   ];
+  // This round-trips as text but not as meaning: rendering `*subtitle*` and
+  // re-ingesting it produces the same string, but ingestMarkdown has no concept
+  // of a subtitle, so what comes back is an ordinary `para` block holding an
+  // `em` inline — `doc.meta.subtitle` itself is gone. Same class of lossy
+  // round trip as `pagebreak` below; this one is easier to miss because the
+  // text survives even though the type does not.
   if (doc.meta.subtitle) parts.push({ text: `*${doc.meta.subtitle}*`, block: null });
   for (const b of doc.blocks) parts.push({ text: block(b), block: b });
 

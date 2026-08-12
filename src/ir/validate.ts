@@ -52,6 +52,12 @@ function checkBlock(b: unknown, where: string): void {
       if (typeof n['depth'] !== 'number' || n['depth'] < 0) fail(where, 'list needs a non-negative depth');
       if (!Array.isArray(n['items'])) fail(`${where}.items`, 'expected an array');
       n['items'].forEach((it, i) => checkInlines(it, `${where}.items[${i}]`));
+      if ('start' in n && n['start'] !== undefined) {
+        const s = n['start'];
+        if (typeof s !== 'number' || !Number.isInteger(s) || s < 1) {
+          fail(`${where}.start`, `expected a positive integer, got ${JSON.stringify(s)}`);
+        }
+      }
       return;
     }
     case 'table': {

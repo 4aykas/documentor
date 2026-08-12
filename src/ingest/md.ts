@@ -88,13 +88,40 @@ const ALIGN_OF: Record<string, Align> = { left: 'l', right: 'r', center: 'c' };
 // why "other" content records a `dropped` entry naming what moved.
 type Deferred = { kind: 'list'; list: Tokens.List; depth: number } | { kind: 'other'; token: Token; depth: number };
 
-function pushList(tok: Tokens.List, depth: number, sink: Sink): void {
+function pushList(tok: Tokens.List, depth: number, sink: Sink, start = 1): void {
   // A nested list becomes a sibling block carrying a greater depth, because the
   // IR is flat. The renderers indent from `depth`.
-  const items: Inline[][] = [];
-  const deferred: Deferred[] = [];
+  //
+  // Content that sits between two list items in the source (a nested list, or
+  // "other" loose-item content) must become sibling blocks *at that point*,
+  // not after the whole parent list: emitting it at the end would silently
+  // reorder the document, printing item N+1 before content that came before
+  // it in the source. So the parent list is split into fragments around each
+  // such interruption, and `groupStart` tracks the item number the current
+  // fragment's first item carries, so ordered numbering keeps counting
+  // through a split instead of restarting at 1 in every fragment.
+  const ordered = Boolean(tok.ordered);
+  let items: Inline[][] = [];
+  let groupStart = start;
+  let itemNumber = start;
+
+  const flush = () => {
+    if (items.length === 0) return;
+    // Omit `start` when it is the implicit default (1) rather than writing it on
+    // every ordinary list — it only needs to be visible where numbering doesn't
+    // start at 1, i.e. a source list starting `3. item`, or a fragment resuming
+    // after a split.
+    sink.blocks.push(
+      ordered && groupStart !== 1
+        ? { t: 'list', ordered, depth, items, start: groupStart }
+        : { t: 'list', ordered, depth, items },
+    );
+    items = [];
+  };
+
   for (const item of tok.items) {
     const own: Token[] = [];
+    const deferred: Deferred[] = [];
     for (const child of item.tokens) {
       // `space` tokens are just the blank line between a "loose" item's
       // paragraph and its next block; marked emits them as formatting noise,
@@ -104,18 +131,27 @@ function pushList(tok: Tokens.List, depth: number, sink: Sink): void {
       else if (child.type === 'text' || child.type === 'paragraph') own.push(child);
       else deferred.push({ kind: 'other', token: child, depth: depth + 1 });
     }
+    if (items.length === 0) groupStart = itemNumber;
     items.push(inlinesOf(own, sink));
-  }
-  sink.blocks.push({ t: 'list', ordered: Boolean(tok.ordered), depth, items });
-  for (const d of deferred) {
-    if (d.kind === 'list') {
-      pushList(d.list, d.depth, sink);
-    } else {
-      const raw = 'raw' in d.token && typeof d.token.raw === 'string' ? truncate(d.token.raw) : d.token.type;
-      sink.dropped.push(`list item membership: a ${d.token.type} moved out of its list item and became a sibling block: ${raw}`);
-      blockOf(d.token, sink);
+    itemNumber++;
+
+    if (deferred.length > 0) {
+      flush();
+      for (const d of deferred) {
+        if (d.kind === 'list') {
+          // Honour the source's own `3. item` numbering on a nested ordered
+          // list, same as the top-level call in blockOf does.
+          const childStart = typeof d.list.start === 'number' ? d.list.start : 1;
+          pushList(d.list, d.depth, sink, childStart);
+        } else {
+          const raw = 'raw' in d.token && typeof d.token.raw === 'string' ? truncate(d.token.raw) : d.token.type;
+          sink.dropped.push(`list item membership: a ${d.token.type} moved out of its list item and became a sibling block: ${raw}`);
+          blockOf(d.token, sink);
+        }
+      }
     }
   }
+  flush();
 }
 
 function blockOf(tok: Token, sink: Sink): void {
@@ -144,9 +180,11 @@ function blockOf(tok: Token, sink: Sink): void {
       for (const im of images) sink.blocks.push({ t: 'image', src: im.href, alt: im.text });
       return;
     }
-    case 'list':
-      pushList(tok as Tokens.List, 0, sink);
+    case 'list': {
+      const t = tok as Tokens.List;
+      pushList(t, 0, sink, typeof t.start === 'number' ? t.start : 1);
       return;
+    }
     case 'table': {
       const t = tok as Tokens.Table;
       sink.blocks.push({

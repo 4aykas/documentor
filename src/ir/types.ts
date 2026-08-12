@@ -14,7 +14,11 @@ export type Align = 'l' | 'r' | 'c';
 export type Block =
   | { t: 'heading'; level: 1 | 2 | 3; text: Inline[] }
   | { t: 'para'; text: Inline[] }
-  | { t: 'list'; ordered: boolean; depth: number; items: Inline[][] }
+  // `start` is the number the first item carries (absent = 1). It exists because a
+  // nested list splits its ordered parent into several `list` blocks (see
+  // src/ingest/md.ts), and each fragment after the first must remember where
+  // numbering resumes — the fragment itself has no other way to know.
+  | { t: 'list'; ordered: boolean; depth: number; items: Inline[][]; start?: number }
   | { t: 'table'; head: Inline[][]; rows: Inline[][][]; align: Align[]; landscape?: boolean }
   | { t: 'image'; src: string; alt: string; widthPt?: number }
   | { t: 'code'; lang?: string; text: string }

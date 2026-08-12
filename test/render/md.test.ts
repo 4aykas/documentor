@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ingestMarkdown } from '../../src/ingest/md.js';
+import type { Doc } from '../../src/ir/types.js';
 import { renderMarkdown } from '../../src/render/md.js';
 
 const roundTrip = (md: string) => renderMarkdown(ingestMarkdown(md).doc);
@@ -32,5 +33,57 @@ describe('renderMarkdown', () => {
   it('renders quotes, fenced code and rules', () => {
     const md = '# T\n\n> quoted\n\n```js\nx\n```\n\n---\n';
     expect(roundTrip(md)).toBe('# T\n\n> quoted\n\n```js\nx\n```\n\n---\n');
+  });
+
+  it('splits a list around a nested sublist so reading order survives', () => {
+    // Regression for fix round 1: the old ingester deferred a nested list to the
+    // very end of its parent, so "two" printed before "deeper" even though
+    // "deeper" came first in the source.
+    const md = '# T\n\n- one\n  - deeper\n- two\n';
+    expect(roundTrip(md)).toBe('# T\n\n- one\n  - deeper\n- two\n');
+  });
+
+  it('continues ordered numbering past a nested sublist instead of restarting at 1', () => {
+    const out = roundTrip('# T\n\n1. a\n   - nested\n2. b\n');
+    expect(out).toBe('# T\n\n1. a\n  - nested\n2. b\n');
+    expect(out).not.toContain('\n1. b');
+  });
+
+  it('keeps a source list that starts at a number other than 1 through a round trip', () => {
+    const md = '# T\n\n3. a\n4. b\n';
+    expect(roundTrip(md)).toBe(md);
+  });
+
+  it('flattens two levels of nesting in source order', () => {
+    const md = '# T\n\n- one\n  - two\n    - three\n';
+    expect(roundTrip(md)).toBe(md);
+  });
+
+  it('collapses a literal newline inside a table cell to a space', () => {
+    const doc: Doc = {
+      meta: { title: 'T', lang: 'en' },
+      blocks: [
+        { t: 'table', head: [[{ t: 'text', v: 'a' }]], rows: [[[{ t: 'text', v: 'x\ny' }]]], align: ['l'] },
+      ],
+    };
+    const out = renderMarkdown(doc);
+    expect(out).toContain('x y');
+    expect(out).not.toContain('x\ny');
+    // And the escape holds up under a second pass, same as the pipe-escaping test above.
+    expect(renderMarkdown(ingestMarkdown(out).doc)).toBe(out);
+  });
+
+  it('renders a fenced code block with no language, and one whose body holds a run of four backticks', () => {
+    const noLang: Doc = { meta: { title: 'T', lang: 'en' }, blocks: [{ t: 'code', text: 'plain' }] };
+    expect(renderMarkdown(noLang)).toBe('# T\n\n```\nplain\n```\n');
+
+    const fourTicks: Doc = {
+      meta: { title: 'T', lang: 'en' },
+      blocks: [{ t: 'code', text: 'has ```` inside' }],
+    };
+    const out = renderMarkdown(fourTicks);
+    // A fence must be longer than the longest backtick run it contains (here 4), so 5.
+    expect(out).toBe('# T\n\n`````\nhas ```` inside\n`````\n');
+    expect(renderMarkdown(ingestMarkdown(out).doc)).toBe(out);
   });
 });
