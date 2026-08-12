@@ -75,9 +75,16 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
 
   for (const format of args.to) {
     const target = join(dir, `${stem}.${theme.id}.${format}`);
+    // Unreachable by construction today: target is always
+    // "<stem>.<theme.id>.<format>", an extra path segment the resolved input
+    // can never carry, so this can never be true under the current naming
+    // scheme. It stays as an invariant assertion against a future change to
+    // that scheme (e.g. a theme id or format that collapses back onto the
+    // input's own name) — deliberately left untested, since contriving a
+    // test to reach it would just be testing today's naming scheme twice.
     if (resolve(target) === input) {
       io.err(`documentor: refusing to overwrite the input file ${input}`);
-      return 1;
+      return 3; // refused — see the exit code contract in src/bin/documentor.ts
     }
     const bytes = format === 'pdf'
       ? await renderPdf(doc, theme, { epochSeconds })

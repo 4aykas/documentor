@@ -13,5 +13,13 @@ export async function resolveEpoch(env: NodeJS.ProcessEnv, inputPath: string): P
     }
     return Number(raw);
   }
-  return Math.floor((await stat(inputPath)).mtimeMs / 1000);
+  const epoch = Math.floor((await stat(inputPath)).mtimeMs / 1000);
+  // normalizePdfDates throws on a negative epoch, and a file can genuinely
+  // carry a pre-1970 mtime (a bad backup restore, a mis-set clock at write
+  // time, FAT's own quirks). Crashing `build` on that file with no clue that
+  // its *timestamp* is the culprit is worse than clamping: 1970-01-01 is a
+  // deliberately-wrong-looking but harmless stand-in, and SOURCE_DATE_EPOCH
+  // remains the way to give the real intended date when that placeholder
+  // isn't good enough.
+  return Math.max(0, epoch);
 }
