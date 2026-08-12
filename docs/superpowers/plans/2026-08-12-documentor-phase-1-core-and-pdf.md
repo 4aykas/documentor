@@ -1837,6 +1837,8 @@ Why this task exists: in `tebin-expenses` roughly 500 tests missed a defect in *
 
 `test/fixtures/kitchen-sink.md`. It must exercise every block type and all three languages; a fixture that lacks what the feature is gated on tests nothing.
 
+Two notes before you transcribe it. The image is a `data:` URI, so the fixture stays self-contained and nothing is fetched at render time — keep it exactly as written, on its own line so the ingester emits it as a standalone `image` block rather than recording it as unrepresentable. And the fixture deliberately contains **no** page break: `pagebreak` has no Markdown syntax, so a document containing one cannot round-trip through Markdown, and the round-trip assertion below would fail for a reason that is not a defect.
+
 ```markdown
 # Kitchen Sink — Зразок — Wzorzec
 
@@ -1872,6 +1874,11 @@ diakrytyczne w jednym zdaniu.
 const answer: number = 42;
 console.log(`the answer is ${answer}`);
 ```
+
+![A red square, a grey circle and a black bar](data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNDAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCAyNDAgODAiPjxyZWN0IHdpZHRoPSIyNDAiIGhlaWdodD0iODAiIGZpbGw9IiNGNkY2RjQiLz48cmVjdCB4PSI4IiB5PSI4IiB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIGZpbGw9IiNEQTI5MUMiLz48Y2lyY2xlIGN4PSIxMjAiIGN5PSI0MCIgcj0iMjgiIGZpbGw9IiM4OThEOEQiLz48cmVjdCB4PSIxNjgiIHk9IjI0IiB3aWR0aD0iNjQiIGhlaWdodD0iMzIiIGZpbGw9IiMxQTFBMUEiLz48L3N2Zz4=)
+
+The image above is a `data:` URI on purpose: the renderer fetches nothing, so a
+fixture that referenced a file on disk would be testing the wrong thing.
 
 | Item | Quantity | Unit price | Currency | Total |
 |:-----|---------:|-----------:|:--------:|------:|
