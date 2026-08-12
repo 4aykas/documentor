@@ -261,7 +261,19 @@ function blocks(b: Block, theme: Theme): (Paragraph | Table)[] {
         ],
       }));
     }
-    case 'table': return [table(b, theme)];
+    // html.ts: `table{ margin: 0 0 12pt }`. `<w:tbl>` has no spacing property
+    // of its own in OOXML — unlike a paragraph, a table cannot carry
+    // `w:spacing` — so the space has to come from a paragraph instead, and
+    // there is no existing paragraph to hang it on: what follows a table in
+    // the IR is an independent sibling block, rendered with no knowledge of
+    // what came before it. A zero-text paragraph carrying the 12pt as its own
+    // `after` stands in for the table's missing bottom margin. Whatever
+    // follows keeps whatever `before` its own style already calls for — a
+    // heading's `before` and this paragraph's `after` both apply, the same as
+    // any other adjacent pair here (see the note on Word not collapsing
+    // margins in styles()) — so the gap after a table-then-heading is not
+    // smaller than after a table-then-paragraph.
+    case 'table': return [table(b, theme), new Paragraph({ spacing: { after: dxa(12) } })];
     case 'code': {
       // One paragraph per line: a single paragraph with soft breaks would
       // shade as one block in Word but wrap differently from the PDF.

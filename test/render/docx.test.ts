@@ -135,6 +135,22 @@ describe('renderDocx', () => {
     expect(xml.match(/<w:cantSplit\/>/g)).toHaveLength(2);
   });
 
+  it('leaves space after a table so the next paragraph does not sit flush against it', async () => {
+    // html.ts: `table{ margin: 0 0 12pt }`. Invisible in the kitchen-sink
+    // fixture because a rule with its own spacing follows the table there;
+    // visible immediately with a paragraph right after, which is what a real
+    // document had. A table itself has no spacing to give it — the assertion
+    // below is on the paragraph docx.ts inserts to carry it, and it would
+    // fail if that paragraph (or its spacing) were dropped: with neither, the
+    // xml between `</w:tbl>` and "after" is a bare paragraph opening tag with
+    // no `<w:spacing>` at all, which does not match.
+    const xml = await body(doc(
+      { t: 'table', head: [[{ t: 'text', v: 'Item' }]], rows: [[[{ t: 'text', v: 'Widget' }]]], align: ['l'] },
+      { t: 'para', text: [{ t: 'text', v: 'after' }] },
+    ));
+    expect(xml).toMatch(/<\/w:tbl><w:p><w:pPr><w:spacing w:after="240"\/><\/w:pPr><\/w:p>/);
+  });
+
   it('sets inline code smaller than the prose around it, as the stylesheet does', async () => {
     // html.ts: `code{ font-size: 0.92 × bodyPt; }`. Changing the font without
     // the size is what made a monospaced word read as larger than its
