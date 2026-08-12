@@ -47,6 +47,27 @@ deliberate rather than unfinished:
   alongside it, which cannot be produced reproducibly — so an SVG becomes a
   visible placeholder naming what it was. The PDF path embeds any raster.
 
+## The decisions live in a file, not in a conversation
+
+A build's decisions — the title, the date, the entity on the letterhead, the
+theme, which formats to write — go in `<name>.documentor.json` beside the
+source, and are picked up automatically:
+
+```json
+{ "title": "Q3 Review", "date": "July 20, 2026", "theme": "tebin", "to": ["pdf", "docx"] }
+```
+
+A month later the same command reproduces the same bytes with nobody
+remembering anything, and a year later the diff says why the document looks
+the way it does. That is the whole point: a decision that lives only in
+somebody's memory of a conversation is a decision already lost.
+
+A flag on the command line outranks the sidecar, which outranks whatever the
+document says about itself — the order in which each was deliberately decided.
+`--config <file>` names one explicitly, `--no-config` ignores it. An unknown
+key is refused by name rather than skipped, because a typo that quietly does
+nothing would let you believe a decision was recorded when it was not.
+
 ## Reproducible by construction
 
 The same input produces byte-identical output on the same platform:

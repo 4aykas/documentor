@@ -21,9 +21,10 @@ browser for the batch and prints a summary of what was written, refused,
 failed, or dropped.
 
 A <stem>.documentor.json sidecar beside an input is found automatically and
-applied — --flag > sidecar > the document's own metadata — and named in the
-output when used. --config <file> names one explicitly (a single input
-only); --no-config ignores any that exist.`;
+applied — a flag on the command line outranks the sidecar, which outranks the
+document's own metadata — and named in the output when used. --config <file>
+names one explicitly (a single input only); --no-config ignores any that
+exist.`;
 
 /**
  * The exit code contract, documented in this one place because callers script
