@@ -360,15 +360,31 @@ roughly 23MB to a consumer's `node_modules` (measured in the spike;
 the Node entry point never touches, but npm installs the whole package
 regardless). `npm audit --omit=dev` stayed at zero after the move.
 
-**A pathologically long document title will overprint later pages' body
-text, with no guard against it.** Chromium does not clip an oversized
-header template — proved by forcing a ~1000-character mixed-script title to
-wrap onto 7 lines and watching it overlap page 2's own heading (see the
-comment above the `margin` object in `src/render/pdf.ts`). No margin value
-fixes this: the header grows downward from a fixed point near the page's
-physical top no matter how much room it's given, so the only real guard
-would be bounding the title itself — not attempted this branch, and no
-existing validation in `src/ir/validate.ts` touches title length.
+**~~A pathologically long document title will overprint later pages' body
+text, with no guard against it.~~** *Closed on 2026-08-13.* Chromium does not
+clip an oversized header template — proved by forcing a ~1000-character title
+to wrap and watching its ink merge with page 2's own heading into one
+contiguous band. No margin value fixes it: the header grows downward from a
+fixed point near the page's physical top no matter how much room it is given,
+so the guard had to bound the title.
+
+It does, in `src/render/pdf.ts`: the header's title is clamped to two lines,
+which is what the gap allows — a third would leave 18pt to the body's first
+line and a fourth 10.5pt, under the 12pt legibility floor the margin sweep was
+already judged against. Two facts came out of the measurement and are worth
+keeping: `-webkit-line-clamp` does *not* clip in Chromium's header
+sub-document (it adds the ellipsis to line two and paints a third line anyway),
+and giving that `<span>` any non-`visible` overflow changes how the flex row
+stretches it, moving an ordinary header a fraction of a point — which
+`test/baseline/local-only-pixels.test.ts` caught, exactly as it exists to. So
+the clamp is applied only above a title length that could plausibly need it,
+and every title short of that gets the identical unstyled span it always got.
+
+What remains, deliberately: a clamped title is cut off mid-glyph with no
+ellipsis. "Clipped" was the property worth buying; "tidy" was not, and
+`src/ir/validate.ts` still says nothing about title length.
+`docs/superpowers/notes/2026-08-13-header-bound-repro.md` holds the raster
+measurements.
 
 **`normalize-pdf.ts` has no caller left in `src/`.** `renderPdf` now gets
 determinism from `pdf-lib`'s `updateMetadata: false` and writes the
