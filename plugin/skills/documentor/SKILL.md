@@ -38,9 +38,10 @@ Know these before promising anything to the user:
   sentence looks weak, that is not this skill's call to fix — propose it to
   the user as a separate, visible edit; never silently rewrite.
 - **Reads `.md`, `.markdown`, `.docx` and `.xlsx`.** No `.pdf` in.
-- **A spreadsheet has to be a register, not a workbook.** A sheet holding a
-  merged cell is refused by name, and so is one past 200 rows or 25 columns.
-  Over a real set of 68 spreadsheets, 11 were read. Run
+- **A spreadsheet has to be a register, not a workbook.** A merge confined to
+  one row is flattened and reported by range; a merge spanning more than one
+  row refuses the sheet by name, and so does a sheet past 200 rows or 25
+  columns. Over a real set of 68 spreadsheets, 22 were read. Run
   `inspect` before promising anything, and when a sheet is refused, relay the
   message rather than working around it — it names the sheet and the number so
   the user knows which range to extract and re-issue instead.
