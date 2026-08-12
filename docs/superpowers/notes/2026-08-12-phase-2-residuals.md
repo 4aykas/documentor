@@ -75,6 +75,30 @@ announces itself the first time it is exercised, rather than a silent loss
 that would have shipped unnoticed. (`src/render/docx.ts`'s `flatten()`
 comment points here; this is that promise kept.)
 
+## Named work for phase 3
+
+**Extract the letterhead's entity/date construction, the way `links.ts` was
+extracted.** `src/render/docx.ts`'s `firstPageHeader` and
+`src/render/html.ts`'s `firstPageHeader` build the document's own entity and
+date identically: the same `[entity, date]` pair, the same filter for absent
+and empty values, the same "the first line gets 5pt above it" rule, and the
+same comment explaining why the two sit in the muted column beside the
+letterhead. It was copied byte-for-byte from one file to the other.
+
+This is precisely the class of shared decision `src/render/links.ts` exists
+for — a rule about *what a document means* that every renderer must answer
+the same way, as opposed to a rule about how one format draws it. Two copies
+of it is two places for the answer to drift, and the drift would be invisible
+until someone compared a PDF and a .docx of the same document side by side.
+
+It is not done here because it touches a rendering path pinned by baseline
+images a human approved, and a refactor of an approved rendering path on the
+eve of a merge is how baselines break — the change is behaviour-preserving by
+intent, and "by intent" is exactly the claim a moved baseline would disprove
+after the fact. Phase 3 adds a fourth renderer over the same IR, which is
+both the moment the third copy would otherwise be written and the natural
+moment to do this with room to re-approve an image if one moves.
+
 ## What the agreement test still cannot see
 
 `docs/superpowers/notes/2026-08-12-phase-1-residuals.md` tracks this list;
@@ -157,9 +181,14 @@ ingester that does not make that promise, or for hand-built IR that skips
   `th,td{ padding: 4pt 6pt; }`; and `td{ vertical-align: top; }` has no Word
   counterpart either. The last two are the same class as the three above and
   were left alone only because they move table geometry, which is a change
-  to make deliberately rather than on merge eve; one unused
-  `IParagraphOptions` type import
-  survives because no lint script exists to catch it.
+  to make deliberately rather than on merge eve.
+- This list previously claimed an unused `IParagraphOptions` type import
+  survived in `src/render/docx.ts`. It is used — `runningHeader` types its
+  `alignment` parameter as `IParagraphOptions['alignment']`. The claim is
+  removed rather than corrected in place: a note whose purpose is keeping
+  the record honest cannot afford to carry a false entry of its own, and
+  the finding was never true, so there is nothing to record but its
+  withdrawal.
 
 ## Before publishing
 
