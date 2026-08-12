@@ -1,0 +1,23 @@
+{
+  "id": "plain",
+  "name": "Plain",
+  "colors": {
+    "brandOnLight": "#1A1A1A",
+    "brandOnDark": null,
+    "ink": "#1A1A1A",
+    "muted": "#6B6B6B",
+    "rule": "#D8D8D8"
+  },
+  "font": { "document": "Arial", "embed": "arimo" },
+  "logo": null,
+  "page": { "size": "A4", "marginPt": 48 },
+  "type": {
+    "bodyPt": 10,
+    "leading": 1.45,
+    "h1Pt": 18,
+    "h2Pt": 13,
+    "h3Pt": 11,
+    "smallPt": 8
+  },
+  "letterhead": []
+}

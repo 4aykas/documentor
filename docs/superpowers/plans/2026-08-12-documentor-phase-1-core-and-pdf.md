@@ -17,7 +17,7 @@
 - **The PDF renderer fetches nothing.** Every asset — CSS, font, logo — is inlined into the HTML string before Chromium sees it.
 - **No `Date.now()`, no `new Date()` with no argument, anywhere in `src/`.** Timestamps come from `SOURCE_DATE_EPOCH` (seconds, as a string) or the input file's mtime. A test enforces this by grep.
 - **Byte-identical output.** `build` run twice on the same input must produce identical bytes. This is a test, not an aspiration.
-- **Caches live outside the synced tree.** The repo sits inside `OneDrive - TEBIN`. `vitest.config.ts` sets `cacheDir` to `join(tmpdir(), 'documentor-vite-cache')`. See `onedrive-sync-dev-traps`.
+- **Caches live outside the synced tree.** The repo sits inside a synced OneDrive folder. `vitest.config.ts` sets `cacheDir` to `join(tmpdir(), 'documentor-vite-cache')`. See the post-mortem on developing inside a synced folder.
 - **`page.pdf()` margins reject `pt`.** Accepted units are `px`, `in`, `cm`, `mm`. The theme stores points; the PDF renderer converts with `pt * 0.352778 → mm`.
 - **Never assert on a PDF by searching its bytes for a phrase.** Chromium embeds fonts as Identity-H subsets, so the operands are glyph indices. Text assertions go through `pdfjs-dist/legacy`; appearance assertions go through a raster.
 - **Copy is in English.** Code comments explain *why*, not *what*.
@@ -196,7 +196,7 @@ export type Block =
   | { t: 'heading'; level: 1 | 2 | 3; text: Inline[] }
   | { t: 'para'; text: Inline[] }
   | { t: 'list'; ordered: boolean; depth: number; items: Inline[][] }
-  | { t: 'table'; head: Inline[][]; rows: Inline[][][]; align: Align[]; landscape?: boolean }
+  | { t: 'table'; head: Inline[][]; rows: Inline[][][]; align: Align[] }
   | { t: 'image'; src: string; alt: string; widthPt?: number }
   | { t: 'code'; lang?: string; text: string }
   | { t: 'quote'; paras: Inline[][] }
@@ -1343,6 +1343,22 @@ describe('buildHtml', () => {
   it('omits the logo block entirely when the theme has none', async () => {
     expect(await build()).not.toContain('class="logo"');
   });
+
+  it('resumes an ordered list that a sublist interrupted', async () => {
+    const withList: Doc = {
+      meta: { title: 'T', lang: 'en' },
+      blocks: [
+        { t: 'list', ordered: true, depth: 0, items: [[{ t: 'text', v: 'a' }]] },
+        { t: 'list', ordered: false, depth: 1, items: [[{ t: 'text', v: 'x' }]] },
+        { t: 'list', ordered: true, depth: 0, start: 2, items: [[{ t: 'text', v: 'b' }]] },
+      ],
+    };
+    const html = await buildHtml(withList, theme, { headerHeightPt: 40 });
+    expect(html).toContain('<ol class="d0" start="2">');
+    // A first fragment starting at 1 must not carry a redundant attribute.
+    expect(html).toContain('<ol class="d0">');
+    expect(html).toContain('<ul class="d1">');
+  });
 });
 
 describe('escapeHtml', () => {
@@ -1402,7 +1418,11 @@ function block(b: Block): string {
     case 'list': {
       const tag = b.ordered ? 'ol' : 'ul';
       const items = b.items.map((it) => `<li>${inline(it)}</li>`).join('');
-      return `<${tag} class="d${b.depth}">${items}</${tag}>`;
+      // A list is split into fragments wherever a sublist interrupts it, so an
+      // ordered fragment after a sublist must resume its numbering rather than
+      // restart at 1.
+      const start = b.ordered && b.start !== undefined && b.start !== 1 ? ` start="${b.start}"` : '';
+      return `<${tag} class="d${b.depth}"${start}>${items}</${tag}>`;
     }
     case 'table': {
       const head = b.head
@@ -1558,6 +1578,7 @@ reach the network and cannot inject markup into its own rendering."
 - Consumes: `Doc`; `Theme`, `toMm`; `buildHtml`.
 - Produces:
   - `normalizePdfDates(buf: Buffer, epochSeconds: number): Buffer`
+  - `blockNonDataRequests(page: Page): Promise<void>` — aborts every request whose URL is not a `data:` or `about:` URL.
   - `renderPdf(doc: Doc, theme: Theme, opts: { epochSeconds: number; browser?: Browser }): Promise<Buffer>` — passing a `Browser` lets a test suite launch Chromium once instead of per render; when omitted, one is launched and closed internally.
   - `RUNNING_HEADER_PT: number` — the height the running header reserves in the top margin.
 
@@ -1648,7 +1669,7 @@ Expected: PASS, 5 tests.
 - [ ] **Step 5: Write `src/render/pdf.ts`**
 
 ```ts
-import { chromium, type Browser } from 'playwright-core';
+import { chromium, type Browser, type Page } from 'playwright-core';
 import type { Doc } from '../ir/types.js';
 import { toMm, type Theme } from '../theme/types.js';
 import { buildHtml, escapeHtml } from './html.js';
@@ -1665,6 +1686,25 @@ import { normalizePdfDates } from './normalize-pdf.js';
  * the call site, and why the baseline test rasterises.
  */
 export const RUNNING_HEADER_PT = 26;
+
+/**
+ * The second guard on "this renderer fetches nothing".
+ *
+ * `html.ts` already refuses to emit a remote `<img>`, but a promise enforced in
+ * one place is enforced nowhere: a future stylesheet, favicon or redirect would
+ * leak out silently, and the only symptom would be a PDF that quietly depends on
+ * somebody else's server — and appears in their logs. Aborting at the browser
+ * makes the property true rather than intended.
+ *
+ * Exported so a test can apply it to a page it owns and watch what happens.
+ */
+export async function blockNonDataRequests(page: Page): Promise<void> {
+  await page.route('**/*', (route) => {
+    const url = route.request().url();
+    if (url.startsWith('data:') || url.startsWith('about:')) return route.continue();
+    return route.abort();
+  });
+}
 
 /** Inline styles only: the header context cannot see the document's stylesheet. */
 function runningHeader(doc: Doc, theme: Theme): string {
@@ -1685,6 +1725,7 @@ export async function renderPdf(
   const ownsBrowser = opts.browser === undefined;
   try {
     const page = await browser.newPage();
+    await blockNonDataRequests(page);
     await page.setContent(html, { waitUntil: 'load' });
     // Without this the first page can rasterise with a fallback face even though
     // the font is embedded, because layout ran before the face was decoded.
@@ -1719,7 +1760,7 @@ Create `test/render/pdf.test.ts`:
 ```ts
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser } from 'playwright-core';
-import { renderPdf } from '../../src/render/pdf.js';
+import { blockNonDataRequests, renderPdf } from '../../src/render/pdf.js';
 import { resolveTheme } from '../../src/theme/resolve.js';
 import { ingestMarkdown } from '../../src/ingest/md.js';
 import { pdfText } from '../helpers/pdf-text.js';
@@ -1760,6 +1801,38 @@ describe('renderPdf', () => {
   it('prints the title once — in the header, not twice in the body', async () => {
     const text = (await pdfText(await render('# Report\n\nBody.\n'))).join(' ');
     expect(text.match(/Report/g)?.length).toBe(2); // the doc title and the running header
+  });
+
+  it('lets nothing off the machine, even when the document asks', async () => {
+    // A document is untrusted input. If this ever fails, a rendered PDF has
+    // become dependent on somebody else's server — and on their logs.
+    //
+    // The listener has to go on a page this test owns, because renderPdf makes
+    // its own; so the guard is exported and applied here to the same effect.
+    const page = await browser.newPage();
+    const attempted: string[] = [];
+    page.on('request', (r) => attempted.push(r.url()));
+    const failed: string[] = [];
+    page.on('requestfailed', (r) => failed.push(r.url()));
+
+    await blockNonDataRequests(page);
+    await page.setContent(
+      '<img src="https://example.invalid/chart.png"><link rel="stylesheet" href="https://example.invalid/a.css">',
+      { waitUntil: 'load' },
+    );
+    await page.close();
+
+    const remote = (us: string[]) => us.filter((u) => !u.startsWith('data:') && !u.startsWith('about:'));
+    // Chromium still *attempts* them — the point is that every attempt died at
+    // the route handler instead of reaching a socket.
+    expect(remote(attempted).length).toBeGreaterThan(0);
+    expect(remote(failed).sort()).toEqual(remote(attempted).sort());
+  });
+
+  it('draws a remote image as a placeholder rather than fetching it', async () => {
+    const text = (await pdfText(await render('# T\n\n![A chart](https://example.invalid/chart.png)\n'))).join(' ');
+    expect(text).toContain('A chart');
+    expect(text).toContain('example.invalid');
   });
 
   it('paginates a long document and numbers every page', async () => {
@@ -1831,11 +1904,13 @@ cannot see the page's CSS."
 - Consumes: `ingestMarkdown`, `resolveTheme`, `renderPdf`, `pdfText`.
 - Produces: `rasterPages(buf: Buffer, scale?: number): Promise<Buffer[]>` in `test/helpers/raster.ts`.
 
-Why this task exists: in `tebin-expenses` roughly 500 tests missed a defect in **every one** of five generated documents, because they asserted figures were *present* and never that they *fit*. The spike reproduced exactly that — a header colliding with the title, with identical extracted text either way.
+Why this task exists: in an earlier internal project roughly 500 tests missed a defect in **every one** of five generated documents, because they asserted figures were *present* and never that they *fit*. The spike reproduced exactly that — a header colliding with the title, with identical extracted text either way.
 
 - [ ] **Step 1: Create the fixture**
 
 `test/fixtures/kitchen-sink.md`. It must exercise every block type and all three languages; a fixture that lacks what the feature is gated on tests nothing.
+
+Two notes before you transcribe it. The image is a `data:` URI, so the fixture stays self-contained and nothing is fetched at render time — keep it exactly as written, on its own line so the ingester emits it as a standalone `image` block rather than recording it as unrepresentable. And the fixture deliberately contains **no** page break: `pagebreak` has no Markdown syntax, so a document containing one cannot round-trip through Markdown, and the round-trip assertion below would fail for a reason that is not a defect.
 
 ```markdown
 # Kitchen Sink — Зразок — Wzorzec
@@ -1872,6 +1947,11 @@ diakrytyczne w jednym zdaniu.
 const answer: number = 42;
 console.log(`the answer is ${answer}`);
 ```
+
+![A red square, a grey circle and a black bar](data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNDAiIGhlaWdodD0iODAiIHZpZXdCb3g9IjAgMCAyNDAgODAiPjxyZWN0IHdpZHRoPSIyNDAiIGhlaWdodD0iODAiIGZpbGw9IiNGNkY2RjQiLz48cmVjdCB4PSI4IiB5PSI4IiB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIGZpbGw9IiNEQTI5MUMiLz48Y2lyY2xlIGN4PSIxMjAiIGN5PSI0MCIgcj0iMjgiIGZpbGw9IiM4OThEOEQiLz48cmVjdCB4PSIxNjgiIHk9IjI0IiB3aWR0aD0iNjQiIGhlaWdodD0iMzIiIGZpbGw9IiMxQTFBMUEiLz48L3N2Zz4=)
+
+The image above is a `data:` URI on purpose: the renderer fetches nothing, so a
+fixture that referenced a file on disk would be testing the wrong thing.
 
 | Item | Quantity | Unit price | Currency | Total |
 |:-----|---------:|-----------:|:--------:|------:|
@@ -2484,9 +2564,84 @@ describe('reproducibility guardrails', () => {
 Run: `npx vitest run test/guardrails/`
 Expected: PASS, 2 tests. If it reports an offender, fix the source — not the test.
 
+- [ ] **Step 2b: Write the built-output smoke test**
+
+Create `test/guardrails/dist-smoke.test.ts`. The whole suite runs from `src/`, so nothing else in the project ever exercises the artefact users actually install. Task 4 shipped a `packageRoot()` bug that was invisible from source and only appeared in `dist/`; this test is what stops the next one.
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
+const ROOT = new URL('../../', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+const ENTRY = join(ROOT, 'dist', 'bin', 'documentor.js');
+
+// `npm run build` is slow, so this suite does not run it — it asserts against
+// whatever is already built and skips otherwise. CI builds before testing, so
+// there the skip never fires; locally it keeps a fast watch loop fast.
+describe.skipIf(!existsSync(ENTRY))('the built CLI', () => {
+  it('loads its own bundled theme and reports itself ready', () => {
+    const out = execFileSync(process.execPath, [ENTRY, 'doctor'], { encoding: 'utf8' });
+    expect(out).toMatch(/^ok\s+Theme/m);
+  });
+});
+```
+
+Note the `skipIf`: a test that silently passes when it did not run is worse than no test. CI runs `npm run build` before `npx vitest run`, so add that step to the workflow below and confirm in the job log that this spec reports as run, not skipped.
+
+- [ ] **Step 2c: Write the exit-code contract test**
+
+Create `test/cli/exit-codes.test.ts`. Task 9 turned the exit codes into a documented contract — `0` success, `1` unexpected failure, `2` usage error, `3` refused — but nothing exercises `src/bin/documentor.ts` itself, so the contract is a comment rather than a promise. Scripts depend on these numbers; a change that quietly renumbers them breaks callers with no test going red.
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { spawnSync } from 'node:child_process';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = fileURLToPath(new URL('../../', import.meta.url));
+const BIN = join(ROOT, 'src', 'bin', 'documentor.ts');
+
+// tsx rather than the built output: this asserts the entry point's contract,
+// and dist-smoke.test.ts already covers the compiled artefact.
+const run = (...args: string[]) =>
+  spawnSync('npx', ['tsx', BIN, ...args], { encoding: 'utf8', shell: process.platform === 'win32' });
+
+describe('the exit-code contract', () => {
+  it('exits 0 and prints usage for --help', () => {
+    const r = run('--help');
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('documentor build');
+  });
+
+  it('exits 2 with no command', () => {
+    expect(run().status).toBe(2);
+  });
+
+  it('exits 2 for an unknown command', () => {
+    const r = run('frobnicate');
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain('frobnicate');
+  });
+
+  it('exits 2 for a build with no input file', () => {
+    expect(run('build').status).toBe(2);
+  });
+
+  it('exits 1 when the input does not exist', () => {
+    const r = run('build', 'no-such-file.md');
+    expect(r.status).toBe(1);
+    expect(r.stderr).not.toContain('    at '); // a message, not a stack trace
+  });
+});
+```
+
+These spawn a process each, so they are slower than the rest of the suite. That is the price of testing an entry point; five of them is affordable.
+
 - [ ] **Step 3: Write `.github/workflows/ci.yml`**
 
-The baseline image comparison is pinned to Linux: PNGs rasterised from the same PDF differ across platforms, so comparing them everywhere would redden CI for its own reasons rather than for a real change.
+The baseline image comparison is pinned to **one** platform: PNGs rasterised from the same PDF differ across platforms, so comparing them everywhere would redden CI for its own reasons rather than for a real change. That platform is `windows-latest`, because the baseline is generated on the developer's Windows machine in Task 8 — pinning it to Linux instead would mean the committed images could never match, which is a check that fails for its own reasons in the other direction.
 
 ```yaml
 name: CI
@@ -2510,21 +2665,27 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run typecheck
+      # Built before the tests so test/guardrails/dist-smoke.test.ts runs
+      # rather than skipping — it is the only check that touches the artefact
+      # users actually install.
+      - run: npm run build
       - name: Test (excluding the image baseline)
-        if: matrix.os != 'ubuntu-latest'
-        run: npx vitest run --exclude 'test/baseline/**'
+        if: matrix.os != 'windows-latest'
+        run: npx vitest run --exclude 'test/baseline/kitchen-sink.test.ts'
       - name: Test (with the image baseline)
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'windows-latest'
         run: npx vitest run
       - name: Upload the rendered pages when they differ
-        if: failure() && matrix.os == 'ubuntu-latest'
+        if: failure() && matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
           name: rendered-pages
           path: test/baseline/__actual__/
 ```
 
-Note: the committed baseline must be generated **on Linux** for this to pass in CI. Generate it once inside the workflow (or in a Linux container locally), download the `rendered-pages` artifact, inspect every image by eye, and commit those files as `__baseline__`. A baseline generated on Windows will not match.
+The committed baseline is generated on Windows in Task 8, so `windows-latest` is the job that compares it. The other two platforms still run every other test, including the byte-identical-output gate — which is the check that actually has to hold everywhere.
+
+If `--exclude` is not honoured by the installed vitest version, use `npx vitest run --project` filtering or move the baseline spec behind an environment variable (`BASELINE=1`) that only the Windows job sets. Do not silently let the baseline run unpinned on three platforms.
 
 - [ ] **Step 4: Write `README.md`**
 

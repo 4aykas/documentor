@@ -1,0 +1,271 @@
+// IR + theme → one self-contained HTML document. Everything the page needs is
+// in the string: no <link>, no remote image, no webfont URL. See fonts.ts for
+// why that rule is absolute.
+
+import type { Block, Doc, Inline } from '../ir/types.js';
+import { PAGE_PT, toMm, type Theme } from '../theme/types.js';
+import { arimoFaceCss } from './fonts.js';
+
+export function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Schemes a link may not carry.
+ *
+ * A link is not the same thing as an image source: nothing here is *loaded*
+ * when the page renders, so `http:`, `https:`, `mailto:` and relative paths all
+ * stay live — they are things a reader may choose to follow, and refusing them
+ * would cost the reader information for no gain. What cannot stay live is a URL
+ * that executes (`javascript:`, `vbscript:`) or that carries its own payload
+ * (`data:`, the shape phishing takes in a PDF). The source document is
+ * untrusted input; a rendered PDF is a thing people click.
+ *
+ * Matched after stripping whitespace and control characters, because
+ * `java\tscript:` and a leading newline are both accepted by browsers as the
+ * scheme they spell.
+ */
+const EXECUTABLE_SCHEME = /^(?:javascript|vbscript|data):/i;
+
+function schemeIsRefused(href: string): boolean {
+  // Whitespace and C0 controls are ignored by browsers when they read a
+  // scheme, so they are removed before the test rather than after it.
+  return EXECUTABLE_SCHEME.test(stripControls(href));
+}
+
+/** Every character a browser skips over while reading a URL scheme. */
+function stripControls(s: string): string {
+  return [...s].filter((ch) => ch.charCodeAt(0) > 0x20 && ch.charCodeAt(0) !== 0x7f).join('');
+}
+
+/**
+ * What a refused link shows instead: the link's own text, then where it pointed,
+ * in the muted style — the same shape as the image placeholder, for the same
+ * reason. Nothing is silently lost; the reader can see there was a link and see
+ * what it aimed at, and can decide for themselves.
+ *
+ * A `javascript:` or `data:` URL has no host, so the scheme is named instead —
+ * "javascript:" is more informative to a reader than an empty box.
+ */
+function refusedLinkMarkup(href: string, text: string): string {
+  let target = '';
+  try {
+    const u = new URL(href);
+    target = u.host || u.protocol;
+  } catch {
+    target = href.split(':')[0] ?? '';
+  }
+  return `<span class="link-refused">${text}<span class="link-refused-target">${escapeHtml(target)}</span></span>`;
+}
+
+function inline(nodes: Inline[]): string {
+  return nodes
+    .map((n) => {
+      switch (n.t) {
+        case 'text': return escapeHtml(n.v);
+        case 'strong': return `<strong>${inline(n.children)}</strong>`;
+        case 'em': return `<em>${inline(n.children)}</em>`;
+        case 'code': return `<code>${inline(n.children)}</code>`;
+        case 'link':
+          return schemeIsRefused(n.href)
+            ? refusedLinkMarkup(n.href, inline(n.children))
+            : `<a href="${escapeHtml(n.href)}">${inline(n.children)}</a>`;
+      }
+    })
+    .join('');
+}
+
+const ALIGN_CSS = { l: 'left', r: 'right', c: 'center' } as const;
+
+/**
+ * Embedding a remote image would mean Chromium fetches it at print time —
+ * a deliberate, opt-in network step that phase 1 does not have. Silently
+ * reaching out to whatever host a document's markup happens to name breaks
+ * both reproducibility (output now depends on a server staying up) and
+ * trust (rendering someone else's document would make a request to a third
+ * party on their behalf). Only a `data:` URI is already fully inline, so
+ * only that renders as a real <img>; everything else becomes a visible
+ * placeholder that a reader can immediately read as "not embedded".
+ */
+function imageMarkup(src: string, alt: string, widthPt?: number): string {
+  if (src.startsWith('data:')) {
+    return `<figure><img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}"${
+      widthPt ? ` style="width: ${widthPt}pt"` : ''
+    }></figure>`;
+  }
+  let host = '';
+  try {
+    host = new URL(src).host;
+  } catch {
+    // Not a parseable URL — e.g. a relative path like "./chart.png". Falls
+    // through to the placeholder with alt text only, rather than throwing.
+  }
+  return `<figure class="img-placeholder"><div class="img-placeholder-box">${escapeHtml(alt)}${
+    host ? `<span class="img-placeholder-host">${escapeHtml(host)}</span>` : ''
+  }</div></figure>`;
+}
+
+function block(b: Block): string {
+  switch (b.t) {
+    case 'heading':
+      return `<h${b.level}>${inline(b.text)}</h${b.level}>`;
+    case 'para':
+      return `<p>${inline(b.text)}</p>`;
+    case 'list': {
+      const tag = b.ordered ? 'ol' : 'ul';
+      const items = b.items.map((it) => `<li>${inline(it)}</li>`).join('');
+      // A list is split into fragments wherever a sublist interrupts it, so an
+      // ordered fragment after a sublist must resume its numbering rather than
+      // restart at 1.
+      const start = b.ordered && b.start !== undefined && b.start !== 1 ? ` start="${b.start}"` : '';
+      return `<${tag} class="d${b.depth}"${start}>${items}</${tag}>`;
+    }
+    case 'table': {
+      const head = b.head
+        .map((c, i) => `<th style="text-align: ${ALIGN_CSS[b.align[i] ?? 'l']}">${inline(c)}</th>`)
+        .join('');
+      const rows = b.rows
+        .map(
+          (row) =>
+            `<tr>${row
+              .map((c, i) => `<td style="text-align: ${ALIGN_CSS[b.align[i] ?? 'l']}">${inline(c)}</td>`)
+              .join('')}</tr>`,
+        )
+        .join('');
+      return `<table><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+    }
+    case 'image':
+      return imageMarkup(b.src, b.alt, b.widthPt);
+    case 'code':
+      return `<pre><code>${escapeHtml(b.text)}</code></pre>`;
+    case 'quote':
+      return `<blockquote>${b.paras.map((p) => `<p>${inline(p)}</p>`).join('')}</blockquote>`;
+    case 'rule':
+      return '<hr>';
+    case 'pagebreak':
+      return '<div class="pagebreak"></div>';
+  }
+}
+
+function firstPageHeader(doc: Doc, theme: Theme): string {
+  // The full letterhead, printed once in the body flow rather than in
+  // Chromium's header box — the header box has no access to this stylesheet.
+  const logo = theme.logo
+    ? `<div class="logo" style="height: ${theme.logo.heightPt}pt">${theme.logo.svg}</div>`
+    : '<div></div>';
+  const lines = theme.letterhead
+    .map((l, i) => `<div class="${i === 0 ? 'lh-name' : 'lh-line'}">${escapeHtml(l)}</div>`)
+    .join('');
+  // The document's own entity and date sit under the letterhead, in the same
+  // muted column: they answer the same two questions a letterhead does — who,
+  // and when — so they belong beside it rather than competing with the title.
+  // Both are optional, and emitting nothing for an absent one keeps a document
+  // that sets neither byte-identical to one rendered before they existed.
+  const docLines = [doc.meta.entity, doc.meta.date]
+    .filter((v): v is string => v !== undefined && v !== '')
+    .map((v, i) => `<div class="lh-doc${i === 0 ? ' lh-doc-first' : ''}">${escapeHtml(v)}</div>`)
+    .join('');
+  return `<header class="sheet-head">${logo}<div class="letterhead">${lines}${docLines}</div></header>
+<div class="tick-row"><span class="tick"></span><span class="hair"></span></div>
+<h1 class="doc-title">${escapeHtml(doc.meta.title)}</h1>${
+    doc.meta.subtitle ? `<p class="doc-subtitle">${escapeHtml(doc.meta.subtitle)}</p>` : ''
+  }`;
+}
+
+export async function buildHtml(
+  doc: Doc,
+  theme: Theme,
+  opts: { headerHeightPt: number },
+): Promise<string> {
+  const faces = await arimoFaceCss();
+  const { colors: c, type: ty, page } = theme;
+  const trim = PAGE_PT[page.size];
+  const colWidthPt = trim.w - page.marginPt * 2;
+
+  const css = `${faces}
+:root{
+  --brand: ${c.brandOnLight};
+  --ink: ${c.ink};
+  --muted: ${c.muted};
+  --rule: ${c.rule};
+}
+/* This @page rule only governs a browser's own print preview of the raw
+   HTML — useful for eyeballing the document standalone. The PDF that
+   render/pdf.ts actually produces gets its margins from the page.pdf()
+   call's own margin option, which Chromium honours instead of this rule
+   once preferCSSPageSize is false; the two are computed the same way on
+   purpose, but this one is not what ships. */
+@page{ size: ${page.size}; margin: ${toMm(page.marginPt + opts.headerHeightPt)} ${toMm(page.marginPt)} ${toMm(page.marginPt)} ${toMm(page.marginPt)}; }
+*{ box-sizing: border-box; }
+html,body{ margin:0; padding:0; }
+body{
+  font-family: Arimo, ${theme.font.document}, sans-serif;
+  font-size: ${ty.bodyPt}pt;
+  line-height: ${ty.leading};
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+/* The logo paints by class, never with an inline fill, so the theme owns its
+   colour. A solid-black logo therefore means this stylesheet did not load. */
+.logo svg{ height: 100%; width: auto; display: block; }
+.logo .c-brand{ fill: var(--brand); }
+.logo .c-muted{ fill: var(--muted); }
+.sheet-head{ display:flex; align-items:flex-start; justify-content:space-between; gap: 24pt; }
+.letterhead{ text-align: right; color: var(--muted); }
+.lh-name{ font-size: ${ty.smallPt + 0.5}pt; font-weight: 700; }
+.lh-line{ font-size: ${ty.smallPt - 0.5}pt; }
+.lh-doc{ font-size: ${ty.smallPt - 0.5}pt; }
+.lh-doc-first{ margin-top: 5pt; }
+.tick-row{ display:flex; align-items:center; gap: 6pt; margin: 14pt 0 0; }
+.tick{ display:block; width: 28pt; height: 3pt; background: var(--brand); }
+.hair{ display:block; flex:1; height: 0.75pt; background: var(--rule); }
+.doc-title{ font-size: ${ty.h1Pt}pt; font-weight: 700; margin: 22pt 0 0; letter-spacing: -0.01em; }
+.doc-subtitle{ color: var(--muted); margin: 4pt 0 0; }
+h1,h2,h3{ break-after: avoid; page-break-after: avoid; }
+h2{ font-size: ${ty.h2Pt}pt; font-weight: 700; margin: 18pt 0 4pt; }
+h3{ font-size: ${ty.h3Pt}pt; font-weight: 700; margin: 14pt 0 3pt; }
+p{ margin: 0 0 ${(ty.bodyPt * 0.7).toFixed(1)}pt; orphans: 2; widows: 2; }
+ul,ol{ margin: 0 0 ${(ty.bodyPt * 0.7).toFixed(1)}pt; padding-left: 16pt; }
+${[0, 1, 2, 3].map((d) => `.d${d}{ margin-left: ${d * 14}pt; }`).join('\n')}
+li{ margin: 0 0 2pt; }
+blockquote{ margin: 0 0 10pt; padding-left: 12pt; border-left: 2pt solid var(--rule); color: var(--muted); }
+pre{ background: #F6F6F4; padding: 8pt 10pt; border-radius: 2pt; overflow-wrap: anywhere; white-space: pre-wrap; break-inside: avoid; }
+code{ font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: ${(ty.bodyPt * 0.92).toFixed(1)}pt; }
+pre code{ font-size: ${(ty.bodyPt * 0.86).toFixed(1)}pt; }
+/* break-after: avoid keeps a rule from being stranded alone at the foot of a
+   page with the content it introduces pushed to the next one — the whole
+   group moves together instead. */
+hr{ border: 0; border-top: 0.75pt solid var(--rule); margin: 14pt 0; break-after: avoid; page-break-after: avoid; }
+figure{ margin: 0 0 10pt; break-inside: avoid; }
+.img-placeholder-box{ border: 0.75pt solid var(--rule); color: var(--muted); padding: 10pt 12pt; font-size: ${(ty.bodyPt * 0.95).toFixed(1)}pt; }
+.img-placeholder-host{ display: block; margin-top: 3pt; font-size: ${(ty.bodyPt * 0.85).toFixed(1)}pt; }
+img{ max-width: 100%; height: auto; }
+table{ width: 100%; max-width: ${colWidthPt}pt; border-collapse: collapse; margin: 0 0 12pt; font-size: ${(ty.bodyPt * 0.95).toFixed(1)}pt; }
+/* A row that splits across a page break loses its meaning; a whole table that
+   cannot fit one page still has to break, so only the rows are protected. */
+tr{ break-inside: avoid; }
+thead{ display: table-header-group; }
+th{ text-align: left; font-weight: 700; border-bottom: 1pt solid var(--rule); padding: 4pt 6pt; }
+td{ border-bottom: 0.5pt solid var(--rule); padding: 4pt 6pt; vertical-align: top; }
+.pagebreak{ break-after: page; page-break-after: always; }
+a{ color: var(--ink); text-decoration: underline; text-decoration-color: var(--rule); }
+.link-refused-target{ color: var(--muted); font-size: ${(ty.bodyPt * 0.85).toFixed(1)}pt; margin-left: 3pt; }`;
+
+  const body = doc.blocks.map(block).join('\n');
+
+  return `<!doctype html>
+<html lang="${escapeHtml(doc.meta.lang)}">
+<head><meta charset="utf-8"><title>${escapeHtml(doc.meta.title)}</title>
+<style>${css}</style></head>
+<body>
+${firstPageHeader(doc, theme)}
+<main>
+${body}
+</main>
+</body></html>`;
+}
