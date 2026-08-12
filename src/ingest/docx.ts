@@ -10,12 +10,38 @@
 // tables to nest inside a cell. Regexes below take advantage of exactly that
 // flatness (a `w:p` never contains another `w:p`; nothing here recurses into
 // a `w:tbl`'s cells because tables are dropped whole). What would defeat this
-// approach is named at each site that depends on it — chiefly a table nested
-// inside a table cell (`splitTopLevel`) and a heading/list style that Word
-// localises under a different `w:styleId` than the `HeadingN` this file
-// matches. A future ingester that has to read nested structure (tables, or a
-// richer heading vocabulary) should reach for a real parser instead of
-// growing these regexes to cover it.
+// approach is named at each site that depends on it, and summarised here so
+// the risk is visible in one place rather than only where it happens to bite:
+//   - A table nested inside a table cell (`splitTopLevel`): the non-greedy
+//     match for `<w:tbl>…</w:tbl>` closes at the first `</w:tbl>` it finds,
+//     the inner table's, corrupting everything read after it.
+//   - A heading/list style Word localises under a different `w:styleId` than
+//     the `HeadingN` this file matches (`headingLevel`).
+//   - A tracked-change wrapper (`<w:ins>`/`<w:del>`): the run-matching regex
+//     finds a `<w:r>` wherever it sits in the string, ancestor tags or not,
+//     so an inserted run reads as ordinary content regardless of the
+//     `<w:ins>` around it — a deliberate policy here (see `runText`'s
+//     comment), not an accident, but only because it is impossible for a
+//     regex to see the wrapper in the first place.
+//   - `<w:pPrChange>`: a paragraph's own `<w:pPr>` can contain a nested
+//     `<w:pPrChange><w:pPr>…</w:pPr></w:pPrChange>` recording what the
+//     paragraph's properties were *before* a tracked format change. The
+//     non-greedy `<w:pPr>([\s\S]*?)<\/w:pPr>` in `paraProps` would close at
+//     that inner `</w:pPr>` instead of the outer paragraph's own one,
+//     reading the pre-change style or numbering instead of the current one.
+//     Not defended against: no document in the corpus tracks changes.
+//   - Run splitting: Word frequently emits one logical run of text as several
+//     adjacent `<w:r>` elements with identical formatting (spell-check
+//     boundaries, an editing session's own history). A regex walk sees each
+//     one, so an ingester that didn't merge adjacent same-formatted inline
+//     nodes back together would hand the renderers a paragraph text made of
+//     needlessly many nodes; `mergeAdjacentInlines` below is what closes
+//     that gap, but a subtler split (formatting differing in a way that
+//     doesn't matter to the IR, e.g. two runs whose fonts differ but whose
+//     bold/italic agree) still passes through unmerged.
+// A future ingester that has to read nested structure (tables, tracked
+// changes properly, or a richer heading vocabulary) should reach for a real
+// parser instead of growing these regexes to cover it.
 
 import JSZip from 'jszip';
 import { posix } from 'node:path';
@@ -73,29 +99,45 @@ function parseRels(xml: string): Map<string, Rel> {
 // Numbering (word/numbering.xml): the two-hop numId → abstractNum → lvl lookup
 // ---------------------------------------------------------------------------
 
-type Lvl = { numFmt: string; start: number };
-type AbstractNum = Map<string, Lvl>; // ilvl -> Lvl
+type Lvl = { numFmt: string; start: number; lvlRestart?: number };
+type AbstractNum = { byIlvl: Map<string, Lvl>; numStyleLink?: string };
 type NumDef = { abstractNumId: string; overrides: Map<string, number> }; // ilvl -> startOverride
 
-type Numbering = { abstractNums: Map<string, AbstractNum>; nums: Map<string, NumDef> };
+type Numbering = {
+  abstractNums: Map<string, AbstractNum>;
+  // A Word "list style" (Format ▸ Bullets and Numbering ▸ linked to a style)
+  // stores its levels on one abstractNum, marked `<w:styleLink w:val="Name">`,
+  // and every *other* abstractNum built from that style carries no `<w:lvl>`
+  // of its own — only `<w:numStyleLink w:val="Name"/>`, pointing back at it
+  // by style name, not by id. This is the second table `resolveLevel` needs
+  // to walk that link.
+  styleLinkAbstracts: Map<string, string>; // style name -> abstractNumId
+  nums: Map<string, NumDef>;
+};
 
 function parseNumbering(xml: string | null): Numbering {
   const abstractNums = new Map<string, AbstractNum>();
+  const styleLinkAbstracts = new Map<string, string>();
   const nums = new Map<string, NumDef>();
-  if (xml === null) return { abstractNums, nums };
+  if (xml === null) return { abstractNums, styleLinkAbstracts, nums };
 
   for (const block of xml.match(/<w:abstractNum\b[^>]*>[\s\S]*?<\/w:abstractNum>/g) ?? []) {
     const id = /\bw:abstractNumId="([^"]*)"/.exec(block)?.[1];
     if (id === undefined) continue;
-    const byIlvl: AbstractNum = new Map();
+    const byIlvl = new Map<string, Lvl>();
     for (const lvl of block.match(/<w:lvl\b[^>]*>[\s\S]*?<\/w:lvl>/g) ?? []) {
       const ilvl = /\bw:ilvl="([^"]*)"/.exec(lvl)?.[1];
       if (ilvl === undefined) continue;
       const numFmt = /<w:numFmt\b[^>]*\bw:val="([^"]*)"/.exec(lvl)?.[1] ?? 'decimal';
       const start = Number(/<w:start\b[^>]*\bw:val="([^"]*)"/.exec(lvl)?.[1] ?? '1');
-      byIlvl.set(ilvl, { numFmt, start: Number.isFinite(start) ? start : 1 });
+      const restartVal = /<w:lvlRestart\b[^>]*\bw:val="([^"]*)"/.exec(lvl)?.[1];
+      const lvlRestart = restartVal !== undefined && Number.isFinite(Number(restartVal)) ? Number(restartVal) : undefined;
+      byIlvl.set(ilvl, { numFmt, start: Number.isFinite(start) ? start : 1, ...(lvlRestart !== undefined ? { lvlRestart } : {}) });
     }
-    abstractNums.set(id, byIlvl);
+    const numStyleLink = /<w:numStyleLink\b[^>]*\bw:val="([^"]*)"/.exec(block)?.[1];
+    const styleLink = /<w:styleLink\b[^>]*\bw:val="([^"]*)"/.exec(block)?.[1];
+    abstractNums.set(id, { byIlvl, ...(numStyleLink !== undefined ? { numStyleLink } : {}) });
+    if (styleLink !== undefined) styleLinkAbstracts.set(styleLink, id);
   }
 
   for (const block of xml.match(/<w:num\b[^>]*>[\s\S]*?<\/w:num>/g) ?? []) {
@@ -110,31 +152,68 @@ function parseNumbering(xml: string | null): Numbering {
     }
     nums.set(numId, { abstractNumId, overrides });
   }
-  return { abstractNums, nums };
+  return { abstractNums, styleLinkAbstracts, nums };
 }
 
-/** Resolves a `numId`/`ilvl` pair to `{ ordered, start }`, or `null` when the
- *  chain breaks anywhere along the way. A broken chain must not crash the
- *  ingest — a `numId` with no matching `<w:num>`, or one that names an
- *  `abstractNumId` nobody defined, both happen in the wild (a numbering part
- *  edited by hand, or copied from another document that carried the
- *  definition and this one didn't). The caller degrades a paragraph with an
- *  unresolved `numId` to an ordinary paragraph rather than guessing bullet or
- *  ordered — a wrong guess would misrepresent the source silently, where a
- *  plain paragraph at least keeps the words and says why the list-ness of it
- *  was lost. */
+/** Resolves a `numId`/`ilvl` pair to its format and starting number, or
+ *  `null` when the chain breaks anywhere along the way. A broken chain must
+ *  not crash the ingest — a `numId` with no matching `<w:num>`, or one that
+ *  names an `abstractNumId` nobody defined, both happen in the wild (a
+ *  numbering part edited by hand, or copied from another document that
+ *  carried the definition and this one didn't). The caller degrades a
+ *  paragraph with an unresolved `numId` to an ordinary paragraph rather than
+ *  guessing bullet or ordered — a wrong guess would misrepresent the source
+ *  silently, where a plain paragraph at least keeps the words and says why
+ *  the list-ness of it was lost. */
 function resolveLevel(numbering: Numbering, numId: string, ilvl: string): Lvl | null {
   const num = numbering.nums.get(numId);
   if (!num) return null;
-  const abstractNum = numbering.abstractNums.get(num.abstractNumId);
+  let abstractNum = numbering.abstractNums.get(num.abstractNumId);
   if (!abstractNum) return null;
+
+  // A list built from a Word list style defines no levels on its own
+  // abstractNum — see the `styleLinkAbstracts` comment above. This is one
+  // hop, not a general alias-chasing walk: OOXML producers don't chain
+  // `numStyleLink` through more than one indirection in practice, and a
+  // document that somehow did still degrades safely below (`byIlvl` stays
+  // empty, `lvl` comes back `undefined`, the paragraph becomes plain text).
+  if (abstractNum.byIlvl.size === 0 && abstractNum.numStyleLink !== undefined) {
+    const linkedId = numbering.styleLinkAbstracts.get(abstractNum.numStyleLink);
+    const linked = linkedId !== undefined ? numbering.abstractNums.get(linkedId) : undefined;
+    if (linked) abstractNum = linked;
+  }
+
   // A level definition is required at every `ilvl` a document actually uses,
   // but a hand-edited numbering part might only define ilvl 0 — falling back
   // to it is closer to what Word itself does than refusing the paragraph.
-  const lvl = abstractNum.get(ilvl) ?? abstractNum.get('0');
+  const lvl = abstractNum.byIlvl.get(ilvl) ?? abstractNum.byIlvl.get('0');
   if (!lvl) return null;
   const override = num.overrides.get(ilvl);
-  return { numFmt: lvl.numFmt, start: override ?? lvl.start };
+  return { numFmt: lvl.numFmt, start: override ?? lvl.start, ...(lvl.lvlRestart !== undefined ? { lvlRestart: lvl.lvlRestart } : {}) };
+}
+
+/**
+ * Word does not store the number a list item actually carries — only the
+ * definition plus any override — so a level's counter has to be reset the
+ * same way Word's own numbering engine resets it: whenever a shallower item
+ * interrupts it. By default (no explicit `<w:lvlRestart>` on the level)
+ * OOXML restarts a level whenever *any* shallower `ilvl` occurs, not only
+ * the immediate parent — `a / a.i / b / b.i` numbers the second sub-list
+ * "i", not "ii", because `b` at ilvl 0 restarts every deeper level under it.
+ * An explicit `<w:lvlRestart w:val="N"/>` narrows that to "restart only when
+ * ilvl N specifically occurs", which is honoured here by checking the
+ * *deeper* level's own restart value, not the incoming paragraph's.
+ */
+function resetDeeperCounters(numbering: Numbering, counters: Map<string, number>, numId: string, ilvl: number): void {
+  const prefix = `${numId}:`;
+  for (const key of counters.keys()) {
+    if (!key.startsWith(prefix)) continue;
+    const otherIlvl = Number(key.slice(prefix.length));
+    if (!(otherIlvl > ilvl)) continue;
+    const lvl = resolveLevel(numbering, numId, String(otherIlvl));
+    const triggers = lvl?.lvlRestart !== undefined ? ilvl === lvl.lvlRestart : true;
+    if (triggers) counters.delete(key);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -155,7 +234,16 @@ type Unit = { kind: 'p'; xml: string } | { kind: 'tbl'; xml: string };
  *  corpus this ingester was built for has zero tables, nested or otherwise —
  *  see the design doc — so this is a real limit, not a hedge. */
 function splitTopLevel(bodyXml: string): Unit[] {
-  const re = /<w:p\b[^>]*\/>|<w:p\b[^>]*>[\s\S]*?<\/w:p>|<w:tbl>[\s\S]*?<\/w:tbl>/g;
+  // `<w:tbl\b[^>]*>` rather than a literal `<w:tbl>`, matching the `<w:p>`
+  // alternative's own tolerance for attributes: ECMA-376 gives `w:tbl` no
+  // attributes today, but if a producer ever added one, a literal match
+  // would simply not recognise the table as a unit at all — and the `<w:p>`
+  // elements inside its cells would then each be picked up individually by
+  // the paragraph alternative below, promoted to body paragraphs with no
+  // `dropped` entry to say so. Silent corruption, not a loud drop; matching
+  // the same way `<w:p>` already does closes that gap rather than hoping the
+  // literal stays true forever.
+  const re = /<w:p\b[^>]*\/>|<w:p\b[^>]*>[\s\S]*?<\/w:p>|<w:tbl\b[^>]*>[\s\S]*?<\/w:tbl>/g;
   const out: Unit[] = [];
   for (const m of bodyXml.match(re) ?? []) out.push({ kind: m.startsWith('<w:tbl') ? 'tbl' : 'p', xml: m });
   return out;
@@ -222,42 +310,134 @@ function wrapFmt(nodes: Inline[], fmt: Fmt): Inline[] {
   return out;
 }
 
-/** A single `<w:r>…</w:r>` (rPr already known to hold no drawing/page-break —
- *  the caller sorts those out first) → its text as inline nodes, formatted by
- *  its own `w:b`/`w:i`. Reports anything else it finds in the run instead of
- *  swallowing it: comments, footnotes, fields and tracked-change markup all
- *  end up here since none of them get a bespoke reader (see the design's drop
- *  list) — they are indistinguishable to this function, which is fine, since
- *  all of them are dropped the same way: named, not silently gone. */
-function runText(runXml: string, sink: Sink): Inline[] {
+/**
+ * Word's own constant run-splitting (a spell-check boundary, an editing
+ * session's own history) hands this ingester several adjacent `<w:r>`
+ * elements with identical formatting for what was one logical span of text —
+ * without this, a document reading `**bold**` in Word round-trips through
+ * `renderMarkdown` as `**bo****ld**`. Adjacent nodes of the same shape are
+ * folded back together, recursively, so a merge can expose a further merge
+ * one level down (two adjacent `strong` nodes whose own children end in and
+ * begin with plain text on each side).
+ */
+function mergeAdjacentInlines(nodes: Inline[]): Inline[] {
+  const out: Inline[] = [];
+  for (const n of nodes) {
+    const prev = out[out.length - 1];
+    if (prev?.t === 'text' && n.t === 'text') {
+      out[out.length - 1] = { t: 'text', v: prev.v + n.v };
+    } else if (prev?.t === 'strong' && n.t === 'strong') {
+      out[out.length - 1] = { t: 'strong', children: mergeAdjacentInlines([...prev.children, ...n.children]) };
+    } else if (prev?.t === 'em' && n.t === 'em') {
+      out[out.length - 1] = { t: 'em', children: mergeAdjacentInlines([...prev.children, ...n.children]) };
+    } else if (prev?.t === 'code' && n.t === 'code') {
+      out[out.length - 1] = { t: 'code', children: mergeAdjacentInlines([...prev.children, ...n.children]) };
+    } else {
+      out.push(n);
+    }
+  }
+  return out;
+}
+
+type Atom = { kind: 'text'; v: string } | { kind: 'pagebreak' } | { kind: 'drawing'; xml: string };
+
+/**
+ * A single `<w:r>…</w:r>` → its formatting plus the ordered sequence of
+ * things it contains: text, a page break, a picture. A run is not
+ * necessarily *only* one of those — `before<page break>after` is valid
+ * inside one run, and so is text beside a `<w:drawing>` — so this returns
+ * every atom in source order instead of testing the run as a whole and
+ * returning early, which used to make a page-break or image run discard
+ * whatever text sat next to the break/picture inside the same run.
+ *
+ * Reports anything left over after the recognised text-bearing elements
+ * (and the run's own `<w:r>…</w:r>` wrapper and `<w:rPr>`) are stripped out
+ * — a comment reference, a footnote reference, a field character. This is
+ * *not* where tracked-change insertions are reported: an `<w:ins>` wrapper
+ * around an ordinary `<w:r>` is invisible to the run-matching regex (see the
+ * file-header comment), so an inserted run reads as accepted content with no
+ * trace here at all — that is a deliberate policy (Word's own default
+ * display), made visible instead by `reportTrackedChanges` counting the
+ * wrappers directly, once per paragraph. A deletion's text lives in
+ * `<w:delText>`, which this function does not recognise, so it does fall
+ * through to the leftover report below — correctly dropped, but as generic
+ * "content not read" rather than named as a deletion, which is why
+ * `reportTrackedChanges` also counts deletions rather than relying on this.
+ */
+function runAtoms(runXml: string, sink: Sink): { fmt: Fmt; atoms: Atom[] } {
   const rPr = /<w:rPr>[\s\S]*?<\/w:rPr>/.exec(runXml)?.[0] ?? '';
   const fmt: Fmt = { bold: flagOn(rPr, 'b'), italics: flagOn(rPr, 'i') };
-  const body = runXml.replace(/<w:rPr>[\s\S]*?<\/w:rPr>/, '');
+  if (/^<w:r\b[^>]*\/>$/.test(runXml)) return { fmt, atoms: [] };
 
+  // The run's own wrapper tags always contain a `w:` element name
+  // (`<w:r>`/`<w:r w:rsidR="…">` and `</w:r>`), which is exactly what the
+  // leftover check below looks for — stripping only `<w:rPr>` and leaving
+  // the wrapper in place made *every* ordinary run report itself as unread
+  // content. The wrapper has to go before the leftover test has anything
+  // meaningful to say.
+  const inner = runXml
+    .replace(/^<w:r\b[^>]*>/, '')
+    .replace(/<\/w:r>$/, '')
+    .replace(/<w:rPr>[\s\S]*?<\/w:rPr>/, '');
+
+  const atoms: Atom[] = [];
   let text = '';
-  let consumed = '';
-  const partRe = /<w:t\b[^>]*>([\s\S]*?)<\/w:t>|<w:t\/>|<w:tab\/>|<w:br\/>|<w:cr\/>|<w:noBreakHyphen\/>|<w:softHyphen\/>/g;
-  for (const m of body.matchAll(partRe)) {
-    consumed += m[0];
-    if (m[0].startsWith('<w:t')) text += decodeXmlEntities(m[1] ?? '');
-    else if (m[0] === '<w:tab/>') text += '\t';
-    else if (m[0] === '<w:br/>' || m[0] === '<w:cr/>') text += '\n';
-    else if (m[0] === '<w:noBreakHyphen/>') text += '\u2011';
-    // softHyphen carries no visible character when the line doesn't break.
-  }
+  const flushText = () => {
+    if (text !== '') atoms.push({ kind: 'text', v: text });
+    text = '';
+  };
 
-  // Whatever is left after pulling `w:rPr` and the recognised text-bearing
-  // elements out is something this reader doesn't have a name for — a
-  // comment reference, a footnote reference, a field character, tracked-
-  // change wrapper content that isn't itself a run. Reported once per run
-  // rather than decoded, on the same "say what was lost" principle as the
-  // rest of this file.
-  const leftover = body.replace(partRe, '');
+  // The page-break alternative must be tried before the bare `<w:br/>` and
+  // `<w:br …/>` ones so a `w:type="page"` break is classified as a break, not
+  // read as a plain line break.
+  const partRe =
+    /<w:t\b[^>]*>([\s\S]*?)<\/w:t>|<w:t\/>|<w:tab\/>|<w:br\b[^>]*\bw:type="page"[^>]*\/>|<w:br\/>|<w:br\b[^>]*\/>|<w:cr\/>|<w:noBreakHyphen\/>|<w:softHyphen\/>|<w:drawing>[\s\S]*?<\/w:drawing>/g;
+  for (const m of inner.matchAll(partRe)) {
+    const s = m[0];
+    if (s.startsWith('<w:t')) text += decodeXmlEntities(m[1] ?? '');
+    else if (s === '<w:tab/>') text += '\t';
+    else if (s === '<w:cr/>') text += '\n';
+    else if (s === '<w:noBreakHyphen/>') text += '\u2011';
+    else if (s === '<w:softHyphen/>') { /* no visible character when the line doesn't break there */ }
+    else if (s.startsWith('<w:drawing')) { flushText(); atoms.push({ kind: 'drawing', xml: s }); }
+    else if (/\bw:type="page"/.test(s)) { flushText(); atoms.push({ kind: 'pagebreak' }); }
+    // A `<w:br/>` that isn't a page break (a column or text-wrapping break,
+    // or the plain kind) is read as a line break — the same approximation
+    // `<w:cr/>` gets.
+    else text += '\n';
+  }
+  flushText();
+
+  const leftover = inner.replace(partRe, '');
   if (/<w:\w/.test(leftover)) {
     sink.dropped.push(`run content this ingester does not read: ${truncate(leftover)}`);
   }
 
-  return text === '' ? [] : wrapFmt([{ t: 'text', v: text }], fmt);
+  return { fmt, atoms };
+}
+
+/**
+ * Counts `<w:ins>`/`<w:del>` wrappers in a paragraph's runs region and names
+ * what happened to them, once per paragraph. Policy: an insertion is read as
+ * accepted (its `<w:r>` matches the ordinary run pattern in `runAtoms`
+ * regardless of the `<w:ins>` wrapper around it, which the regex-based scan
+ * cannot see) — the same thing Word itself shows by default. A deletion is
+ * read as rejected: its text lives in `<w:delText>`, which nothing here
+ * recognises, so it contributes nothing to the body. Both are defensible
+ * choices, but silent is not — on a due-diligence document, an unaccepted
+ * redline reading as final without comment is a real defect, so this names
+ * exactly what happened rather than leaving it to be inferred from a generic
+ * leftover-content note (which is what a deletion falls through to anyway,
+ * unlabelled as a deletion, unless this also runs).
+ */
+function reportTrackedChanges(runsXml: string, sink: Sink): void {
+  const insertions = (runsXml.match(/<w:ins\b/g) ?? []).length;
+  const deletions = (runsXml.match(/<w:del\b/g) ?? []).length;
+  if (insertions === 0 && deletions === 0) return;
+  const parts: string[] = [];
+  if (insertions > 0) parts.push(`${insertions} tracked insertion${insertions === 1 ? '' : 's'} (kept, read as accepted)`);
+  if (deletions > 0) parts.push(`${deletions} tracked deletion${deletions === 1 ? '' : 's'} (dropped, read as rejected)`);
+  sink.dropped.push(`paragraph contains ${parts.join(' and ')}`);
 }
 
 type Segment = { kind: 'text'; inlines: Inline[] } | { kind: 'image'; src: string; alt: string } | { kind: 'pagebreak' };
@@ -279,10 +459,12 @@ function paragraphSegments(
   opts: { images: boolean; pageBreaks: boolean; context: string },
 ): Segment[] {
   const runs = runsRegionOf(pXml);
+  reportTrackedChanges(runs, sink);
+
   const segments: Segment[] = [];
   let current: Inline[] = [];
   const flush = () => {
-    if (current.length > 0) segments.push({ kind: 'text', inlines: current });
+    if (current.length > 0) segments.push({ kind: 'text', inlines: mergeAdjacentInlines(current) });
     current = [];
   };
 
@@ -311,25 +493,27 @@ function paragraphSegments(
       continue;
     }
 
-    const runXml = m[0];
-    const hasPageBreak = /<w:br\b[^>]*\bw:type="page"/.test(runXml);
-    const drawingXml = /<w:drawing>[\s\S]*?<\/w:drawing>/.exec(runXml)?.[0];
-
-    if (hasPageBreak) {
-      if (!opts.pageBreaks) {
-        sink.dropped.push(`page break inside a ${opts.context} has no representation`);
+    const { fmt, atoms } = runAtoms(m[0], sink);
+    for (const atom of atoms) {
+      if (atom.kind === 'text') {
+        current.push(...wrapFmt([{ t: 'text', v: atom.v }], fmt));
         continue;
       }
-      flush();
-      segments.push({ kind: 'pagebreak' });
-      continue;
-    }
-
-    if (drawingXml !== undefined) {
+      if (atom.kind === 'pagebreak') {
+        if (!opts.pageBreaks) {
+          sink.dropped.push(`page break inside a ${opts.context} has no representation`);
+          continue;
+        }
+        flush();
+        segments.push({ kind: 'pagebreak' });
+        continue;
+      }
+      // atom.kind === 'drawing'
       if (!opts.images) {
         sink.dropped.push(`image inside a ${opts.context} has no representation`);
         continue;
       }
+      const drawingXml = atom.xml;
       const graphicUri = /<a:graphicData\b[^>]*\buri="([^"]*)"/.exec(drawingXml)?.[1] ?? '';
       if (!graphicUri.endsWith('/picture')) {
         sink.dropped.push('a drawing that is not a picture (chart, shape or canvas) was dropped');
@@ -353,10 +537,7 @@ function paragraphSegments(
         const alt = /<pic:cNvPr\b[^>]*\bdescr="([^"]*)"/.exec(drawingXml)?.[1] ?? '';
         segments.push({ kind: 'image', src: resolved.src, alt: decodeXmlEntities(alt) });
       }
-      continue;
     }
-
-    current.push(...runText(runXml, sink));
   }
   flush();
   return segments;
@@ -365,21 +546,20 @@ function paragraphSegments(
 /** Runs inside a hyperlink: text and formatting only. An image or a page
  *  break embedded inside a link has nowhere to go in the IR's link (its
  *  children are `Inline[]`, the same text-only shape a heading or list item
- *  has), so both are reported rather than silently dropped. */
+ *  has), so both are reported rather than silently dropped — the rest of the
+ *  same run's text is still kept, for the same reason `paragraphSegments`
+ *  keeps it: one unrepresentable atom must not take its siblings with it. */
 function innerRunsToInlines(xml: string, sink: Sink, context: string): Inline[] {
   const out: Inline[] = [];
   for (const m of xml.matchAll(/<w:r\b[^>]*\/>|<w:r\b[^>]*>[\s\S]*?<\/w:r>/g)) {
-    if (/<w:drawing>/.test(m[0])) {
-      sink.dropped.push(`image inside a hyperlink in a ${context} has no representation`);
-      continue;
+    const { fmt, atoms } = runAtoms(m[0], sink);
+    for (const atom of atoms) {
+      if (atom.kind === 'text') out.push(...wrapFmt([{ t: 'text', v: atom.v }], fmt));
+      else if (atom.kind === 'pagebreak') sink.dropped.push(`page break inside a hyperlink in a ${context} has no representation`);
+      else sink.dropped.push(`image inside a hyperlink in a ${context} has no representation`);
     }
-    if (/<w:br\b[^>]*\bw:type="page"/.test(m[0])) {
-      sink.dropped.push(`page break inside a hyperlink in a ${context} has no representation`);
-      continue;
-    }
-    out.push(...runText(m[0], sink));
   }
-  return out;
+  return mergeAdjacentInlines(out);
 }
 
 // ---------------------------------------------------------------------------
@@ -582,7 +762,7 @@ export async function ingestDocx(
         sink.dropped.push(`h${heading.sourceDepth} clamped to h3 (the IR has three heading levels)`);
       }
       const segs = paragraphSegments(unit.xml, rels, media, sink, { images: false, pageBreaks: false, context: 'heading' });
-      const text = segs.flatMap((s) => (s.kind === 'text' ? s.inlines : []));
+      const text = mergeAdjacentInlines(segs.flatMap((s) => (s.kind === 'text' ? s.inlines : [])));
       sink.blocks.push({ t: 'heading', level: heading.level, text });
       continue;
     }
@@ -590,7 +770,7 @@ export async function ingestDocx(
     if (numPr) {
       const resolved = resolveLevel(numbering, numPr.numId, numPr.ilvl);
       const segs = paragraphSegments(unit.xml, rels, media, sink, { images: false, pageBreaks: false, context: 'list item' });
-      const text = segs.flatMap((s) => (s.kind === 'text' ? s.inlines : []));
+      const text = mergeAdjacentInlines(segs.flatMap((s) => (s.kind === 'text' ? s.inlines : [])));
       if (resolved === null) {
         sink.dropped.push(
           `list numbering unresolved (numId ${numPr.numId} has no usable definition): item kept as a plain paragraph`,
@@ -602,6 +782,11 @@ export async function ingestDocx(
       const ordered = resolved.numFmt !== 'bullet';
       const depth = Number(numPr.ilvl);
       const key = `${numPr.numId}:${numPr.ilvl}`;
+      // A shallower item restarts every deeper level's own counter — see
+      // `resetDeeperCounters`'s comment — so this has to run before this
+      // item's own counter is read, even though it is `depth`, not a deeper
+      // level, that is being read next.
+      resetDeeperCounters(numbering, counters, numPr.numId, depth);
       let n = counters.get(key);
       if (n === undefined) n = resolved.start;
       counters.set(key, n + 1);

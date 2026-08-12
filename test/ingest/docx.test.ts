@@ -39,6 +39,8 @@ const documentXml = (body: string) => `<?xml version="1.0" encoding="UTF-8" stan
 const para = (inner: string, pPr = '') => `<w:p><w:pPr>${pPr}</w:pPr>${inner}</w:p>`;
 const run = (text: string) => `<w:r><w:t xml:space="preserve">${text}</w:t></w:r>`;
 const numPr = (numId: number, ilvl = 0) => `<w:numPr><w:ilvl w:val="${ilvl}"/><w:numId w:val="${numId}"/></w:numPr>`;
+const RELS_XML = (rels: string) =>
+  `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels}</Relationships>`;
 
 describe('ingestDocx — round trip through this project’s own renderer', () => {
   const doc: Doc = {
@@ -77,9 +79,15 @@ describe('ingestDocx — round trip through this project’s own renderer', () =
     expect(back.meta.subtitle).toBe(doc.meta.subtitle);
     expect(back.meta.date).toBe(doc.meta.date);
     expect(back.blocks).toEqual(doc.blocks);
-    // The letterhead itself (dropped by design) still shows up as a loud
-    // drop, even though its one piece of content — the date — was carried.
-    expect(dropped.join(' ')).toMatch(/letterhead dropped/);
+    // Exact, not `.join(' ').toMatch(...)`: a loose match is blind to noise
+    // sitting alongside the real entry, which is exactly what let a bug slip
+    // through review round 1 — every ordinary run was reporting itself as
+    // unread content, and a `.toMatch` assertion couldn't see the flood
+    // because it never looked at what else `dropped` contained. The
+    // letterhead itself is dropped by design, even though its one piece of
+    // content — the date — was carried; nothing else about this document
+    // should be unrepresentable.
+    expect(dropped).toEqual(['header/footer letterhead dropped (kept the date it carried: "July 20, 2026")']);
   });
 
   it('lets an explicit title/date override what the header carried', async () => {
@@ -91,15 +99,62 @@ describe('ingestDocx — round trip through this project’s own renderer', () =
 });
 
 describe('ingestDocx — hand-built fixtures (what the round trip cannot reach)', () => {
-  it('reads a numbered and a bulleted list, each at two levels, via the two-hop numId → abstractNum lookup', async () => {
+  it('produces an empty dropped list for a clean multi-paragraph, multi-run document', async () => {
+    // Measured in review round 1: a 4-paragraph document produced 7 drop
+    // entries, one per run, because the leftover-content check was testing
+    // the run's own `<w:r>`/`</w:r>` wrapper instead of its contents. This is
+    // the assertion that would have caught it — `dropped` must be empty, not
+    // merely "not obviously wrong" — across several paragraphs and several
+    // runs per paragraph (formatting changes mid-paragraph are exactly what
+    // splits a paragraph into more than one run in real Word output).
+    const body = [
+      para(run('First paragraph, one run.')),
+      para(`${run('Second paragraph, ')}<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">two</w:t></w:r>${run(' runs.')}`),
+      para(`${run('Third paragraph, ')}<w:r><w:rPr><w:i/></w:rPr><w:t xml:space="preserve">three</w:t></w:r>${run(' runs total.')}`),
+      para(run('Fourth paragraph.')),
+    ].join('');
+    const buf = await buildDocx({ 'word/document.xml': documentXml(body) });
+    const { doc, dropped } = await ingestDocx(buf);
+
+    expect(dropped).toEqual([]);
+    expect(doc.blocks).toEqual([
+      { t: 'para', text: [{ t: 'text', v: 'First paragraph, one run.' }] },
+      { t: 'para', text: [{ t: 'text', v: 'Second paragraph, ' }, { t: 'strong', children: [{ t: 'text', v: 'two' }] }, { t: 'text', v: ' runs.' }] },
+      { t: 'para', text: [{ t: 'text', v: 'Third paragraph, ' }, { t: 'em', children: [{ t: 'text', v: 'three' }] }, { t: 'text', v: ' runs total.' }] },
+      { t: 'para', text: [{ t: 'text', v: 'Fourth paragraph.' }] },
+    ]);
+  });
+
+  it('merges adjacent same-formatted runs instead of leaving Word’s own run-splitting in the IR', async () => {
+    // A document that reads **bold** in Word commonly stores it as several
+    // adjacent `<w:r>` elements with identical `<w:rPr>` (a spell-check
+    // boundary, an editing session's own history) rather than one run.
+    const bold = (t: string) => `<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${t}</w:t></w:r>`;
+    const body = para(`${bold('bo')}${bold('ld')}`);
+    const buf = await buildDocx({ 'word/document.xml': documentXml(body) });
+    const { doc } = await ingestDocx(buf);
+
+    expect(doc.blocks).toEqual([{ t: 'para', text: [{ t: 'strong', children: [{ t: 'text', v: 'bold' }] }] }]);
+  });
+
+  it('reads an ordered and a bulleted list, each at two levels, with opposite formats across levels so an ilvl-fallback bug cannot pass unnoticed', async () => {
+    // Review round 1, Important 5: the original fixture gave both abstracts
+    // the same "ordered-ness" at ilvl 0 and ilvl 1, so deleting the ilvl-1
+    // `<w:lvl>` and letting `resolveLevel` fall back to ilvl 0 produced
+    // byte-identical output — the ilvl-specific lookup was untested. Giving
+    // the two levels of each abstract *opposite* formats means that fallback
+    // now changes the answer: deleting either `<w:lvl w:ilvl="1">` below and
+    // re-running this test does turn it red (verified by hand while making
+    // this fix; not left in the suite, since a test asserting its own
+    // fixture is broken isn't a test).
     const numberingXml = `<?xml version="1.0" encoding="UTF-8"?><w:numbering ${NS}>
       <w:abstractNum w:abstractNumId="10">
         <w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/></w:lvl>
-        <w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="lowerRoman"/></w:lvl>
+        <w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="bullet"/></w:lvl>
       </w:abstractNum>
       <w:abstractNum w:abstractNumId="20">
         <w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/></w:lvl>
-        <w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="bullet"/></w:lvl>
+        <w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="decimal"/></w:lvl>
       </w:abstractNum>
       <w:num w:numId="1"><w:abstractNumId w:val="10"/></w:num>
       <w:num w:numId="2"><w:abstractNumId w:val="20"/></w:num>
@@ -110,7 +165,7 @@ describe('ingestDocx — hand-built fixtures (what the round trip cannot reach)'
       para(run('two'), numPr(1, 0)),
       para(run('sub'), numPr(1, 1)),
       para(run('bullet one'), numPr(2, 0)),
-      para(run('bullet sub'), numPr(2, 1)),
+      para(run('nested ordered'), numPr(2, 1)),
     ].join('');
 
     const buf = await buildDocx({ 'word/document.xml': documentXml(body), 'word/numbering.xml': numberingXml });
@@ -118,10 +173,160 @@ describe('ingestDocx — hand-built fixtures (what the round trip cannot reach)'
 
     expect(doc.blocks).toEqual([
       { t: 'list', ordered: true, depth: 0, items: [[{ t: 'text', v: 'one' }], [{ t: 'text', v: 'two' }]] },
-      { t: 'list', ordered: true, depth: 1, items: [[{ t: 'text', v: 'sub' }]] },
+      { t: 'list', ordered: false, depth: 1, items: [[{ t: 'text', v: 'sub' }]] },
       { t: 'list', ordered: false, depth: 0, items: [[{ t: 'text', v: 'bullet one' }]] },
-      { t: 'list', ordered: false, depth: 1, items: [[{ t: 'text', v: 'bullet sub' }]] },
+      { t: 'list', ordered: true, depth: 1, items: [[{ t: 'text', v: 'nested ordered' }]] },
     ]);
+  });
+
+  it('restarts a nested ordered level whenever a shallower item interrupts it, the OOXML default', async () => {
+    // Measured against Word's own default `w:lvlRestart` behaviour: a / a.i /
+    // b / b.i numbers the second sub-list "i", not "ii", because `b` at
+    // ilvl 0 restarts every deeper level. Only fragments whose resolved
+    // start differs from 1 carry an explicit `start` (see md.ts's own
+    // `list.start` convention), so a restarted sub-list has no `start` field
+    // at all — the same as its first appearance.
+    const numberingXml = `<?xml version="1.0" encoding="UTF-8"?><w:numbering ${NS}>
+      <w:abstractNum w:abstractNumId="10">
+        <w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/></w:lvl>
+        <w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="lowerRoman"/></w:lvl>
+      </w:abstractNum>
+      <w:num w:numId="1"><w:abstractNumId w:val="10"/></w:num>
+    </w:numbering>`;
+    const body = [
+      para(run('a'), numPr(1, 0)),
+      para(run('a.i'), numPr(1, 1)),
+      para(run('b'), numPr(1, 0)),
+      para(run('b.i'), numPr(1, 1)),
+    ].join('');
+    const buf = await buildDocx({ 'word/document.xml': documentXml(body), 'word/numbering.xml': numberingXml });
+    const { doc } = await ingestDocx(buf);
+
+    expect(doc.blocks).toEqual([
+      { t: 'list', ordered: true, depth: 0, items: [[{ t: 'text', v: 'a' }]] },
+      { t: 'list', ordered: true, depth: 1, items: [[{ t: 'text', v: 'a.i' }]] },
+      { t: 'list', ordered: true, depth: 0, items: [[{ t: 'text', v: 'b' }]], start: 2 },
+      { t: 'list', ordered: true, depth: 1, items: [[{ t: 'text', v: 'b.i' }]] }, // restarted: no `start`, i.e. back to 1
+    ]);
+  });
+
+  it('honours an explicit w:lvlRestart that narrows the default (restart only at the named shallower level)', async () => {
+    // ilvl 2 declares `<w:lvlRestart w:val="1"/>`: it restarts only when an
+    // ilvl-1 item occurs, not any shallower item — unlike the previous
+    // test's default. So the ilvl-0 item `y` between `x.a` and `y.a` must
+    // NOT restart ilvl 2 (`y.a` continues as item 2), while the next ilvl-1
+    // item `z` does restart it (`z.a` goes back to item 1).
+    const numberingXml = `<?xml version="1.0" encoding="UTF-8"?><w:numbering ${NS}>
+      <w:abstractNum w:abstractNumId="10">
+        <w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/></w:lvl>
+        <w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="decimal"/></w:lvl>
+        <w:lvl w:ilvl="2"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlRestart w:val="1"/></w:lvl>
+      </w:abstractNum>
+      <w:num w:numId="1"><w:abstractNumId w:val="10"/></w:num>
+    </w:numbering>`;
+    const body = [
+      para(run('x'), numPr(1, 1)),
+      para(run('x.a'), numPr(1, 2)),
+      para(run('y'), numPr(1, 0)),
+      para(run('y.a'), numPr(1, 2)),
+      para(run('z'), numPr(1, 1)),
+      para(run('z.a'), numPr(1, 2)),
+    ].join('');
+    const buf = await buildDocx({ 'word/document.xml': documentXml(body), 'word/numbering.xml': numberingXml });
+    const { doc } = await ingestDocx(buf);
+
+    expect(doc.blocks).toEqual([
+      { t: 'list', ordered: true, depth: 1, items: [[{ t: 'text', v: 'x' }]] },
+      { t: 'list', ordered: true, depth: 2, items: [[{ t: 'text', v: 'x.a' }]] },
+      { t: 'list', ordered: true, depth: 0, items: [[{ t: 'text', v: 'y' }]] },
+      { t: 'list', ordered: true, depth: 2, items: [[{ t: 'text', v: 'y.a' }]], start: 2 }, // not restarted by ilvl 0
+      { t: 'list', ordered: true, depth: 1, items: [[{ t: 'text', v: 'z' }]] },
+      { t: 'list', ordered: true, depth: 2, items: [[{ t: 'text', v: 'z.a' }]] }, // restarted by ilvl 1
+    ]);
+  });
+
+  it('follows a list style’s numStyleLink to the abstract that actually carries its levels', async () => {
+    // An ordinary shape for a Word list built from a paragraph/list style
+    // (Format ▸ Bullets and Numbering, linked to a style), not the
+    // hand-edited corruption `resolveLevel` also has to survive: one
+    // abstractNum carries the real `<w:lvl>` definitions under
+    // `<w:styleLink w:val="Name">`, and every abstractNum actually used by a
+    // `<w:num>` carries no levels of its own, only `<w:numStyleLink
+    // w:val="Name"/>` pointing back at it by style name.
+    const numberingXml = `<?xml version="1.0" encoding="UTF-8"?><w:numbering ${NS}>
+      <w:abstractNum w:abstractNumId="1"><w:styleLink w:val="TebinList"/>
+        <w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/></w:lvl>
+      </w:abstractNum>
+      <w:abstractNum w:abstractNumId="2"><w:numStyleLink w:val="TebinList"/></w:abstractNum>
+      <w:num w:numId="1"><w:abstractNumId w:val="2"/></w:num>
+    </w:numbering>`;
+    const body = [para(run('one'), numPr(1, 0)), para(run('two'), numPr(1, 0))].join('');
+    const buf = await buildDocx({ 'word/document.xml': documentXml(body), 'word/numbering.xml': numberingXml });
+    const { doc, dropped } = await ingestDocx(buf);
+
+    expect(doc.blocks).toEqual([
+      { t: 'list', ordered: true, depth: 0, items: [[{ t: 'text', v: 'one' }], [{ t: 'text', v: 'two' }]] },
+    ]);
+    expect(dropped).toEqual([]);
+  });
+
+  it('names tracked insertions and deletions once per paragraph instead of leaving them silent', async () => {
+    // Policy: an insertion reads as accepted (Word's own default display) —
+    // its `<w:r>` is ordinary content to the run scanner, `<w:ins>` wrapper
+    // or not — a deletion reads as rejected and contributes no text. Both are
+    // defensible; neither may be invisible on a due-diligence document, so
+    // this asserts the paragraph is reported exactly once, naming both counts.
+    const body = para(
+      `${run('kept ')}<w:ins w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z">${run('inserted ')}</w:ins>` +
+        `<w:del w:id="2" w:author="A" w:date="2026-01-01T00:00:00Z"><w:r><w:delText xml:space="preserve">deleted </w:delText></w:r></w:del>${run('text')}`,
+    );
+    const buf = await buildDocx({ 'word/document.xml': documentXml(body) });
+    const { doc, dropped } = await ingestDocx(buf);
+
+    expect(doc.blocks).toEqual([
+      { t: 'para', text: [{ t: 'text', v: 'kept inserted text' }] },
+    ]);
+    expect(dropped).toContain('paragraph contains 1 tracked insertion (kept, read as accepted) and 1 tracked deletion (dropped, read as rejected)');
+  });
+
+  it('keeps the text on either side of a page break inside the same run', async () => {
+    // Review round 1, Critical 3: `hasPageBreak` used to test the whole run
+    // and short-circuit before any text was read, so `before<break>after` in
+    // one run yielded only the break — silently discarding both text atoms.
+    const body = para(`<w:r><w:t xml:space="preserve">before</w:t><w:br w:type="page"/><w:t xml:space="preserve">after</w:t></w:r>`);
+    const buf = await buildDocx({ 'word/document.xml': documentXml(body) });
+    const { doc, dropped } = await ingestDocx(buf);
+
+    expect(doc.blocks).toEqual([
+      { t: 'para', text: [{ t: 'text', v: 'before' }] },
+      { t: 'pagebreak' },
+      { t: 'para', text: [{ t: 'text', v: 'after' }] },
+    ]);
+    expect(dropped).toEqual([]);
+  });
+
+  it('keeps the text on either side of a picture inside the same run', async () => {
+    const drawing =
+      `<w:drawing><wp:inline><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">` +
+      `<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+      `<pic:pic><pic:blipFill><a:blip r:embed="rId5"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>`;
+    const body = para(`<w:r><w:t xml:space="preserve">before</w:t>${drawing}<w:t xml:space="preserve">after</w:t></w:r>`);
+    const relsXml = RELS_XML(
+      `<Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>`,
+    );
+    const buf = await buildDocx({
+      'word/document.xml': documentXml(body),
+      'word/_rels/document.xml.rels': relsXml,
+      'word/media/image1.png': Buffer.from(PNG_HEX, 'hex'),
+    });
+    const { doc, dropped } = await ingestDocx(buf);
+
+    expect(doc.blocks).toEqual([
+      { t: 'para', text: [{ t: 'text', v: 'before' }] },
+      { t: 'image', src: PNG_DATA_URI, alt: '' },
+      { t: 'para', text: [{ t: 'text', v: 'after' }] },
+    ]);
+    expect(dropped).toEqual([]);
   });
 
   it('degrades a numId with no numbering definition to a plain paragraph, loudly, instead of crashing', async () => {
