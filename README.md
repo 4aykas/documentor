@@ -3,7 +3,7 @@
 Take a document somebody already wrote and re-issue it as a well-typeset one.
 
 ```bash
-npx @tebin/documentor build report.md --to pdf
+documentor build report.md --to pdf
 ```
 
 The result lands beside the input as `report.plain.pdf`. Pass `--to docx` for
@@ -11,8 +11,22 @@ a Word file instead — `report.plain.docx`, built from the same intermediate
 representation as the PDF, so the two cannot drift apart:
 
 ```bash
-npx @tebin/documentor build report.md --to docx
+documentor build report.md --to docx
 ```
+
+## Getting it
+
+Not on npm yet. Until it is, install it from the repository — npm builds it as
+part of the install, so there is no separate build step:
+
+```bash
+npm install github:4aykas/documentor
+npx playwright install chromium
+npx documentor doctor
+```
+
+From a clone, `npm install` and then `npm run documentor -- build report.md`
+runs the same code without installing anything.
 
 ## What it does
 
@@ -111,14 +125,9 @@ commit whose diff shows what moved. To pull in a brand change:
 
 ## Requirements
 
-Node 22+ and Chromium:
-
-```bash
-npx playwright install chromium
-documentor doctor
-```
-
-`doctor` reports what is missing and the command that fixes it.
+Node 22+ and Chromium — the two the install commands above cover. `documentor
+doctor` reports what is missing and the exact command that fixes it, which is
+the first thing to run when something behaves oddly.
 
 ## License
 
