@@ -147,7 +147,7 @@ export function buildTheme(args: {
     font: { document: token(tokens, 'font-document'), embed: 'arimo' },
     logo: {
       svg: recolourLogo(args.logoSvg, tokens),
-      heightPt: 11,
+      heightPt: 14,
       png: `data:image/png;base64,${args.logoPngBase64}`,
     },
     page: { size: 'A4', marginPt: 48 },
