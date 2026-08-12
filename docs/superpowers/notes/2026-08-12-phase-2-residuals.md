@@ -3,18 +3,16 @@
 What phase 2 knowingly left open, and why. Written when the branch was
 finished so the reasoning survives the working notes, which are not committed.
 
-## The one that matters most
+## The one that mattered most
 
-**`src/cli/build.ts`'s format dispatch falls through to Markdown.** The
-choice among renderers is an `?:` chain: `pdf`, then `docx`, then an `else`
-that writes Markdown bytes — not an exhaustive `switch` over `format`. Adding
-a format to `FORMATS` without adding its own branch compiles clean, runs
-clean, and exits 0 while writing Markdown into a file with the new extension.
-Phase 3 adds `xlsx` to that same set. Unless the dispatch becomes an
-exhaustive check first — a `switch` with no default, or an explicit
-`never`-typed guard — the day `xlsx` is added is the day this trap fires,
-silently, in the one place a reader has no reason to suspect the bytes are
-wrong: the file opens, just not as a spreadsheet.
+**~~`src/cli/build.ts`'s format dispatch falls through to Markdown.~~**
+*Found and closed before this branch merged.* The `?:` chain became an
+exhaustive `switch` over a `Format` union with a `never`-typed default, so
+adding a format to the list without a renderer is now a compile error rather
+than a file that opens and holds the wrong bytes. It was argued here that the
+fix had to land before phase 3 added `xlsx`; it landed instead of being
+written down for a future reader to act on, which is the outcome this section
+was asking for.
 
 ## Parked findings
 

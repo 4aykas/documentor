@@ -1,17 +1,50 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { ingestMarkdown } from '../ingest/md.js';
-import { validateDoc } from '../ir/validate.js';
+import { validateDoc, type Doc } from '../ir/validate.js';
 import { renderMarkdown } from '../render/md.js';
 import { renderPdf } from '../render/pdf.js';
 import { renderDocx } from '../render/docx.js';
-import { loadTheme } from '../theme/resolve.js';
+import { loadTheme, type Theme } from '../theme/resolve.js';
 import { resolveEpoch } from './timestamp.js';
 
 type Io = { log: (s: string) => void; err: (s: string) => void };
 // Exported so the top-level --help text can name exactly what this build
 // accepts, rather than carrying its own copy that can drift out of sync.
-export const FORMATS = new Set(['pdf', 'md', 'docx']); // xlsx arrives in phase 3
+const FORMAT_LIST = ['pdf', 'md', 'docx'] as const; // xlsx arrives in phase 3
+export type Format = (typeof FORMAT_LIST)[number];
+export const FORMATS: ReadonlySet<Format> = new Set(FORMAT_LIST);
+
+/** Narrows a user-supplied string to a format this build actually renders. */
+function isFormat(s: string): s is Format {
+  return (FORMATS as ReadonlySet<string>).has(s);
+}
+
+/**
+ * Format → bytes, as an exhaustive switch over a union rather than a `?:`
+ * chain with a Markdown tail.
+ *
+ * The shape matters more than the code. A chain's last branch claims every
+ * format the earlier ones did not, so adding a format to FORMAT_LIST without
+ * adding a branch here compiled clean, ran clean, exited 0, and wrote Markdown
+ * bytes into a file carrying the new extension — the worst kind of wrong
+ * answer, because the file opens. The `never` binding below makes that a
+ * compile error instead: the day `xlsx` joins the list, this stops building
+ * until someone renders it.
+ */
+async function renderTo(
+  format: Format, doc: Doc, theme: Theme, epochSeconds: number,
+): Promise<Buffer> {
+  switch (format) {
+    case 'pdf': return renderPdf(doc, theme, { epochSeconds });
+    case 'docx': return renderDocx(doc, theme, { epochSeconds });
+    case 'md': return Buffer.from(renderMarkdown(doc), 'utf8');
+    default: {
+      const unhandled: never = format;
+      throw new Error(`no renderer for format ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
 
 export function parseArgs(argv: string[]): {
   input?: string; to: string[]; theme: string; out?: string; title?: string;
@@ -49,11 +82,15 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
     io.err(`documentor: build needs an input file\n\n  documentor build <file> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>]`);
     return 2;
   }
+  // Narrowed here, once, so that everything downstream carries the union type
+  // and the dispatch in renderTo can be checked for exhaustiveness at all.
+  const formats: Format[] = [];
   for (const f of args.to) {
-    if (!FORMATS.has(f)) {
+    if (!isFormat(f)) {
       io.err(`documentor: cannot write ${JSON.stringify(f)} yet — this build knows ${[...FORMATS].join(', ')}`);
       return 2;
     }
+    formats.push(f);
   }
 
   const input = resolve(args.input);
@@ -96,7 +133,7 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
   await mkdir(dir, { recursive: true });
   const stem = basename(input, extname(input));
 
-  for (const format of args.to) {
+  for (const format of formats) {
     const target = join(dir, `${stem}.${theme.id}.${format}`);
     // Unreachable by construction today: target is always
     // "<stem>.<theme.id>.<format>", an extra path segment the resolved input
@@ -109,10 +146,7 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
       io.err(`documentor: refusing to overwrite the input file ${input}`);
       return 3; // refused — see the exit code contract in src/bin/documentor.ts
     }
-    const bytes =
-      format === 'pdf' ? await renderPdf(doc, theme, { epochSeconds })
-      : format === 'docx' ? await renderDocx(doc, theme, { epochSeconds })
-      : Buffer.from(renderMarkdown(doc), 'utf8');
+    const bytes = await renderTo(format, doc, theme, epochSeconds);
     await writeFile(target, bytes);
     io.log(`${target}  (${bytes.length.toLocaleString('en-US')} bytes)`);
   }
