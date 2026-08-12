@@ -9,7 +9,9 @@ import { renderPdf } from '../../src/render/pdf.js';
 import { renderMarkdown } from '../../src/render/md.js';
 import { loadTheme } from '../../src/theme/resolve.js';
 import { pdfText } from '../helpers/pdf-text.js';
+import { pdfRuns } from '../helpers/pdf-runs.js';
 import { rasterPages } from '../helpers/raster.js';
+import type { Theme } from '../../src/theme/types.js';
 
 // The brief's plain `new URL('.', import.meta.url).pathname` strips the
 // leading slash off a Windows drive path but leaves the rest of the
@@ -121,5 +123,214 @@ describe('kitchen sink baseline', () => {
   it('round-trips through Markdown unchanged', async () => {
     const once = renderMarkdown(ingestMarkdown(source).doc);
     expect(renderMarkdown(ingestMarkdown(once).doc)).toBe(once);
+  });
+});
+
+/**
+ * The renderers still agree.
+ *
+ * Two renderers, one IR, and both are hand-written exhaustive switches over
+ * `Block`. TypeScript forces each to *have* a case for every block type; it
+ * cannot force the two cases to *mean the same thing* — a `list` that resumes
+ * its numbering in one renderer and restarts it in the other type-checks
+ * perfectly. So one document goes through both and the results are compared
+ * the way a person would compare them: the same headings, the same numbers in
+ * the same cells, the same words in the same order.
+ *
+ * Everything below compares extracted *content*, never markup: Markdown says
+ * `**bold**` and a PDF says "bold" in a heavier face, and neither is wrong.
+ *
+ * Two differences are deliberate and excluded rather than reconciled:
+ *   - an image is a picture in the PDF and a reference in Markdown, so a data:
+ *     image contributes text to one and nothing to the other;
+ *   - the PDF's running header (title, `N / M`) has no Markdown counterpart,
+ *     and is stripped page by page below.
+ */
+describe('the renderers agree', () => {
+  // Content lifted out of one renderer's output, in reading order. `kind` is
+  // only used to route it into the right comparison.
+  type Run = { kind: 'heading1' | 'heading2' | 'heading3' | 'listItem' | 'cell' | 'text'; text: string };
+
+  const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
+
+  /** Markdown markup → the words a reader sees. Order matters: links first. */
+  function unmark(s: string): string {
+    return s
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/\*([^*]+)\*/g, '$1')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/\\\|/g, '|');
+  }
+
+  /** What the Markdown renderer put on the page. */
+  function runsFromMarkdown(md: string): Run[] {
+    const runs: Run[] = [];
+    const lines = md.split('\n');
+    let para: string[] = [];
+    const flushPara = () => {
+      if (para.length) runs.push({ kind: 'text', text: norm(unmark(para.join(' '))) });
+      para = [];
+    };
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]!;
+      const fence = line.match(/^(`{3,})/);
+      if (fence) {
+        flushPara();
+        const code: string[] = [];
+        for (i++; i < lines.length && !lines[i]!.startsWith(fence[1]!); i++) code.push(lines[i]!);
+        // Code is never unmarked: its backticks and asterisks are its content.
+        runs.push({ kind: 'text', text: norm(code.join(' ')) });
+        continue;
+      }
+      if (line.trim() === '') { flushPara(); continue; }
+      const heading = line.match(/^(#{1,3}) (.*)$/);
+      if (heading) {
+        flushPara();
+        runs.push({ kind: `heading${heading[1]!.length}` as Run['kind'], text: norm(unmark(heading[2]!)) });
+        continue;
+      }
+      const ordered = line.match(/^\s*(\d+)\. (.*)$/);
+      if (ordered) {
+        flushPara();
+        // The marker is part of the run: it is what a reader compares when
+        // they check that item 4 is not numbered 1 again.
+        runs.push({ kind: 'listItem', text: `${ordered[1]}. ${norm(unmark(ordered[2]!))}` });
+        continue;
+      }
+      const bullet = line.match(/^\s*- (.*)$/);
+      if (bullet) {
+        flushPara();
+        // A bullet glyph is drawn, not typed, so the PDF has no text for it.
+        runs.push({ kind: 'listItem', text: norm(unmark(bullet[1]!)) });
+        continue;
+      }
+      if (line.startsWith('>')) {
+        flushPara();
+        const quoted = norm(unmark(line.replace(/^>\s?/, '')));
+        if (quoted !== '') runs.push({ kind: 'text', text: quoted });
+        continue;
+      }
+      if (line.startsWith('|')) {
+        flushPara();
+        const cells = line.slice(1, line.replace(/\s+$/, '').length - 1).split(/(?<!\\)\|/);
+        // The alignment row is syntax, not content.
+        if (cells.every((c) => /^\s*:?-+:?\s*$/.test(c))) continue;
+        for (const c of cells) runs.push({ kind: 'cell', text: norm(unmark(c)) });
+        continue;
+      }
+      // A horizontal rule, an image and the pagebreak comment all draw
+      // something a reader sees but say nothing a reader reads.
+      if (/^-{3,}$/.test(line.trim()) || line.startsWith('![') || line.startsWith('<!--')) {
+        flushPara();
+        continue;
+      }
+      para.push(line);
+    }
+    flushPara();
+    return runs.filter((r) => r.text !== '');
+  }
+
+  /**
+   * What the PDF renderer put on the page. An untagged PDF has no block types,
+   * so the classification is by type size — which is exactly the evidence a
+   * reader uses. It is coupled to the stylesheet's sizes on purpose: if a
+   * renderer stops setting headings larger than body text, that is the bug.
+   */
+  function classify(sizePt: number, theme: Theme): Run['kind'] | 'chrome' {
+    const near = (a: number, b: number) => Math.abs(a - b) < 0.3;
+    if (near(sizePt, theme.type.smallPt - 1)) return 'chrome'; // the running header
+    if (near(sizePt, theme.type.h1Pt)) return 'heading1';
+    if (near(sizePt, theme.type.h2Pt)) return 'heading2';
+    if (near(sizePt, theme.type.h3Pt)) return 'heading3';
+    if (near(sizePt, theme.type.bodyPt * 0.95)) return 'cell';
+    return 'text';
+  }
+
+  /**
+   * A sequence comparison that says what went wrong. `toEqual` on two long
+   * arrays prints both and leaves the reader to diff them by eye, which is
+   * exactly the moment a failing test stops being read.
+   */
+  function expectSameSequence(what: string, fromMd: string[], fromPdf: string[]): void {
+    for (let i = 0; i < Math.max(fromMd.length, fromPdf.length); i++) {
+      if (fromMd[i] === fromPdf[i]) continue;
+      const detail =
+        fromPdf[i] === undefined
+          ? `the PDF renderer is missing ${what} #${i + 1}: ${JSON.stringify(fromMd[i])}`
+          : fromMd[i] === undefined
+            ? `the Markdown renderer is missing ${what} #${i + 1}: ${JSON.stringify(fromPdf[i])}`
+            : `${what} #${i + 1} differs — Markdown: ${JSON.stringify(fromMd[i])} · PDF: ${JSON.stringify(fromPdf[i])}`;
+      expect.fail(`the renderers disagree: ${detail}`);
+    }
+  }
+
+  async function expectRenderersAgree(markdownSource: string): Promise<void> {
+    const theme = await loadTheme('plain');
+    const { doc } = ingestMarkdown(markdownSource);
+    const buf = await renderPdf(doc, theme, { epochSeconds: EPOCH, browser });
+
+    const md = runsFromMarkdown(renderMarkdown(doc));
+    resetPdfjsWorkerGlobal();
+    const pdf = (await pdfRuns(buf))
+      .map((r) => ({ kind: classify(r.sizePt, theme), text: r.text }))
+      .filter((r): r is Run => r.kind !== 'chrome');
+
+    // Headings, in order, with their level — a heading demoted to body text in
+    // one renderer and not the other lands here.
+    const headings = (rs: Run[]) =>
+      rs.filter((r) => r.kind.startsWith('heading')).map((r) => `h${r.kind.slice(-1)} ${r.text}`);
+    expectSameSequence('heading', headings(md), headings(pdf));
+
+    // Table cell values, in row-major order, compared word by word rather than
+    // cell by cell. A PDF has no cell boundaries to read back — a wrapped cell
+    // is just more text at the table's size — so the comparable thing is the
+    // sequence of values, which is what catches a column swapped, a row
+    // dropped or a number changed. Where the *boundaries* land is geometry,
+    // and the baseline image already answers that.
+    const cellWords = (rs: Run[]) => rs.filter((r) => r.kind === 'cell').map((r) => r.text).join(' ').split(' ').filter(Boolean);
+    expectSameSequence('table word', cellWords(md), cellWords(pdf));
+
+    // List numbering. This is exactly where `list.start` drift lands: a
+    // fragment after a nested list resuming at 4 in one renderer and at 1 in
+    // the other.
+    // A marker is "digits, a dot, then a space" — which "4.50" is not, so a
+    // decimal in the prose cannot be mistaken for an item number.
+    const numbering = (rs: Run[]) =>
+      rs.flatMap((r) =>
+        r.kind === 'listItem' || r.kind === 'text'
+          ? [...r.text.matchAll(/(?:^|\s)(\d+)\.(?=\s)/g)].map((m) => m[1]!)
+          : [],
+      );
+    expectSameSequence('list number', numbering(md), numbering(pdf));
+
+    // Finally the whole body text, whitespace-normalised, as one sequence of
+    // words. A block type one renderer has learned and the other has not shows
+    // up here as a run that only one side has.
+    const pages = await pdfText(buf);
+    const stripHeader = (page: string, i: number) => {
+      // Built from what the header is supposed to say, so a header that stops
+      // saying it fails here rather than being quietly tolerated.
+      const chrome = `${doc.meta.title} ${i + 1} / ${pages.length}`;
+      expect(page.endsWith(chrome), `page ${i + 1} does not end with its running header`).toBe(true);
+      return page.slice(0, -chrome.length);
+    };
+    const pdfBody = norm(pages.map(stripHeader).join(' '));
+    const mdBody = norm(md.map((r) => r.text).join(' '));
+    expect(pdfBody, 'the two renderers put different words on the page').toBe(mdBody);
+  }
+
+  it('agrees on the kitchen-sink fixture, every block type at once', async () => {
+    await expectRenderersAgree(source);
+  });
+
+  it('agrees on the numbering of an ordered list that a sublist interrupts', async () => {
+    // The fixture has no split list, so on its own the numbering comparison
+    // never sees a `start` other than 1 — and a check that would pass whatever
+    // the renderers did is the one worth worrying about. This is the shape that
+    // produces `start`: a nested list mid-list splits the parent into
+    // fragments, and every fragment after the first has to remember where the
+    // numbering had got to.
+    await expectRenderersAgree('# Numbering\n\n1. First\n2. Second\n   - a nested aside\n3. Third\n4. Fourth\n');
   });
 });
