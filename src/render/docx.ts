@@ -8,7 +8,7 @@
 // in points until the moment it stops being.
 
 import {
-  AlignmentType, BorderStyle, Document, ExternalHyperlink, Packer, PageBreak,
+  AlignmentType, BorderStyle, Document, ExternalHyperlink, ImageRun, Packer, PageBreak,
   Paragraph, ShadingType, Table, TableCell, TableLayoutType, TableRow, TextRun,
   WidthType, type IParagraphOptions, type ParagraphChild,
 } from 'docx';
@@ -251,12 +251,43 @@ function blocks(b: Block, theme: Theme): (Paragraph | Table)[] {
       })];
     case 'pagebreak':
       return [new Paragraph({ children: [new PageBreak()] })];
-    case 'image':
-      // Task 7 replaces this with an embed for a raster data: URI. Everything
-      // else stays exactly here.
-      return [imagePlaceholder(b, theme)];
+    case 'image': {
+      const raster = RASTER.exec(b.src);
+      if (!raster) return [imagePlaceholder(b, theme)];
+      const bytes = Buffer.from(b.src.slice(b.src.indexOf(',') + 1), 'base64');
+      const type = raster[1] === 'jpeg' ? 'jpg' : (raster[1] as 'png' | 'gif');
+      // Only a PNG's size is read directly; for the others the block must say
+      // how wide it is, or there is nothing to scale from and the placeholder
+      // is the honest answer.
+      const natural = type === 'png' ? pngSize(bytes) : null;
+      const widthPt = b.widthPt ?? (natural ? Math.min(PAGE_PT[theme.page.size].w - theme.page.marginPt * 2, natural.w * 0.75) : null);
+      if (widthPt === null || natural === null) return [imagePlaceholder(b, theme)];
+      const heightPt = (widthPt * natural.h) / natural.w;
+      return [new Paragraph({
+        children: [new ImageRun({ data: bytes, type, transformation: { width: px96(widthPt), height: px96(heightPt) } })],
+        spacing: { after: dxa(8) },
+      })];
+    }
   }
 }
+
+/**
+ * A PNG's dimensions come from its IHDR chunk, which is always the first one:
+ * an 8-byte signature, a 4-byte length, the type, then width and height as
+ * big-endian 32-bit integers. Reading them is thirty bytes of arithmetic and
+ * removes the alternative, which is to assume an aspect ratio and stretch
+ * somebody's logo to fit it.
+ */
+function pngSize(bytes: Buffer): { w: number; h: number } {
+  const signature = '89504e470d0a1a0a';
+  if (bytes.subarray(0, 8).toString('hex') !== signature) throw new Error('not a PNG');
+  return { w: bytes.readUInt32BE(16), h: bytes.readUInt32BE(20) };
+}
+
+/** Word describes a picture in pixels at 96 dpi; the theme thinks in points. */
+const px96 = (pt: number): number => (pt * 4) / 3;
+
+const RASTER = /^data:image\/(png|jpeg|gif);base64,/;
 
 /**
  * What a picture becomes when it cannot be embedded: a bordered box carrying
@@ -266,7 +297,15 @@ function blocks(b: Block, theme: Theme): (Paragraph | Table)[] {
 function imagePlaceholder(b: Extract<Block, { t: 'image' }>, theme: Theme): Paragraph {
   let where = '';
   try { where = new URL(b.src).host; } catch { /* a relative path has no host */ }
-  if (where === '' && b.src.startsWith('data:')) where = b.src.slice(0, b.src.indexOf(',') + 1 || 20);
+  if (where === '' && b.src.startsWith('data:image/svg+xml')) {
+    // Word's SVG support is version-dependent, and embedding one means
+    // supplying a raster fallback beside it — which this renderer cannot
+    // produce reproducibly. Saying so is better than a picture that is there
+    // for some readers and missing for others.
+    where = 'SVG not embedded';
+  } else if (where === '' && b.src.startsWith('data:')) {
+    where = b.src.slice(0, Math.max(b.src.indexOf(',') + 1, 20));
+  }
   return new Paragraph({
     style: 'DocPlaceholder',
     children: [new TextRun({ text: b.alt }), ...(where ? [new TextRun({ text: `  ${where}`, break: 1 })] : [])],

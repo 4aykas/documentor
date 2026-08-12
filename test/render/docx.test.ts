@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Doc } from '../../src/ir/types.js';
 import { renderDocx } from '../../src/render/docx.js';
 import { resolveTheme } from '../../src/theme/resolve.js';
-import { docxPart } from '../helpers/docx-parts.js';
+import { docxEntries, docxPart } from '../helpers/docx-parts.js';
 
 const EPOCH = 1_000_000_000;
 const theme = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C', muted: '#898D8D', rule: '#CDCDCE' } });
@@ -129,5 +129,49 @@ describe('renderDocx', () => {
     // theme.colors.ink defaults to #1A1A1A when unset by the test fixture.
     expect(xml).toContain('<w:color w:val="1A1A1A"/>');
     expect(xml).not.toContain('0563C1');
+  });
+});
+
+// A 2×1 red PNG. Small enough to read in the diff, real enough to embed.
+const PNG_2x1 =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAFElEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkS7cAAAAAElFTkSuQmCC';
+
+describe('images', () => {
+  it('embeds a raster data: URI as a real picture', async () => {
+    const buf = await render(doc({ t: 'image', src: PNG_2x1, alt: 'a red bar' }));
+    // JSZip's own folder entry ("word/media/", no basename) also starts with
+    // this prefix — a document with no image at all still has one for every
+    // other folder in the package — so it has to be excluded here or the
+    // count of *files* is off by one, and would stay off by one silently.
+    expect((await docxEntries(buf)).filter((n) => n.startsWith('word/media/') && !n.endsWith('/'))).toHaveLength(1);
+    expect(await docxPart(buf, 'word/document.xml')).toContain('<w:drawing>');
+  });
+
+  it('reads the picture’s own dimensions rather than guessing them', async () => {
+    const xml = await docxPart(await render(doc({ t: 'image', src: PNG_2x1, alt: 'a' })), 'word/document.xml');
+    // 2×1 pixels, so whatever the width, the height is half of it.
+    const extent = xml.match(/<wp:extent cx="(\d+)" cy="(\d+)"/);
+    expect(extent).not.toBeNull();
+    expect(Number(extent![2])).toBe(Math.round(Number(extent![1]) / 2));
+  });
+
+  it('will not embed an SVG, and says so where the picture would have been', async () => {
+    const svg = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4=';
+    const xml = await docxPart(await render(doc({ t: 'image', src: svg, alt: 'a diagram' })), 'word/document.xml');
+    expect(xml).not.toContain('<w:drawing>');
+    expect(xml).toContain('a diagram');
+    expect(xml).toContain('SVG');
+  });
+
+  it('turns a remote image into a placeholder naming its host', async () => {
+    const xml = await docxPart(await render(doc({ t: 'image', src: 'https://cdn.example.com/x.png', alt: 'chart' })), 'word/document.xml');
+    expect(xml).not.toContain('<w:drawing>');
+    expect(xml).toContain('chart');
+    expect(xml).toContain('cdn.example.com');
+  });
+
+  it('is still byte-identical twice with a picture in it', async () => {
+    const d = doc({ t: 'image', src: PNG_2x1, alt: 'a' });
+    expect((await render(d)).equals(await render(d))).toBe(true);
   });
 });
