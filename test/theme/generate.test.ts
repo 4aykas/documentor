@@ -44,6 +44,17 @@ describe('recolourLogo', () => {
     const svg = '<svg><defs><style>.cls-1 { fill: #da291c; }</style></defs><path class="cls-1" d="M0 0"/></svg>';
     expect(recolourLogo(svg, TOKENS)).toContain('class="c-brand"');
   });
+
+  it('produces byte-identical output whether the source SVG has CRLF or LF line endings', () => {
+    // This is what catches a checkout, an export, or an editor handing the
+    // generator CRLF: without the normalisation in recolourLogo, a CRLF
+    // source embeds \r\n escapes into the theme's JSON string that an LF
+    // source does not, so the same brand assets produce different bytes
+    // depending on how they reached disk. See
+    // docs/superpowers/notes/2026-08-12-phase-2-residuals.md.
+    const crlf = published.replace(/\n/g, '\r\n');
+    expect(recolourLogo(crlf, TOKENS)).toBe(recolourLogo(published, TOKENS));
+  });
 });
 
 describe('the generator and the stylesheet', () => {

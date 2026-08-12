@@ -14,6 +14,35 @@ fix had to land before phase 3 added `xlsx`; it landed instead of being
 written down for a future reader to act on, which is the outcome this section
 was asking for.
 
+## Found by integration, not by review
+
+**The generated TEBIN theme was not byte-identical across checkouts.**
+`core.autocrlf=true` on a Windows machine, with no `.gitattributes` in the
+repository, meant `git checkout` rewrote `brand/tebin/logo-full.svg`'s line
+endings to CRLF in the working tree while the committed blob stayed LF.
+`src/theme/generate-tebin.ts` embeds that file's content verbatim into
+`themes/tebin/theme.json`, so a fresh regeneration on a Windows checkout
+produced `\r\n` escapes inside the logo string that the committed,
+Linux-generated `theme.json` did not carry — and `test/theme/tebin-in-sync.test.ts`
+exists precisely to fail on that kind of drift.
+
+It surfaced only when phase 2 was merged into `main` locally and the full
+suite re-run on the merged tree: the merge itself touched nothing about
+either file, but the checkout that came with it did, and the in-sync test
+failed as designed. No code review of this branch could have caught it —
+the diff phase 2 shipped was clean on its own; the defect was in what the
+repository's line-ending configuration did to files phase 2 didn't touch,
+which only integration exercises.
+
+Fixed at both ends, because either alone leaves a gap: `.gitattributes` now
+normalises text to LF for this repository's own checkouts and clones, and
+`recolourLogo` in `src/theme/generate.ts` normalises `\r\n` to `\n` on the
+SVG it's given before embedding it, so the generator produces the same
+bytes regardless of the checkout, export, or editor that handed it the
+file. `test/theme/generate.test.ts` feeds it a CRLF copy of the vendored
+SVG and asserts byte-identical output against the LF copy — the test that
+would have caught this before it ever reached a second machine.
+
 ## Parked findings
 
 **A Word list is text, not a list.** `src/render/docx.ts` writes the marker
