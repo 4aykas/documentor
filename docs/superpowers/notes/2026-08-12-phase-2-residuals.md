@@ -138,8 +138,28 @@ hand-made baseline fixture and sends most real photographs to the placeholder.
 
 The size is now sniffed from the bytes rather than taken from the `data:`
 URI's declared type, so a picture labelled PNG that is really a JPEG lands in
-the right reader. A GIF or a WebP is still a placeholder — the original text
-follows, because the reasoning still holds for every format without a reader.
+the right reader.
+
+*Closed for GIF and BMP on 2026-08-13, and the reason to bother was in this
+repository the whole time:* `ingest/docx.ts`'s `sniffRaster` reads PNG, JPEG,
+GIF **and BMP** out of a source document, so a `.docx` → `.docx` round trip
+was turning a picture Word had carried perfectly well into a placeholder. Both
+headers are a fixed offset away — a GIF's logical screen size at bytes 6..9
+little-endian, a BMP's in its DIB header — and neither needs the marker walk a
+JPEG did. Two details are worth keeping: the GIF measurement is the *logical
+screen*, not the first frame, because an animation's frames may be smaller
+than the canvas and sit at an offset inside it, and a BMP's height is signed,
+where a negative value means top-down row order and not a picture with a
+negative height. `docx`'s ImageRun takes `jpg | png | gif | bmp`, so those four
+are now exactly what this renderer carries, and Word was asked directly: a
+document built with a real 1×1 GIF and a real 2×2 BMP opens over COM with no
+repair prompt, both as `wdInlineShapePicture` at the requested 60pt.
+
+**WebP stays a placeholder, and it is the one case where a reader would not
+help.** `docx` has no content type for it, so there is nothing to declare in
+`[Content_Types].xml`; a VP8-chunk reader would produce a number and still no
+way to carry the bytes. Word's own WebP support is version-dependent besides.
+The original text follows, because its reasoning is what still applies there.
 
 **Word embeds a PNG and nothing else, where HTML and PDF embed any
 raster.** `src/render/docx.ts` reads a picture's natural dimensions from

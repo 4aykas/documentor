@@ -261,7 +261,7 @@ function computeWarnings(doc: Doc, theme: Theme): string[] {
     if (b.t !== 'image') continue;
     imageIndex++;
     if (!canEmbedInDocx(b.src)) {
-      warnings.push(`image ${imageIndex} will not embed in Word — only PNG embeds; a .docx build will draw a placeholder instead`);
+      warnings.push(`image ${imageIndex} will not embed in Word — PNG, JPEG, GIF and BMP embed; a .docx build will draw a placeholder instead`);
     }
   }
 

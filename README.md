@@ -63,16 +63,19 @@ deliberate rather than unfinished:
   68, it read 22. The message names the sheet and the number, so it tells you
   which range to extract and re-issue instead.
 - **Reading `.docx` carries paragraphs, headings, lists, emphasis, links, page
-  breaks and PNG images. It does not carry tables** — it reports them instead,
-  by size, so a lost table is loud rather than silent. Nothing else is
-  silently dropped either: comments, tracked changes, footnotes, text boxes and
-  the old letterhead are all named in the run's report.
-- **Writing Word embeds a PNG or a JPEG, and nothing else.** A picture needs
-  its natural proportions, and those come from reading the file — so a format
-  this renderer cannot measure becomes a visible placeholder naming what it
-  was. That includes SVG, whose Word support is version-dependent and which
+  breaks and PNG, JPEG, GIF and BMP images. It does not carry tables** — it
+  reports them instead, by size, so a lost table is loud rather than silent.
+  Nothing else is silently dropped either: comments, tracked changes,
+  footnotes, text boxes and the old letterhead are all named in the run's
+  report.
+- **Writing Word embeds a PNG, a JPEG, a GIF or a BMP** — the same four reading
+  a `.docx` carries, so a `.docx` in gives you every picture back in the
+  `.docx` out. A picture needs its natural proportions, and those come from
+  reading the file, so anything else becomes a visible placeholder naming what
+  it was. That includes SVG, whose Word support is version-dependent and which
   would need a raster shipped alongside it that cannot be produced
-  reproducibly. The PDF path embeds any raster.
+  reproducibly, and WebP, which Word's own file format has no content type for.
+  The PDF path embeds any raster.
 
 ## The decisions live in a file, not in a conversation
 

@@ -673,17 +673,76 @@ function jpegSize(bytes: Buffer): { w: number; h: number } | null {
 }
 
 /**
+ * A GIF says how big it is in the ten bytes it opens with: the signature, then
+ * the logical screen width and height as little-endian 16-bit integers. Both
+ * `GIF87a` and `GIF89a` are in the wild and put them in the same place.
+ *
+ * The logical screen, not the first frame, is the right measurement: an
+ * animation's frames may each be smaller than the canvas and sit at an offset
+ * inside it, and the canvas is the size every reader lays the picture out at.
+ * Word shows the first frame and does not animate, but it shows it at the
+ * canvas size, so this is the number that matches what a reader sees.
+ *
+ * `null` means the same thing it means for PNG, and the caller decides — see
+ * pngSize's comment, which owns that contract.
+ */
+function gifSize(bytes: Buffer): { w: number; h: number } | null {
+  if (bytes.length < 10) return null;
+  const signature = bytes.subarray(0, 6).toString('ascii');
+  if (signature !== 'GIF87a' && signature !== 'GIF89a') return null;
+  const w = bytes.readUInt16LE(6);
+  const h = bytes.readUInt16LE(8);
+  return w > 0 && h > 0 ? { w, h } : null;
+}
+
+/**
+ * A BMP's size lives in its DIB header, which follows a fixed 14-byte file
+ * header. Two shapes of DIB header are worth reading: the original
+ * `BITMAPCOREHEADER` (12 bytes, unsigned 16-bit dimensions) and
+ * `BITMAPINFOHEADER` and its successors (40 bytes or more, signed 32-bit).
+ * They are told apart by the header's own declared length, which is the first
+ * field in it.
+ *
+ * The sign matters. A negative height means the rows are stored top-down
+ * rather than bottom-up — a statement about storage order, not about the
+ * picture — so taking it at face value scales the picture to a negative
+ * height, which Word writes out and nobody can see.
+ *
+ * `null` means the same thing it means for PNG.
+ */
+function bmpSize(bytes: Buffer): { w: number; h: number } | null {
+  if (bytes.length < 26 || bytes.readUInt16LE(0) !== 0x4d42) return null; // "BM", little-endian.
+  const headerLength = bytes.readUInt32LE(14);
+  const [w, h] =
+    headerLength === 12
+      ? [bytes.readUInt16LE(18), bytes.readUInt16LE(20)]
+      : [bytes.readInt32LE(18), Math.abs(bytes.readInt32LE(22))];
+  return w > 0 && h > 0 ? { w, h } : null;
+}
+
+/**
  * The picture's natural size and the format tag Word needs for it, or `null`
  * when this renderer cannot carry the bytes at all. Sniffing the bytes rather
  * than trusting the `data:` URI's declared type is deliberate: the type is
  * whatever produced the document said it was, and a picture labelled PNG that
  * is really a JPEG would otherwise be handed to the wrong reader.
+ *
+ * The four formats here are exactly the four `docx`'s ImageRun can label
+ * (`jpg | png | gif | bmp`), and the same four ingest/docx.ts's `sniffRaster`
+ * reads out of a source document — so a .docx → .docx round trip carries
+ * through every picture it carried in. WebP is the one html.ts embeds and this
+ * does not, and the obstacle is the library, not a missing reader: there is no
+ * content type to declare for it. See the RASTER comment.
  */
-function rasterSize(bytes: Buffer): { w: number; h: number; type: 'png' | 'jpg' } | null {
+function rasterSize(bytes: Buffer): { w: number; h: number; type: 'png' | 'jpg' | 'gif' | 'bmp' } | null {
   const png = pngSize(bytes);
   if (png !== null) return { ...png, type: 'png' };
   const jpeg = jpegSize(bytes);
   if (jpeg !== null) return { ...jpeg, type: 'jpg' };
+  const gif = gifSize(bytes);
+  if (gif !== null) return { ...gif, type: 'gif' };
+  const bmp = bmpSize(bytes);
+  if (bmp !== null) return { ...bmp, type: 'bmp' };
   return null;
 }
 
@@ -691,11 +750,13 @@ function rasterSize(bytes: Buffer): { w: number; h: number; type: 'png' | 'jpg' 
 const px96 = (pt: number): number => (pt * 4) / 3;
 
 /**
- * PNG and JPEG, because those are the two this file can read a size out of,
- * and a picture needs its natural aspect ratio even when the block supplies
- * `widthPt` — the height has nothing else to come from. The rule stays "what
- * the code can carry", not "what the format list looks like": this regex once
- * accepted GIF too, which changed nothing except which branch produced the
+ * The four formats this file can both size and label: PNG, JPEG, GIF and BMP.
+ * A picture needs its natural aspect ratio even when the block supplies
+ * `widthPt` — the height has nothing else to come from — and it needs a type
+ * `docx` can write into `[Content_Types].xml`, whose ImageRun takes exactly
+ * `jpg | png | gif | bmp`. The rule stays "what the code can carry", not "what
+ * the format list looks like": this regex once accepted GIF while nothing
+ * could size one, which changed nothing except which branch produced the
  * placeholder. Accepting a format and then never embedding it is the shape of
  * promise this project exists to stop making.
  *
@@ -703,11 +764,15 @@ const px96 = (pt: number): number => (pt * 4) / 3;
  * bytes and has the final say, so a mislabelled picture still lands in the
  * right reader or in the placeholder.
  *
- * A GIF or a WebP is still a placeholder in Word while HTML and PDF embed any
- * raster `data:` URI — the renderer disagreement named in the phase's
- * residuals, now narrowed to the formats nobody photographs in.
+ * A WebP is still a placeholder in Word while HTML and PDF embed any raster
+ * `data:` URI — the last of the renderer disagreement named in the phase's
+ * residuals, and the only one whose obstacle is not a size reader: `docx` has
+ * no content type for WebP, so writing one out means hand-editing the package
+ * after it is built, and Word's own support for it is version-dependent
+ * besides. A reader for its VP8 chunk would produce a number and still no way
+ * to carry the bytes.
  */
-const RASTER = /^data:image\/(png|jpeg);base64,/;
+const RASTER = /^data:image\/(png|jpeg|gif|bmp);base64,/;
 
 /**
  * Whether this renderer can embed `src` as a real picture — the question

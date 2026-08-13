@@ -795,17 +795,98 @@ describe('images', () => {
     expect(xml).toContain('<w:drawing>');
   });
 
-  it('still refuses a GIF, and says so where the picture would have been', async () => {
-    // The renderer disagreement named in the phase-2 residuals, now narrowed:
-    // html.ts embeds any raster `data:` URI; this file can only size the two
-    // formats it has readers for.
-    const gif = `data:image/gif;base64,${Buffer.from('GIF89a').toString('base64')}`;
+  /**
+   * A GIF header: the signature, then the logical screen width and height as
+   * little-endian 16-bit integers. `version` is a parameter because both 87a
+   * and 89a are in the wild and a reader accepting only one refuses half of
+   * them for no reason a reader could explain.
+   */
+  const gifBytes = (w: number, h: number, version = '89a'): Buffer =>
+    Buffer.concat([
+      Buffer.from(`GIF${version}`, 'ascii'),
+      Buffer.from([w & 0xff, w >> 8, h & 0xff, h >> 8, 0x00, 0x00, 0x00]),
+    ]);
+  const asGif = (b: Buffer): string => `data:image/gif;base64,${b.toString('base64')}`;
+
+  it('embeds a GIF at its own aspect ratio', async () => {
+    // Not hypothetical: ingest/docx.ts reads GIF out of a source .docx and
+    // hands it on as a data: URI, so a .docx → .docx round trip turned a
+    // picture Word had carried perfectly well into a placeholder.
     const xml = await docxPart(
-      await render(doc({ t: 'image', src: gif, alt: 'an animation', widthPt: 200 })),
+      await render(doc({ t: 'image', src: asGif(gifBytes(50, 100)), alt: 'an animation', widthPt: 200 })),
+      'word/document.xml',
+    );
+    expect(xml).toContain('<w:drawing>');
+    expect(xml).not.toContain('an animation');
+    expect(xml).toContain(`cy="${Math.round(((400 * 4) / 3) * 9525)}"`); // Twice as tall as wide.
+  });
+
+  it('embeds the older GIF version too', async () => {
+    expect(
+      await docxPart(await render(doc({ t: 'image', src: asGif(gifBytes(10, 10, '87a')), alt: 'x' })), 'word/document.xml'),
+    ).toContain('<w:drawing>');
+  });
+
+  it('falls back to a placeholder for a GIF with nothing but a signature', async () => {
+    const truncated = `data:image/gif;base64,${Buffer.from('GIF89a').toString('base64')}`;
+    const xml = await docxPart(await render(doc({ t: 'image', src: truncated, alt: 'an animation' })), 'word/document.xml');
+    expect(xml).not.toContain('<w:drawing>');
+    expect(xml).toContain('an animation');
+  });
+
+  /**
+   * A BMP: the file header, then a BITMAPINFOHEADER whose width and height are
+   * signed 32-bit. `height` is signed on purpose — a negative one means the
+   * rows are stored top-down, which says nothing about how tall the picture is,
+   * and a reader that forgets the sign scales it to a negative height.
+   */
+  const bmpBytes = (w: number, h: number): Buffer => {
+    const buf = Buffer.alloc(54);
+    buf.write('BM', 0, 'ascii');
+    buf.writeUInt32LE(54, 2); // File size, near enough for a header-only fixture.
+    buf.writeUInt32LE(54, 10); // Pixel data offset.
+    buf.writeUInt32LE(40, 14); // BITMAPINFOHEADER.
+    buf.writeInt32LE(w, 18);
+    buf.writeInt32LE(h, 22);
+    return buf;
+  };
+  const asBmp = (b: Buffer): string => `data:image/bmp;base64,${b.toString('base64')}`;
+
+  it('embeds a BMP, which ingest/docx.ts also produces', async () => {
+    const xml = await docxPart(
+      await render(doc({ t: 'image', src: asBmp(bmpBytes(50, 100)), alt: 'a scan', widthPt: 200 })),
+      'word/document.xml',
+    );
+    expect(xml).toContain('<w:drawing>');
+    expect(xml).toContain(`cy="${Math.round(((400 * 4) / 3) * 9525)}"`);
+  });
+
+  it('reads a top-down BMP as tall as it really is', async () => {
+    // Negative height, same picture. Taken at face value it scales to a
+    // negative height, which Word writes out as a picture nobody can see.
+    const xml = await docxPart(
+      await render(doc({ t: 'image', src: asBmp(bmpBytes(50, -100)), alt: 'a scan', widthPt: 200 })),
+      'word/document.xml',
+    );
+    expect(xml).toContain(`cy="${Math.round(((400 * 4) / 3) * 9525)}"`);
+  });
+
+  it('refuses a WebP, because the library cannot label one', async () => {
+    // The last format html.ts embeds and this renderer does not, and the
+    // reason is not a missing size reader: `docx`'s ImageRun takes
+    // jpg | png | gif | bmp and has no content type for WebP, so there is
+    // nothing to write into [Content_Types].xml for it. Adding a reader for
+    // its VP8 chunk would produce a size and still no way to carry the bytes.
+    const webp = Buffer.concat([
+      Buffer.from('RIFF', 'ascii'), Buffer.from([0x1a, 0x00, 0x00, 0x00]),
+      Buffer.from('WEBPVP8 ', 'ascii'),
+    ]);
+    const xml = await docxPart(
+      await render(doc({ t: 'image', src: `data:image/webp;base64,${webp.toString('base64')}`, alt: 'a photo' })),
       'word/document.xml',
     );
     expect(xml).not.toContain('<w:drawing>');
-    expect(xml).toContain('an animation');
+    expect(xml).toContain('a photo');
   });
 
   it('turns a remote image into a placeholder naming its host', async () => {
