@@ -122,8 +122,7 @@ async function runningHeader(doc: Doc, theme: Theme): Promise<string> {
 
 /**
  * Turns an epoch into the `Date` pdf-lib's `setCreationDate`/`setModificationDate`
- * want, with the same guards `normalize-pdf.ts`'s `stampOf` applies for the
- * same reason: an out-of-range or non-integer epoch produces an Invalid Date
+ * want, guarded because an out-of-range or non-integer epoch produces an Invalid Date
  * silently rather than a thrown error, and pdf-lib would happily encode that
  * as a literal "D:NaNNaN…" string into the saved file. `resolveEpoch` already
  * keeps normal callers inside range; this is the backstop for a caller that

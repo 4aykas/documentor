@@ -22,8 +22,9 @@ describe('reproducibility guardrails', () => {
     const offenders: string[] = [];
     for (const file of await tsFiles(SRC)) {
       const text = await readFile(file, 'utf8');
-      // normalize-pdf.ts constructs a Date from an explicit epoch, which is fine;
-      // an argument-less `new Date()` or a Date.now() is not.
+      // Constructing a Date from an explicit epoch is fine — pdf.ts's
+      // `dateFromEpoch` and normalize-docx.ts both do; an argument-less
+      // `new Date()` or a Date.now() is not.
       const lines = text.split('\n');
       lines.forEach((line, i) => {
         if (line.trimStart().startsWith('*') || line.trimStart().startsWith('//')) return;

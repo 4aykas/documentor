@@ -507,6 +507,29 @@ ellipsis. "Clipped" was the property worth buying; "tidy" was not, and
 `docs/superpowers/notes/2026-08-13-header-bound-repro.md` holds the raster
 measurements.
 
+**~~`normalize-pdf.ts` has no caller left in `src/`.~~** *Deleted on
+2026-08-13,* with its test. Tested, exported, shipped in `dist`, and reachable
+from nothing — a module in that state reads as load-bearing to everyone who
+finds it, which is the cost the entry below was weighing against keeping its
+measurement. The measurement is kept here instead, where it costs nobody a
+wrong assumption:
+
+> Measured 2026-08-12 on Chromium's own `page.pdf()`: two runs of the same
+> page differ in exactly two places, `/CreationDate` and `/ModDate`. Both are
+> fixed-width (`D:` + 14 digits + `+00'00'`), which is what made substituting
+> them in the raw bytes leave every xref offset valid — byte-identical output
+> for one regex rather than a PDF rewrite. Chromium emits no `/ID`.
+
+That shape is Chromium's, not `pdf-lib`'s, and the difference is the whole
+reason the instrument stopped applying — `docs/superpowers/notes/2026-08-12-clean-first-page-spike.md`
+records the rest: `pdf-lib` writes a bare `Z` suffix of a different width and
+compresses the `/Info` dict into an object stream where no plain-text regex
+can see it. `src/render/normalize-docx.ts`'s header comment still contrasts
+itself with the in-place approach, which is a description of a technique and
+survives the file it was named after.
+
+The original entry follows, because it is the reasoning the deletion answers.
+
 **`normalize-pdf.ts` has no caller left in `src/`.** `renderPdf` now gets
 determinism from `pdf-lib`'s `updateMetadata: false` and writes the
 document's date back in explicitly via `setCreationDate`/

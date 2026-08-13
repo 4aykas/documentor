@@ -21,8 +21,8 @@ const render = (md: string) =>
 
 describe('renderPdf', () => {
   it('produces identical bytes on two runs', async () => {
-    // Determinism used to be normalizePdfDates' job (substitute the two date
-    // fields Chromium's own output carries). It is now a property of the
+    // Determinism used to be a post-processing pass' job (substituting the two
+    // date fields Chromium's own output carries). It is now a property of the
     // stitch instead: pdf-lib's `updateMetadata: false` on every
     // create()/load() call in stitchCleanFirstPage keeps it from writing
     // `new Date()` into a fresh /Info dict — see the spike note and the
@@ -39,8 +39,9 @@ describe('renderPdf', () => {
     // dict at all — deterministic, but silent about the date this project
     // promises never comes from the wall clock. renderPdf has to set it back
     // explicitly; this reads the produced bytes back through pdf-lib (not a
-    // regex — see normalize-pdf.ts's own note on why a regex can't reach a
-    // pdf-lib document's compressed object streams) to prove it actually
+    // regex — a pdf-lib document compresses its /Info dict into an object
+    // stream no plain-text search can reach; see the clean-first-page spike
+    // note) to prove it actually
     // landed, not just that the code that means to set it ran.
     const buf = await render('# Report\n\nHello, world.\n');
     const readBack = await PDFDocument.load(buf, { updateMetadata: false });

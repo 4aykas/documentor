@@ -4,8 +4,9 @@
 // the wall clock and offers no option), and the relationship id of every
 // external hyperlink (a nanoid off Math.random()).
 //
-// normalize-pdf.ts substitutes fixed-width bytes in place and leaves the xref
-// valid. That cannot work here: the ids deflate to different sizes and every
+// The obvious cheap fix — substituting fixed-width bytes in place, which is
+// what this project's PDF path did while Chromium's own output was what it
+// normalised — cannot work here: the ids deflate to different sizes and every
 // zip entry carries a CRC and a local-header offset. So the package is
 // unpacked, edited and rebuilt. Measured 2026-08-12: rebuilding with JSZip
 // reproduces docx's own DEFLATE output — of 28 entries only the three actually
