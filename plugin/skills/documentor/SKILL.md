@@ -1,6 +1,6 @@
 ---
 name: documentor
-description: Re-issue an existing Markdown, Word or Excel document as a well-typeset PDF, Word, or Markdown file using the documentor CLI. Use when the user has a written .md, .docx or .xlsx file and wants it re-typeset, branded, or exported to PDF/Word — not for writing new documents from scratch, not for .pdf sources (documentor cannot read PDF), and not for changing what a document says.
+description: Re-issue an existing Markdown, Word or Excel document as a well-typeset PDF, Word, or Markdown file using the documentor CLI. Use when the user has a written .md, .docx or .xlsx file and wants it re-typeset, branded, or exported to PDF/Word — not for writing new documents from scratch, not for .pdf sources (documentor cannot read PDF), and not for changing what a document says — except a commercial proposal, which `documentor proposal` assembles from a data file and a template (still writing no text of its own).
 ---
 
 # documentor
@@ -19,7 +19,8 @@ report, a memo, a proposal, a small register, something already written that
 needs to look better or come out in another format.
 
 Do **not** use it when:
-- the document doesn't exist yet — write it first, with no theming;
+- the document doesn't exist yet **and is not a proposal** — write it first,
+  with no theming; for a proposal, use the proposal flow below;
 - the source is `.pdf` — documentor cannot read PDF;
 - the source is a working spreadsheet rather than a register — see the
   spreadsheet limit below; most `.xlsx` files are refused, and offering to
@@ -46,13 +47,15 @@ Know these before promising anything to the user:
   message rather than working around it — it names the sheet and the number so
   the user knows which range to extract and re-issue instead.
 - **Writes PDF, Word (`.docx`), and Markdown.** No `.xlsx` out (a table
-  renderer exists in the design but has not shipped).
+  renderer exists in the design but has not shipped). Assembles proposals too
+  — see "The proposal flow" below — but that path still writes no text of
+  its own; documentor assembles proposals, it does not write them.
 - **Word gets no table from a `.docx` source.** Reading a `.docx`, tables are
   *reported*, not carried — a lost table is loud, not silent.
-  Paragraphs, headings, lists, emphasis, links, page breaks, and PNG images
-  all carry through.
-- **Word embeds PNG and JPEG only.** An SVG, a GIF or anything else becomes a
-  visible placeholder naming what it was; the PDF path embeds any raster.
+  Paragraphs, headings, lists, emphasis, links, page breaks, and PNG, JPEG,
+  GIF and BMP images all carry through.
+- **Word embeds PNG, JPEG, GIF and BMP.** An SVG or a WebP becomes a visible
+  placeholder naming what it was; the PDF path embeds any raster.
 
 ## The flow
 
@@ -162,6 +165,29 @@ says about itself.
 
 Output lands beside the input as `<name>.<theme>.<ext>` (or `<name>.<ext>`
 with `--plain-names`) — never overwriting the input.
+
+## The proposal flow
+
+When the user wants a commercial offer that does not exist yet:
+
+1. Ask where the offer template lives (a `.md` file, usually outside the
+   repo). No template, no flow — do not improvise one.
+2. Interview for the data file's fields — only what changes the output:
+   project, kind (COMMERCIAL OFFER / COMMERCIAL PROPOSAL), date, author,
+   the team (role, rate, hours per week — one array per role, all the same
+   length), the priced summary lines, which sections the template expects
+   (`documentor inspect <data.json>` lists errors naming anything missing),
+   and the annex spreadsheet if the template carries `{{@annex}}`.
+3. Write `<name>.proposal.json` beside the future document and **show it**.
+   The `sections.*` values are the user's words verbatim — never rewrite,
+   tighten, or expand them.
+4. Run `documentor inspect <name>.proposal.json` and relay every error and
+   warning as reported.
+5. Build: `documentor proposal <name>.proposal.json --to pdf,docx --theme tebin`.
+
+The command assembles, it does not write: every sentence comes from the data
+file or the template. A missing piece is a build error naming what is
+missing — relay it and ask, never fill the gap yourself.
 
 ## What this skill is not
 

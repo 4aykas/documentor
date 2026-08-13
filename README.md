@@ -77,6 +77,30 @@ deliberate rather than unfinished:
   reproducibly, and WebP, which Word's own file format has no content type for.
   The PDF path embeds any raster.
 
+## Proposals
+
+`documentor proposal <data.json>` assembles a commercial offer from two
+inputs: a data file holding the facts of this one offer (project, team,
+rates, hours, the sections written fresh each time) and a markdown template
+holding the skeleton and the boilerplate. Every sentence in the output comes
+from one of the two, verbatim — the command assembles, it does not write.
+
+The budget is computed, never typed: hours × rate per role, summed, printed
+as `€ 4 500,00`. A summary line marked `"covers": "budget"` must equal that
+total or the build fails quoting both figures. The involvement heatmap is
+drawn from the same team array (`{{@heatmap style=scale|fill|numbers|marks}}`,
+`scale` by default), and a deliverables register named by `"annex"` joins as
+an annex through the spreadsheet reader — with its row cap raised to 2000 for
+this one path, because a reference register is searched, not read.
+
+`templates/offer.example.md` is a generic example; a real template carries a
+company's own commercial terms and belongs outside a public repository, the
+way this repository keeps its own brand book out of git.
+
+`documentor inspect <data.json>` reports what would be assembled — the
+title, the team, the computed budget total, every validation error — and
+writes nothing.
+
 ## The decisions live in a file, not in a conversation
 
 A build's decisions — the title, the date, the entity on the letterhead, the
