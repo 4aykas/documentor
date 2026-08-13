@@ -126,28 +126,27 @@ which moved version — the two dev-dependency bumps above touch neither
 path, so byte-identity holding was expected, not just hoped for, and the
 hashes confirm it.
 
-One casualty, left as-is rather than papered over:
+One casualty, and it is closed:
 `test/baseline/local-only-pixels.test.ts` (2 tests, already excluded from
-CI on all three platforms — see below) now fails after the `pdf-to-img`
+CI on all three platforms — see below) failed after the `pdf-to-img`
 bump. It rasterises our (byte-identical, hash-confirmed) PDF output with
 `pdf-to-img` and compares the resulting PNG pixel-for-pixel against a
 committed baseline image. `pdf-to-img@5.0.0`'s newer bundled `pdfjs-dist`
-anti-aliases differently than `4.2.67` did, so the pixels differ even
-though the PDF content does not — the same "rasteriser version changes,
+anti-aliases differently than `4.2.67` did, so the pixels differed even
+though the PDF content did not — the same "rasteriser version changes,
 pixels drift, content doesn't" finding this file already exists to
 quarantine (see below), just triggered by the test tool's own dependency
-instead of a different CI machine. The committed baseline PNGs were not
-touched — regenerating them is a human call, not this triage's. Whoever
-picks it up next: either re-approve fresh baselines rastered with
-`pdf-to-img@5.x`, or accept the drift is expected and skip the two
-assertions with a comment pointing here.
+instead of a different CI machine. The triage that found it deliberately
+left the baselines alone, because re-approving a page image is a human
+call and not a triage's; a human then looked at the fresh renders and
+took them, in `c1b6cae` ("Re-photograph the page baselines after the
+rasteriser bump"). Both tests pass again on this machine.
 
 **The publish gate is clear.** `npm audit` and `npm audit --omit=dev` both
-report zero vulnerabilities; 387 of 389 tests pass (the 2 known-fragile,
-already-non-CI pixel tests above are the only exceptions, and they assert
-on test tooling, not on product output); typecheck and build are clean;
-byte-identity of both shipped formats is confirmed by hash. Nothing blocks
-`npm publish` on dependency vulnerabilities.
+report zero vulnerabilities; the whole suite passes (462 tests as of
+2026-08-13, including the two local-only pixel tests above); typecheck and
+build are clean; byte-identity of both shipped formats is confirmed by
+hash. Nothing blocks `npm publish` on dependency vulnerabilities.
 
 ## What the first CI run confirmed, and what it disproved
 
