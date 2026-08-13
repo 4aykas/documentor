@@ -252,4 +252,15 @@ describe('heatmap', () => {
     expect(html).toContain('color-mix(in srgb, var(--brand) 32%, white)');
     expect(html).toContain('print-color-adjust: exact');
   });
+
+  it('sizes the label column from the header row, where table-layout: fixed actually reads it', async () => {
+    // table-layout: fixed takes every column's width from the FIRST row's
+    // cells only. That first row is <thead>'s row, whose first cell is an
+    // empty <th> — so the label column's width has to live there, not on
+    // <td class="hm-label"> in the body, or the browser ignores it entirely
+    // and all columns come out equal, spilling long labels into week 1.
+    const html = await buildHtml(doc('scale'), theme);
+    const style = html.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? '';
+    expect(style).toMatch(/table\.heatmap\s+thead\s+th:first-child\s*\{[^}]*width:\s*28%/);
+  });
 });

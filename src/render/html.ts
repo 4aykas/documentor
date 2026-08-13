@@ -236,7 +236,12 @@ th{ text-align: left; font-weight: 700; border-bottom: 1pt solid var(--rule); pa
 td{ border-bottom: 0.5pt solid var(--rule); padding: 4pt 6pt; vertical-align: top; }
 table.heatmap{ table-layout: fixed; }
 table.heatmap td, table.heatmap th{ border-bottom: none; text-align: center; padding: 3pt 2pt; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-table.heatmap td.hm-label{ text-align: left; width: 28%; }
+/* table-layout: fixed sizes every column from the FIRST row's cells alone.
+   That first row is the <thead> row, so the label column's width has to be
+   set on its (empty) header cell, not on the <td class="hm-label"> below —
+   a width there is simply ignored for layout purposes. */
+table.heatmap thead th:first-child{ width: 28%; }
+table.heatmap td.hm-label{ text-align: left; }
 ${SCALE_STEPS.map((t, i) => `.hm-s${i + 1}{ background: color-mix(in srgb, var(--brand) ${Math.round(t * 100)}%, white); }`).join('\n')}
 .hm-fill{ background: var(--brand); }
 .hm-marks{ color: var(--brand); letter-spacing: 1pt; }
