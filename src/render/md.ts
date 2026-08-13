@@ -3,7 +3,7 @@
 
 import type { Block, Doc, Inline } from '../ir/types.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
-import { HEATMAP_LEGEND, stepOf, weekLabel } from './tint.js';
+import { stepOf, weekLabel } from './tint.js';
 
 /**
  * A refused link, written the way the HTML renderer writes it: the link's own
@@ -80,9 +80,9 @@ function block(b: Block): string {
       const lines = [
         `| ${head.join(' | ')} |`,
         `| ${sep.join(' | ')} |`,
-        ...b.rows.map((r) => `| ${[r.label, ...r.values.map(cellFor)].join(' | ')} |`),
+        ...b.rows.map((r) => `| ${[cell([{ t: 'text', v: r.label }]), ...r.values.map(cellFor)].join(' | ')} |`),
       ];
-      return (b.style === 'scale' ? [...lines, '', HEATMAP_LEGEND] : lines).join('\n');
+      return lines.join('\n');
     }
     case 'image':
       return `![${b.alt}](${b.src})`;

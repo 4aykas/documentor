@@ -27,6 +27,8 @@ Contact: {{author.name}}{{?author.phone}}, {{author.phone}}{{/?}}, {{author.emai
 
 {{@heatmap}}
 
+Shading scales with hours per week; the darkest cell is the busiest.
+
 ## RATES AND PRICE
 
 {{@budget}}

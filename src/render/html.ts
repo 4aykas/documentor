@@ -7,7 +7,7 @@ import { PAGE_PT, toMm, type Theme } from '../theme/types.js';
 import { arimoFaceCss } from './fonts.js';
 import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
-import { HEATMAP_LEGEND, SCALE_STEPS, stepOf, weekLabel } from './tint.js';
+import { SCALE_STEPS, stepOf, weekLabel } from './tint.js';
 
 export function escapeHtml(s: string): string {
   return s
@@ -113,6 +113,11 @@ function block(b: Block): string {
       const weeks = b.rows[0]?.values.length ?? 0;
       const max = Math.max(0, ...b.rows.flatMap((r) => r.values));
       const td = (v: number): string => {
+        // .hm-marks paints its glyph in the brand colour — a deliberate
+        // exemption from "brandOnLight paints fills and large display type
+        // only, never small text": a filled square glyph is a fill wearing a
+        // text costume, not text, and the greyscale-printing promise this
+        // style makes is unaffected (a red square prints as a grey square).
         if (b.style === 'marks') return `<td class="hm hm-marks">${'▪'.repeat(stepOf(v, max, 3))}</td>`;
         if (b.style === 'fill') return v > 0 ? '<td class="hm hm-fill"></td>' : '<td class="hm hm-s0"></td>';
         const cls = `hm hm-s${stepOf(v, max, SCALE_STEPS.length)}`;
@@ -123,8 +128,7 @@ function block(b: Block): string {
       const rows = b.rows
         .map((r) => `<tr><td class="hm-label">${escapeHtml(r.label)}</td>${r.values.map(td).join('')}</tr>`)
         .join('');
-      const legend = b.style === 'scale' ? `<p class="hm-legend">${escapeHtml(HEATMAP_LEGEND)}</p>` : '';
-      return `<table class="heatmap"><thead>${head}</thead><tbody>${rows}</tbody></table>${legend}`;
+      return `<table class="heatmap"><thead>${head}</thead><tbody>${rows}</tbody></table>`;
     }
     case 'image':
       return imageMarkup(b.src, b.alt, b.widthPt);
@@ -244,8 +248,7 @@ table.heatmap thead th:first-child{ width: 28%; }
 table.heatmap td.hm-label{ text-align: left; }
 ${SCALE_STEPS.map((t, i) => `.hm-s${i + 1}{ background: color-mix(in srgb, var(--brand) ${Math.round(t * 100)}%, white); }`).join('\n')}
 .hm-fill{ background: var(--brand); }
-.hm-marks{ color: var(--brand); letter-spacing: 1pt; }
-.hm-legend{ color: var(--muted); font-size: ${(ty.bodyPt * 0.85).toFixed(1)}pt; margin: 2pt 0 10pt; }
+.hm-marks{ color: var(--brand); letter-spacing: 1pt; } /* deliberate exemption from brandOnLight: a fill-shaped glyph, not small text; see heatmapBlocks() in docx.ts */
 .pagebreak{ break-after: page; page-break-after: always; }
 a{ color: var(--ink); text-decoration: underline; text-decoration-color: var(--rule); }
 .link-refused-target{ color: var(--muted); font-size: ${(ty.bodyPt * 0.85).toFixed(1)}pt; margin-left: 3pt; }`;

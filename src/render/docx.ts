@@ -17,7 +17,7 @@ import { PAGE_PT, type Theme } from '../theme/types.js';
 import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
 import { normalizeDocx } from './normalize-docx.js';
-import { HEATMAP_LEGEND, mixToWhite, SCALE_STEPS, stepOf, weekLabel } from './tint.js';
+import { mixToWhite, SCALE_STEPS, stepOf, weekLabel } from './tint.js';
 
 const halfPt = (pt: number): number => Math.round(pt * 2);
 const dxa = (pt: number): number => Math.round(pt * 20);
@@ -539,6 +539,11 @@ function heatmapBlocks(b: Extract<Block, { t: 'heatmap' }>, theme: Theme): (Para
       ...r.values.map((v) => {
         if (b.style === 'marks') {
           const marks = stepOf(v, max, 3);
+          // brand: true here is a deliberate exemption from "brandOnLight
+          // paints fills and large display type only, never small text": a
+          // filled square glyph is a fill wearing a text costume, not text,
+          // and the greyscale-printing promise this style makes is
+          // unaffected (a red square prints as a grey square).
           return cell([centred(marks > 0 ? [run('▪'.repeat(marks), true)] : [])], weekW);
         }
         if (b.style === 'fill') return cell([new Paragraph({ children: [] })], weekW, v > 0 ? hex(theme.colors.brandOnLight) : undefined);
@@ -557,13 +562,11 @@ function heatmapBlocks(b: Extract<Block, { t: 'heatmap' }>, theme: Theme): (Para
     borders: NO_BORDERS,
     rows: [headerRow, ...bodyRows],
   });
-  const legend = b.style === 'scale'
-    ? [new Paragraph({
-        spacing: { before: dxa(2), after: dxa(10) },
-        children: [new TextRun({ text: HEATMAP_LEGEND, color: hex(theme.colors.muted), size: halfPt(theme.type.bodyPt * 0.85) })],
-      })]
-    : [new Paragraph({ spacing: { after: dxa(10) }, children: [] })];
-  return [table, ...legend];
+  // A trailing spacer paragraph, kept for every style now that the legend
+  // sentence is gone: without it the heatmap table sits with no gap before
+  // whatever follows, same reasoning as the table case in blocks() below.
+  const spacer = new Paragraph({ spacing: { after: dxa(10) }, children: [] });
+  return [table, spacer];
 }
 
 function blocks(b: Block, theme: Theme, listRefs: Map<Block, string>): (Paragraph | Table)[] {

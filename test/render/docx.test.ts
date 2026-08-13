@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Doc } from '../../src/ir/types.js';
 import { columnDxa, renderDocx } from '../../src/render/docx.js';
-import { HEATMAP_LEGEND, mixToWhite } from '../../src/render/tint.js';
+import { mixToWhite } from '../../src/render/tint.js';
 import { loadTheme, resolveTheme } from '../../src/theme/resolve.js';
 import { docxEntries, docxPart } from '../helpers/docx-parts.js';
 
@@ -1046,9 +1046,12 @@ describe('heatmap', () => {
     expect(xml).toContain('>▪▪<');
   });
 
-  it('prints the legend for scale only', async () => {
-    expect(await body(hm('scale'))).toContain(HEATMAP_LEGEND);
-    expect(await body(hm('numbers'))).not.toContain(HEATMAP_LEGEND);
+  it('scale: renders the matrix with no trailing prose appended', async () => {
+    const xml = await body(hm('scale'));
+    // No legend sentence hardcoded into the renderer — that explanation is
+    // the template's to write, not this renderer's. The block still ends
+    // in the shared spacer paragraph, not a text run.
+    expect(xml).not.toMatch(/<w:t[^>]*>[^<]*Shading[^<]*<\/w:t>/);
   });
 
   it('labels the weeks W01.. in the header row', async () => {

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildHtml, escapeHtml } from '../../src/render/html.js';
 import { resolveTheme } from '../../src/theme/resolve.js';
-import { HEATMAP_LEGEND } from '../../src/render/tint.js';
 import type { Doc } from '../../src/ir/types.js';
 
 const theme = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C' } });
@@ -220,25 +219,30 @@ describe('heatmap', () => {
     ] }],
   });
 
-  it('scale: tints by step class and prints no digits', async () => {
+  it('scale: tints by step class, prints no digits, and appends no trailing prose', async () => {
     const html = await buildHtml(doc('scale'), theme);
     expect(html).toContain('<table class="heatmap">');
     expect(html).toContain('<th>W01</th>');
     expect(html).toMatch(/<td class="hm hm-s4"><\/td>/);   // 16 of max 16
     expect(html).toMatch(/<td class="hm hm-s2"><\/td>/);   // 8 of 16
     expect(html).toMatch(/<td class="hm hm-s0"><\/td>/);   // 0
-    expect(html).toContain(HEATMAP_LEGEND);
+    // The scale style renders exactly like the others: the matrix, nothing
+    // appended — no legend sentence hardcoded into the renderer. This doc
+    // holds only the heatmap block, so the table is immediately followed by
+    // the closing </main> with nothing else in between.
+    expect(html).toMatch(/<\/table>\s*<\/main>/);
   });
 
   it('numbers: prints the hours over the tint', async () => {
     const html = await buildHtml(doc('numbers'), theme);
     expect(html).toMatch(/<td class="hm hm-s4">16<\/td>/);
-    expect(html).not.toContain(HEATMAP_LEGEND);
   });
 
   it('marks: prints marks and no tint class above s0', async () => {
     const html = await buildHtml(doc('marks'), theme);
     expect(html).toMatch(/<td class="hm hm-marks">▪▪▪<\/td>/);
+    // marks carries no hm-s* tint class — its glyph count is the signal.
+    expect(html).not.toMatch(/<td class="hm hm-s[1-9]"/);
   });
 
   it('fill: binary brand fill', async () => {

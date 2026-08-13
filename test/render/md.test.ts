@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { ingestMarkdown } from '../../src/ingest/md.js';
 import type { Doc } from '../../src/ir/types.js';
 import { renderMarkdown } from '../../src/render/md.js';
-import { HEATMAP_LEGEND } from '../../src/render/tint.js';
 
 const roundTrip = (md: string) => renderMarkdown(ingestMarkdown(md).doc);
 
@@ -115,8 +114,22 @@ describe('heatmap in Markdown', () => {
     expect(md).toContain('| Electrical | ■ | ■ |  |');
   });
 
-  it('prints the legend sentence for scale only', () => {
-    expect(renderMarkdown(doc('scale'))).toContain(HEATMAP_LEGEND);
-    expect(renderMarkdown(doc('numbers'))).not.toContain(HEATMAP_LEGEND);
+  it('renders scale with no trailing prose — the matrix, nothing appended', () => {
+    const md = renderMarkdown(doc('scale'));
+    // The document ends with the last table row — no extra line explaining
+    // the shading appended after it. That explanation is the template's to
+    // write, not this renderer's.
+    expect(md.trimEnd().endsWith('| BIM | 4 | 4 | 4 |')).toBe(true);
+  });
+
+  it('escapes a pipe inside a heatmap row label', () => {
+    const withPipe: Doc = {
+      meta: { title: 'T', lang: 'en' },
+      blocks: [{ t: 'heatmap', style: 'numbers', rows: [
+        { label: 'Mechanical | HVAC', values: [1, 2] },
+      ] }],
+    };
+    const md = renderMarkdown(withPipe);
+    expect(md).toContain('| Mechanical \\| HVAC | 1 | 2 |');
   });
 });

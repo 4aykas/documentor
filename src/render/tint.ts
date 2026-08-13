@@ -27,9 +27,4 @@ export function mixToWhite(hex: string, t: number): string {
   return `#${ch(16)}${ch(8)}${ch(0)}`.toUpperCase();
 }
 
-/** The one legend sentence, shared so PDF, DOCX and Markdown print the same
- *  words. Only the scale style earns a legend — fill is binary, numbers show
- *  their own values, marks are their own legend. */
-export const HEATMAP_LEGEND = 'Shading scales with hours per week; the darkest cell is the busiest.';
-
 export const weekLabel = (i: number): string => `W${String(i + 1).padStart(2, '0')}`;
