@@ -11,8 +11,13 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # v5, not v4: the v4 releases of both actions declare a Node 20 runtime,
+      # which GitHub has deprecated and now silently forces onto Node 24. The
+      # run stays green and prints a warning — until the fallback goes away,
+      # at which point every job on this repository fails at checkout, for a
+      # reason nothing in this repository changed.
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
