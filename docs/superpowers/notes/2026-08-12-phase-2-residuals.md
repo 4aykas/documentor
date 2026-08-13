@@ -45,12 +45,53 @@ would have caught this before it ever reached a second machine.
 
 ## Parked findings
 
-**A Word list is text, not a list.** `src/render/docx.ts` writes the marker
-(`1. `, `• `) itself rather than using Word's numbering machinery, because
-Word's numbering restarts at 1 for every fragment a nested list splits off,
-and the IR's `start` — what a reader checks when they look at item 4 — is the
-thing that has to survive. The cost is that a reader cannot continue the list
-by pressing Enter at its end; it is prose that looks like a list, not one.
+**~~A Word list is text, not a list.~~** *Closed on 2026-08-13.* `blocks()`'s
+`case 'list'` in `src/render/docx.ts` no longer writes a marker run — every
+list paragraph carries a real `<w:numPr>`, and `listNumbering()` builds one
+numbering reference per IR `list` block (fragment), each its own
+`abstractNum`/`num` pair in `word/numbering.xml`. A fragment's `start`
+becomes that pair's own `<w:lvlOverride><w:startOverride>`, so the number a
+reader checks at item 4 survives the same way it always did, but now as
+Word's own numbering rather than typed text — the list is continuable by
+pressing Enter, and Word renumbers it if an item is inserted.
+
+The original plan here was one shared `abstractNum` per format (ordered,
+unordered), reused by many `num` instances each carrying its own
+`startOverride` — the idiomatic shape a hand-authored `numbering.xml` would
+use. `docx@9.7.1`'s public numbering API doesn't reach that shape: a
+paragraph's `numbering: { reference, level }` option triggers an *automatic*
+concrete-numbering instance whose `startOverride` is read off that
+reference's own level-0 config, one `start` per reference — there is no
+parameter to give two instances of the same reference two different starts.
+Distinct starts therefore need distinct references, which means distinct
+`abstractNum`s: one per fragment, not one per format. Reader-visible, this
+is the same list — same numId per fragment, same non-restarting behaviour,
+same `startOverride` value — it just costs `numbering.xml` a small
+`abstractNum` per fragment instead of two large shared ones. Not attempted:
+reaching past the public API (building `AbstractNumbering`/`ConcreteNumbering`
+directly and injecting them) to get the sharing back — the library gives no
+documented hook for it short of rewriting `numbering.xml` after the fact,
+which is a bigger and riskier change than the byte count it would save.
+
+Numbering ids are as reproducible as every other part of this renderer:
+`abstractNumId`/`numId` come from `docx`'s own per-Document counter
+(`uniqueNumericIdCreator`, plain increment, no `Math.random`, no wall
+clock), seeded and walked in the same order on every render of the same IR.
+See `normalize-docx.ts`'s comment for the check that confirmed this — no
+normalization pass was needed for numbering, unlike hyperlink relationship
+ids.
+
+`test/render/docx.test.ts`'s "real Word numbering, not written text" cases
+cover the shapes that matter: an ordered list starting somewhere other than
+1, a nested ordered list whose outer fragment resumes without restarting,
+two unrelated ordered lists each with their own start, an unordered list and
+its nested unordered list at the right indent levels, and an ordered list
+nested inside an unordered one and the reverse — each asserting the actual
+`startOverride` value and the level a paragraph's `numId` points at, not
+merely that a numbering reference exists. Forcing a fragment's `start` to 1
+regardless of the IR (reverted immediately after) failed four of those cases
+loudly, with the wrong number quoted in the assertion diff, which is the
+shape of failure this change exists to make possible.
 
 **~~Word tables have equal columns.~~** *Narrowed after this note was
 written.* The original reasoning was half true and got over-applied: an
