@@ -11,6 +11,17 @@
 // reproduces docx's own DEFLATE output — of 28 entries only the three actually
 // edited change CRC or compressed size — and Word opens the result with no
 // repair prompt.
+//
+// Checked 2026-08-13, when docx.ts's list rendering started emitting
+// word/numbering.xml: its abstractNumId/numId pairs are not ids of this
+// kind. They come from docx's own uniqueNumericIdCreator (see
+// node_modules/docx/dist/index.cjs), a plain per-Document counter seeded at
+// a fixed value and incremented once per abstractNum/num created — never
+// Math.random, never the wall clock — so two renders of the same IR ask for
+// the same ids in the same order and get the same ids back. Confirmed by
+// rendering the kitchen-sink fixture twice and diffing the buffers: no
+// bytes moved. Nothing here needed rewriting to make numbering
+// reproducible; it already was.
 
 import JSZip from 'jszip';
 

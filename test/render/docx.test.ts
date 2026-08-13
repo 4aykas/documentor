@@ -82,25 +82,36 @@ describe('renderDocx', () => {
 
   it('carries emphasis inside a list item, including a nested one', async () => {
     // A nested list arrives as two `list` blocks, one per depth — see the
-    // comment on the IR's `start` field and on docx.ts's `blocks()` `case
-    // 'list'` for why: the ingester splits an ordered list at every nesting
-    // change, and each fragment keeps only its own depth.
-    const xml = await body(doc(
+    // comment on the IR's `start` field and on docx.ts's `listNumbering()`/
+    // `blocks()` `case 'list'` for why: the ingester splits an ordered list
+    // at every nesting change, and each fragment keeps only its own depth.
+    const buf = await render(doc(
       { t: 'list', ordered: false, depth: 0, items: [[{ t: 'strong', children: [{ t: 'text', v: 'top' }] }]] },
       { t: 'list', ordered: false, depth: 1, items: [[{ t: 'em', children: [{ t: 'text', v: 'nested' }] }]] },
     ));
+    const xml = await docxPart(buf, 'word/document.xml');
     expect(xml).toContain('<w:b/>');
     expect(xml).toContain('<w:i/>');
-    // The nested item's own indent, proving it's the depth-1 fragment that
-    // carries the italic run and not a coincidence of two separate blocks.
-    // Each list paragraph is `<w:ind …/></w:pPr>`, then the written marker
-    // run ("• "), then the text run — so the indent isn't adjacent to the
-    // emphasis, only to the marker ahead of it within the same `<w:p>`.
-    const nestedIndent = xml.match(/<w:ind w:left="(\d+)"\/>(?:(?!<\/w:p>)[\s\S])*?nested/);
-    const topIndent = xml.match(/<w:ind w:left="(\d+)"\/>(?:(?!<\/w:p>)[\s\S])*?<w:b\/>/);
-    expect(nestedIndent).not.toBeNull();
-    expect(topIndent).not.toBeNull();
-    expect(Number(nestedIndent![1])).toBeGreaterThan(Number(topIndent![1]));
+    // Each list item is now real Word numbering, not a written marker: a
+    // <w:numPr> naming its fragment's own numId, then the text run — no run
+    // carries the bullet character any more. The nested item's own indent
+    // (proving it's the depth-1 fragment, not a coincidence of two separate
+    // blocks) lives in numbering.xml, on the level the paragraph's numId
+    // points at.
+    const topNumId = xml.match(/<w:numPr><w:ilvl w:val="0"\/><w:numId w:val="(\d+)"\/><\/w:numPr><\/w:pPr><w:r><w:rPr><w:b\/>/)?.[1];
+    const nestedNumId = xml.match(/<w:numPr><w:ilvl w:val="0"\/><w:numId w:val="(\d+)"\/><\/w:numPr><\/w:pPr><w:r><w:rPr><w:i\/>/)?.[1];
+    expect(topNumId, 'expected the top-level item to carry a numId').toBeDefined();
+    expect(nestedNumId, 'expected the nested item to carry its own, distinct numId').toBeDefined();
+    expect(nestedNumId).not.toBe(topNumId);
+
+    const numbering = await docxPart(buf, 'word/numbering.xml');
+    const leftOf = (numId: string): number => {
+      const abstractId = numbering.match(new RegExp(`<w:num w:numId="${numId}"><w:abstractNumId w:val="(\\d+)"`))?.[1];
+      const left = numbering.match(new RegExp(`<w:abstractNum w:abstractNumId="${abstractId}"[\\s\\S]*?<w:ind w:left="(\\d+)"`))?.[1];
+      expect(left, `expected abstractNum ${abstractId} (numId ${numId}) to carry a left indent`).toBeDefined();
+      return Number(left);
+    };
+    expect(leftOf(nestedNumId!)).toBeGreaterThan(leftOf(topNumId!));
   });
 
   // A single run carries every rPr child inside one <w:rPr>...</w:rPr>
@@ -170,14 +181,142 @@ describe('renderDocx', () => {
   });
 
   it('numbers an ordered list from the IR’s own start', async () => {
-    const xml = await body(doc({ t: 'list', ordered: true, depth: 0, start: 4, items: [[{ t: 'text', v: 'a' }], [{ t: 'text', v: 'b' }]] }));
-    expect(xml).toContain('4.');
-    expect(xml).toContain('5.');
+    // The number a reader checks at item 4 has to survive as Word's own
+    // numbering, not as a written run: this asserts the startOverride in
+    // numbering.xml, not text in the body, so it fails if a future change
+    // goes back to writing "4. " as a string.
+    const buf = await render(doc({ t: 'list', ordered: true, depth: 0, start: 4, items: [[{ t: 'text', v: 'a' }], [{ t: 'text', v: 'b' }]] }));
+    const xml = await docxPart(buf, 'word/document.xml');
+    const numId = xml.match(/<w:numId w:val="(\d+)"\/>/)?.[1];
+    expect(numId, 'expected the list items to carry a numId').toBeDefined();
+    // Both items share the one numId — one fragment, one numbering instance —
+    // Word supplies 4 and 5 itself from a single startOverride, not two.
+    expect([...xml.matchAll(/<w:numId w:val="(\d+)"\/>/g)].map((m) => m[1])).toEqual([numId, numId]);
+    const numbering = await docxPart(buf, 'word/numbering.xml');
+    const abstractId = numbering.match(new RegExp(`<w:num w:numId="${numId}"><w:abstractNumId w:val="(\\d+)"`))?.[1];
+    expect(numbering).toContain(`<w:num w:numId="${numId}"><w:abstractNumId w:val="${abstractId}"/><w:lvlOverride w:ilvl="0"><w:startOverride w:val="4"/></w:lvlOverride></w:num>`);
+    expect(numbering).toContain(`<w:abstractNum w:abstractNumId="${abstractId}"`);
+    expect(numbering).toMatch(new RegExp(`<w:abstractNum w:abstractNumId="${abstractId}"[\\s\\S]*?<w:numFmt w:val="decimal"/>`));
   });
 
   it('indents a nested list by its depth', async () => {
-    const xml = await body(doc({ t: 'list', ordered: false, depth: 2, items: [[{ t: 'text', v: 'deep' }]] }));
-    expect(xml).toMatch(/<w:ind w:left="\d+"/);
+    const buf = await render(doc({ t: 'list', ordered: false, depth: 2, items: [[{ t: 'text', v: 'deep' }]] }));
+    const numbering = await docxPart(buf, 'word/numbering.xml');
+    expect(numbering).toMatch(/<w:ind w:left="\d+"/);
+  });
+
+  // Real Word numbering, not a written marker — see listNumbering() in
+  // docx.ts. One numId per `list` block (fragment); a fragment's start lives
+  // in its own numId's <w:lvlOverride><w:startOverride>, which is the only
+  // lever docx@9.7.1's public numbering API exposes for "don't restart at 1
+  // here." These cases are the numbers-are-the-whole-point proof the phase's
+  // residuals note called for: each asserts the startOverride value and the
+  // level a paragraph sits at, not merely that a numbering reference exists.
+  describe('real Word numbering, not written text', () => {
+    /** Every list paragraph's (ilvl, numId), in document order. */
+    const numPrs = (xml: string): { ilvl: string; numId: string }[] =>
+      [...xml.matchAll(/<w:numPr><w:ilvl w:val="(\d+)"\/><w:numId w:val="(\d+)"\/><\/w:numPr>/g)]
+        .map((m) => ({ ilvl: m[1]!, numId: m[2]! }));
+
+    /** A numId's startOverride, or undefined if that numId isn't in numbering.xml at all. */
+    const startOverride = (numbering: string, numId: string): string | undefined =>
+      numbering.match(new RegExp(`<w:num w:numId="${numId}"><w:abstractNumId w:val="\\d+"/><w:lvlOverride w:ilvl="0"><w:startOverride w:val="(\\d+)"/>`))?.[1];
+
+    /** The numFmt ("decimal" or "bullet") of the abstractNum a numId points at. */
+    const numFmt = (numbering: string, numId: string): string | undefined => {
+      const abstractId = numbering.match(new RegExp(`<w:num w:numId="${numId}"><w:abstractNumId w:val="(\\d+)"`))?.[1];
+      if (abstractId === undefined) return undefined;
+      return numbering.match(new RegExp(`<w:abstractNum w:abstractNumId="${abstractId}"[\\s\\S]*?<w:numFmt w:val="(\\w+)"`))?.[1];
+    };
+
+    /** The left indent of the abstractNum a numId points at. */
+    const leftIndent = (numbering: string, numId: string): number => {
+      const abstractId = numbering.match(new RegExp(`<w:num w:numId="${numId}"><w:abstractNumId w:val="(\\d+)"`))?.[1];
+      const left = numbering.match(new RegExp(`<w:abstractNum w:abstractNumId="${abstractId}"[\\s\\S]*?<w:ind w:left="(\\d+)"`))?.[1];
+      expect(left, `expected abstractNum ${abstractId} (numId ${numId}) to carry a left indent`).toBeDefined();
+      return Number(left);
+    };
+
+    it('gives a nested ordered list its own numId that does not restart the outer list', async () => {
+      // A nested list splits its ordered parent into three fragments — see
+      // the IR's `start` comment. The ingester computes the outer fragment's
+      // resumed `start` (3, after two outer items); this only proves the
+      // renderer carries that number through, not that the ingester's own
+      // arithmetic is exercised here.
+      const buf = await render(doc(
+        { t: 'list', ordered: true, depth: 0, items: [[{ t: 'text', v: 'outer 1' }], [{ t: 'text', v: 'outer 2' }]] },
+        { t: 'list', ordered: true, depth: 1, items: [[{ t: 'text', v: 'inner 1' }]] },
+        { t: 'list', ordered: true, depth: 0, start: 3, items: [[{ t: 'text', v: 'outer 3' }]] },
+      ));
+      const xml = await docxPart(buf, 'word/document.xml');
+      const numbering = await docxPart(buf, 'word/numbering.xml');
+      const [outerA1, outerA2, inner1, outerB1] = numPrs(xml);
+      expect(outerA1!.numId).toBe(outerA2!.numId); // one fragment, one numId
+      expect(inner1!.numId).not.toBe(outerA1!.numId);
+      expect(outerB1!.numId).not.toBe(outerA1!.numId); // resumed fragment: its own numId
+      expect(outerB1!.numId).not.toBe(inner1!.numId);
+      expect(startOverride(numbering, outerA1!.numId)).toBe('1');
+      expect(startOverride(numbering, inner1!.numId)).toBe('1');
+      // The number that matters: the outer list resumes at 3, not 1.
+      expect(startOverride(numbering, outerB1!.numId)).toBe('3');
+    });
+
+    it('gives two unrelated ordered lists in one document each their own start', async () => {
+      const buf = await render(doc(
+        { t: 'list', ordered: true, depth: 0, items: [[{ t: 'text', v: 'a' }], [{ t: 'text', v: 'b' }]] },
+        { t: 'para', text: [{ t: 'text', v: 'between the two lists' }] },
+        { t: 'list', ordered: true, depth: 0, start: 10, items: [[{ t: 'text', v: 'x' }], [{ t: 'text', v: 'y' }]] },
+      ));
+      const xml = await docxPart(buf, 'word/document.xml');
+      const numbering = await docxPart(buf, 'word/numbering.xml');
+      const [first, , third] = numPrs(xml);
+      expect(first!.numId).not.toBe(third!.numId);
+      expect(startOverride(numbering, first!.numId)).toBe('1');
+      expect(startOverride(numbering, third!.numId)).toBe('10');
+    });
+
+    it('indents an unordered list and its nested unordered list at the right levels', async () => {
+      const buf = await render(doc(
+        { t: 'list', ordered: false, depth: 0, items: [[{ t: 'text', v: 'top' }]] },
+        { t: 'list', ordered: false, depth: 1, items: [[{ t: 'text', v: 'nested' }]] },
+      ));
+      const xml = await docxPart(buf, 'word/document.xml');
+      const numbering = await docxPart(buf, 'word/numbering.xml');
+      const [top, nested] = numPrs(xml);
+      expect(numFmt(numbering, top!.numId)).toBe('bullet');
+      expect(numFmt(numbering, nested!.numId)).toBe('bullet');
+      expect(leftIndent(numbering, nested!.numId)).toBeGreaterThan(leftIndent(numbering, top!.numId));
+    });
+
+    it('nests an ordered list inside an unordered one, each keeping its own format', async () => {
+      const buf = await render(doc(
+        { t: 'list', ordered: false, depth: 0, items: [[{ t: 'text', v: 'bullet' }]] },
+        { t: 'list', ordered: true, depth: 1, start: 1, items: [[{ t: 'text', v: 'one' }], [{ t: 'text', v: 'two' }]] },
+      ));
+      const xml = await docxPart(buf, 'word/document.xml');
+      const numbering = await docxPart(buf, 'word/numbering.xml');
+      const [outer, inner1, inner2] = numPrs(xml);
+      expect(numFmt(numbering, outer!.numId)).toBe('bullet');
+      expect(numFmt(numbering, inner1!.numId)).toBe('decimal');
+      expect(inner1!.numId).toBe(inner2!.numId);
+      expect(startOverride(numbering, inner1!.numId)).toBe('1');
+      expect(leftIndent(numbering, inner1!.numId)).toBeGreaterThan(leftIndent(numbering, outer!.numId));
+    });
+
+    it('nests an unordered list inside an ordered one, each keeping its own format', async () => {
+      const buf = await render(doc(
+        { t: 'list', ordered: true, depth: 0, start: 5, items: [[{ t: 'text', v: 'one' }]] },
+        { t: 'list', ordered: false, depth: 1, items: [[{ t: 'text', v: 'sub a' }], [{ t: 'text', v: 'sub b' }]] },
+      ));
+      const xml = await docxPart(buf, 'word/document.xml');
+      const numbering = await docxPart(buf, 'word/numbering.xml');
+      const [outer, inner1, inner2] = numPrs(xml);
+      expect(numFmt(numbering, outer!.numId)).toBe('decimal');
+      expect(startOverride(numbering, outer!.numId)).toBe('5');
+      expect(numFmt(numbering, inner1!.numId)).toBe('bullet');
+      expect(inner1!.numId).toBe(inner2!.numId);
+      expect(leftIndent(numbering, inner1!.numId)).toBeGreaterThan(leftIndent(numbering, outer!.numId));
+    });
   });
 
   it('breaks the page where the IR says to', async () => {

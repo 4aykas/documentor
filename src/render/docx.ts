@@ -8,9 +8,9 @@
 // in points until the moment it stops being.
 
 import {
-  AlignmentType, BorderStyle, Document, ExternalHyperlink, Header, ImageRun, LineRuleType, Packer,
+  AlignmentType, BorderStyle, Document, ExternalHyperlink, Header, ImageRun, LevelFormat, LineRuleType, Packer,
   PageBreak, PageNumber, Paragraph, ShadingType, Table, TableCell, TableLayoutType, TableRow,
-  TextRun, WidthType, type IParagraphOptions, type ParagraphChild,
+  TextRun, WidthType, type ILevelsOptions, type IParagraphOptions, type ParagraphChild,
 } from 'docx';
 import type { Block, Doc, Inline } from '../ir/types.js';
 import { PAGE_PT, type Theme } from '../theme/types.js';
@@ -109,6 +109,67 @@ function styles(theme: Theme) {
       para('DocRunningHeader', 'Doc Running Header', { size: halfPt(ty.smallPt - 1), color: hex(c.muted) }, { spacing: { after: 0 } }),
     ],
   };
+}
+
+// A hanging indent, not a flush one: the marker sits in the gap between
+// `left - hanging` and `left`, the text starts at `left`. 18pt is Word's own
+// usual default hanging width for a first-level list and reads correctly at
+// every depth this renderer produces, so one constant serves all of them.
+const LIST_HANGING_PT = 18;
+
+/**
+ * One numbering reference — and so one `abstractNum` — per list *fragment*,
+ * keyed by the fragment's own object identity so `blocks()` can look its
+ * reference back up without threading an index through every other case.
+ *
+ * This is the fix for "a Word list is text, not a list" (see the phase 2
+ * residuals note): Word's numbering restarts every fragment at 1 unless told
+ * otherwise, and the only lever docx@9.7.1's public numbering API exposes for
+ * "otherwise" is a `startOverride` read off the *reference's own* level 0
+ * config — one `start` per reference, not per paragraph. A fragment's `start`
+ * is therefore a property of its reference, which means distinct starts need
+ * distinct references: two fragments cannot share an `abstractNum` and still
+ * each carry their own `startOverride` through this API. The one-abstractNum-
+ * per-fragment shape below is what that constraint leaves — heavier than the
+ * idiomatic "one format, many instances" a hand-authored numbering.xml would
+ * use, but the reader-visible result is identical: every fragment is a real,
+ * continuable, independently-numbered Word list, and the number a reader
+ * checks at item 4 survives regardless of which fragment carries it.
+ *
+ * Reference names are derived from the document's own block order — the
+ * position of each `list` block among `doc.blocks` — never from a counter
+ * seeded by anything outside the document, so the same IR renders to the
+ * same numbering ids on every run.
+ */
+function listNumbering(doc: Doc, theme: Theme): { refOf: Map<Block, string>; config: { levels: readonly ILevelsOptions[]; reference: string }[] } {
+  const refOf = new Map<Block, string>();
+  const config: { levels: readonly ILevelsOptions[]; reference: string }[] = [];
+  let n = 0;
+  for (const b of doc.blocks) {
+    if (b.t !== 'list') continue;
+    const reference = `list${n}`;
+    n += 1;
+    refOf.set(b, reference);
+    const left = dxa(16 + b.depth * 14) + dxa(LIST_HANGING_PT);
+    const hanging = dxa(LIST_HANGING_PT);
+    config.push({
+      reference,
+      levels: [{
+        level: 0,
+        format: b.ordered ? LevelFormat.DECIMAL : LevelFormat.BULLET,
+        text: b.ordered ? '%1.' : '•',
+        alignment: AlignmentType.LEFT,
+        // Only `format: DECIMAL` reads `start` as a number a reader would
+        // check; docx still requires the field, so a bullet fragment gets
+        // the harmless default rather than an optional this type doesn't
+        // carry (exactOptionalPropertyTypes: a bare `undefined` here is not
+        // the same thing as the property being absent).
+        start: b.ordered ? (b.start ?? 1) : 1,
+        style: { run: { size: halfPt(theme.type.bodyPt) }, paragraph: { indent: { left, hanging } } },
+      }],
+    });
+  }
+  return { refOf, config };
 }
 
 /**
@@ -415,7 +476,7 @@ function table(b: Extract<Block, { t: 'table' }>, theme: Theme): Table {
   });
 }
 
-function blocks(b: Block, theme: Theme): (Paragraph | Table)[] {
+function blocks(b: Block, theme: Theme, listRefs: Map<Block, string>): (Paragraph | Table)[] {
   switch (b.t) {
     case 'heading': {
       const style = (['DocH1', 'DocH2', 'DocH3'] as const)[b.level - 1]!;
@@ -426,19 +487,17 @@ function blocks(b: Block, theme: Theme): (Paragraph | Table)[] {
     case 'para':
       return [new Paragraph({ style: 'DocBody', children: inline(b.text, {}, theme) })];
     case 'list': {
-      const start = b.start ?? 1;
-      return b.items.map((it, i) => new Paragraph({
+      // The reference — and so the abstractNum/num pair — was assigned once
+      // per fragment in listNumbering(), keyed by this exact block. It is
+      // there, not looked up again here, because a fragment's `start` lives
+      // on its reference's own level 0 config; see listNumbering()'s comment
+      // for why one fragment needs one reference.
+      const reference = listRefs.get(b);
+      if (reference === undefined) throw new Error('list block missing its numbering reference — listNumbering() did not see this block');
+      return b.items.map((it) => new Paragraph({
         style: 'DocList',
-        indent: { left: dxa(16 + b.depth * 14) },
-        children: [
-          // The marker is written, not generated. Word's numbering machinery
-          // would restart at 1 for every fragment a nested list splits off,
-          // and the IR's `start` is the thing that must survive — it is what a
-          // reader checks when they look at item 4. Named in the residuals: in
-          // Word this is text, not a list.
-          new TextRun({ text: b.ordered ? `${start + i}. ` : '• ' }),
-          ...inline(it, {}, theme),
-        ],
+        numbering: { reference, level: 0 },
+        children: inline(it, {}, theme),
       }));
     }
     // html.ts: `table{ margin: 0 0 12pt }`. `<w:tbl>` has no spacing property
@@ -815,9 +874,11 @@ export async function renderDocx(doc: Doc, theme: Theme, opts: { epochSeconds: n
     new Paragraph({ style: 'DocTitle', children: [new TextRun({ text: doc.meta.title })] }),
     ...(doc.meta.subtitle ? [new Paragraph({ style: 'DocSubtitle', children: [new TextRun({ text: doc.meta.subtitle })] })] : []),
   ];
+  const { refOf, config } = listNumbering(doc, theme);
 
   const packed = await Packer.toBuffer(new Document({
     styles: styles(theme),
+    numbering: { config },
     // Deliberately NOT `features: { updateFields: true }`. That flag writes
     // `<w:updateFields/>` into settings.xml, which is what makes Word greet
     // every recipient with "This document contains fields that may refer to
@@ -851,7 +912,7 @@ export async function renderDocx(doc: Doc, theme: Theme, opts: { epochSeconds: n
         },
       },
       headers: { default: runningHeader(doc, theme), first: firstPageHeader(doc, theme) },
-      children: [...head, ...doc.blocks.flatMap((b) => blocks(b, theme))],
+      children: [...head, ...doc.blocks.flatMap((b) => blocks(b, theme, refOf))],
     }],
   }));
 
