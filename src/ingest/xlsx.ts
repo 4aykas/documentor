@@ -597,7 +597,14 @@ export function readWorksheet(
 export async function ingestXlsx(
   bytes: Uint8Array | Buffer,
   opts: { title?: string; subtitle?: string; date?: string; entity?: string } = {},
+  // `limits` exists for exactly one caller: the proposal assembler's annex
+  // path, where a deliverables register is a reference list that is searched,
+  // not read, and long is its nature. Neither `build` nor a sidecar can reach
+  // this parameter — the promise "a spreadsheet has to be a register a person
+  // reads on paper" weakens nowhere else.
+  limits: { maxRows?: number } = {},
 ): Promise<Ingested> {
+  const maxRows = limits.maxRows ?? MAX_ROWS;
   const zip = await JSZip.loadAsync(bytes);
   const workbookFile = zip.file('xl/workbook.xml');
   if (!workbookFile) {
@@ -685,10 +692,10 @@ export async function ingestXlsx(
     // reader would have got, not the size the spreadsheet claims.
     const keptRows = rowTrimmed.length;
     const keptCols = rowTrimmed[0]!.length;
-    if (keptRows > MAX_ROWS || keptCols > MAX_COLS) {
+    if (keptRows > maxRows || keptCols > MAX_COLS) {
       refusedCount++;
       refusalMessages.push(
-        `sheet "${sheet.name}" refused: ${keptRows} rows × ${keptCols} columns exceeds this build's ${MAX_ROWS}×${MAX_COLS} limit — a table nobody can read on paper has not been re-issued, it has been reformatted into uselessness; extract the range that matters into a small sheet, and re-issue that.`,
+        `sheet "${sheet.name}" refused: ${keptRows} rows × ${keptCols} columns exceeds this build's ${maxRows}×${MAX_COLS} limit — a table nobody can read on paper has not been re-issued, it has been reformatted into uselessness; extract the range that matters into a small sheet, and re-issue that.`,
       );
       continue;
     }

@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
 import { ingestXlsx } from '../../src/ingest/xlsx.js';
+import { makeXlsx } from '../helpers/xlsx-fixture.js';
 
 /**
  * Zips a handful of XML strings into a minimal .xlsx, the same pattern
@@ -577,5 +578,31 @@ describe('ingestXlsx — title', () => {
     const buf = await oneSheetXlsx(rows);
     const { doc } = await ingestXlsx(buf, { title: 'Shareholders Register' });
     expect(doc.meta.title).toBe('Shareholders Register');
+  });
+});
+
+describe('the row cap, and who may move it', () => {
+  const rowsOf = (n: number): string[][] => [['Name', 'Value'], ...Array.from({ length: n }, (_, i) => [`item ${i}`, String(i)])];
+
+  // A single-sheet workbook where the only sheet is refused throws (the
+  // pre-existing "every sheet in the workbook was refused" rule, unrelated to
+  // this task) rather than returning a `dropped` list — same pattern the
+  // pre-existing "refuses a sheet beyond the row limit" test above uses.
+  it('refuses past the cap by default, exactly as before', async () => {
+    const buf = await makeXlsx(rowsOf(201));
+    await expect(ingestXlsx(buf)).rejects.toThrow(/refused/);
+    await expect(ingestXlsx(buf)).rejects.toThrow(/200/);
+  });
+
+  it('honours a raised cap when the caller supplies one', async () => {
+    const { doc, dropped } = await ingestXlsx(await makeXlsx(rowsOf(201)), {}, { maxRows: 2000 });
+    expect(dropped.join('\n')).not.toMatch(/refused/);
+    expect(doc.blocks.some((b) => b.t === 'table')).toBe(true);
+  });
+
+  it('still refuses past even a raised cap, naming the raised number', async () => {
+    const buf = await makeXlsx(rowsOf(11));
+    await expect(ingestXlsx(buf, {}, { maxRows: 10 })).rejects.toThrow(/refused/);
+    await expect(ingestXlsx(buf, {}, { maxRows: 10 })).rejects.toThrow(/10/);
   });
 });
