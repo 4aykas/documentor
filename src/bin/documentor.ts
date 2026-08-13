@@ -11,7 +11,7 @@ const USAGE = `documentor — re-issue an existing document as a well-typeset on
 
   documentor inspect <file|dir> [--theme plain] [--json] [--recursive] [--title <s>] [--date <s>] [--entity <s>] [--config <file>] [--no-config]
   documentor build <file|dir> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>] [--title <s>] [--date <s>] [--entity <s>] [--plain-names] [--recursive] [--config <file>] [--no-config]
-  documentor proposal <data.json> [--to pdf,md,docx] [--theme plain] [--out <dir>]
+  documentor proposal <data.json> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>]
   documentor doctor
 
 inspect reads a document and reports what it understood, what it had to drop,
