@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildHtml, escapeHtml } from '../../src/render/html.js';
 import { resolveTheme } from '../../src/theme/resolve.js';
+import { HEATMAP_LEGEND } from '../../src/render/tint.js';
 import type { Doc } from '../../src/ir/types.js';
 
 const theme = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C' } });
@@ -207,5 +208,48 @@ describe('link schemes', () => {
 describe('escapeHtml', () => {
   it('escapes the five dangerous characters', () => {
     expect(escapeHtml(`<>&"'`)).toBe('&lt;&gt;&amp;&quot;&#39;');
+  });
+});
+
+describe('heatmap', () => {
+  const doc = (style: 'fill' | 'scale' | 'numbers' | 'marks'): Doc => ({
+    meta: { title: 'T', lang: 'en' },
+    blocks: [{ t: 'heatmap', style, rows: [
+      { label: 'Electrical', values: [16, 8, 0] },
+      { label: 'BIM', values: [4, 4, 4] },
+    ] }],
+  });
+
+  it('scale: tints by step class and prints no digits', async () => {
+    const html = await buildHtml(doc('scale'), theme);
+    expect(html).toContain('<table class="heatmap">');
+    expect(html).toContain('<th>W01</th>');
+    expect(html).toMatch(/<td class="hm hm-s4"><\/td>/);   // 16 of max 16
+    expect(html).toMatch(/<td class="hm hm-s2"><\/td>/);   // 8 of 16
+    expect(html).toMatch(/<td class="hm hm-s0"><\/td>/);   // 0
+    expect(html).toContain(HEATMAP_LEGEND);
+  });
+
+  it('numbers: prints the hours over the tint', async () => {
+    const html = await buildHtml(doc('numbers'), theme);
+    expect(html).toMatch(/<td class="hm hm-s4">16<\/td>/);
+    expect(html).not.toContain(HEATMAP_LEGEND);
+  });
+
+  it('marks: prints marks and no tint class above s0', async () => {
+    const html = await buildHtml(doc('marks'), theme);
+    expect(html).toMatch(/<td class="hm hm-marks">▪▪▪<\/td>/);
+  });
+
+  it('fill: binary brand fill', async () => {
+    const html = await buildHtml(doc('fill'), theme);
+    expect(html).toMatch(/<td class="hm hm-fill"><\/td>/);
+    expect(html).toMatch(/<td class="hm hm-s0"><\/td>/);
+  });
+
+  it('the stylesheet computes tints from the theme and survives print', async () => {
+    const html = await buildHtml(doc('scale'), theme);
+    expect(html).toContain('color-mix(in srgb, var(--brand) 32%, white)');
+    expect(html).toContain('print-color-adjust: exact');
   });
 });

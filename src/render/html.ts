@@ -7,7 +7,7 @@ import { PAGE_PT, toMm, type Theme } from '../theme/types.js';
 import { arimoFaceCss } from './fonts.js';
 import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
-import { weekLabel } from './tint.js';
+import { HEATMAP_LEGEND, SCALE_STEPS, stepOf, weekLabel } from './tint.js';
 
 export function escapeHtml(s: string): string {
   return s
@@ -110,19 +110,21 @@ function block(b: Block): string {
       return `<table><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
     }
     case 'heatmap': {
-      // Minimal, honest rendering: a plain table of hours, no tint, no marks.
-      // Tasks 5/6 give this its styled appearance in html.ts and docx.ts.
       const weeks = b.rows[0]?.values.length ?? 0;
-      const head = Array.from({ length: weeks }, (_, i) => `<th>${weekLabel(i)}</th>`).join('');
+      const max = Math.max(0, ...b.rows.flatMap((r) => r.values));
+      const td = (v: number): string => {
+        if (b.style === 'marks') return `<td class="hm hm-marks">${'▪'.repeat(stepOf(v, max, 3))}</td>`;
+        if (b.style === 'fill') return v > 0 ? '<td class="hm hm-fill"></td>' : '<td class="hm hm-s0"></td>';
+        const cls = `hm hm-s${stepOf(v, max, SCALE_STEPS.length)}`;
+        const text = b.style === 'numbers' && v > 0 ? String(v) : '';
+        return `<td class="${cls}">${text}</td>`;
+      };
+      const head = `<tr><th></th>${Array.from({ length: weeks }, (_, i) => `<th>${weekLabel(i)}</th>`).join('')}</tr>`;
       const rows = b.rows
-        .map(
-          (row) =>
-            `<tr><th>${escapeHtml(row.label)}</th>${row.values
-              .map((v) => `<td>${v}</td>`)
-              .join('')}</tr>`,
-        )
+        .map((r) => `<tr><td class="hm-label">${escapeHtml(r.label)}</td>${r.values.map(td).join('')}</tr>`)
         .join('');
-      return `<table><thead><tr><th></th>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+      const legend = b.style === 'scale' ? `<p class="hm-legend">${escapeHtml(HEATMAP_LEGEND)}</p>` : '';
+      return `<table class="heatmap"><thead>${head}</thead><tbody>${rows}</tbody></table>${legend}`;
     }
     case 'image':
       return imageMarkup(b.src, b.alt, b.widthPt);
@@ -232,6 +234,13 @@ tr{ break-inside: avoid; }
 thead{ display: table-header-group; }
 th{ text-align: left; font-weight: 700; border-bottom: 1pt solid var(--rule); padding: 4pt 6pt; }
 td{ border-bottom: 0.5pt solid var(--rule); padding: 4pt 6pt; vertical-align: top; }
+table.heatmap{ table-layout: fixed; }
+table.heatmap td, table.heatmap th{ border-bottom: none; text-align: center; padding: 3pt 2pt; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+table.heatmap td.hm-label{ text-align: left; width: 28%; }
+${SCALE_STEPS.map((t, i) => `.hm-s${i + 1}{ background: color-mix(in srgb, var(--brand) ${Math.round(t * 100)}%, white); }`).join('\n')}
+.hm-fill{ background: var(--brand); }
+.hm-marks{ color: var(--brand); letter-spacing: 1pt; }
+.hm-legend{ color: var(--muted); font-size: ${(ty.bodyPt * 0.85).toFixed(1)}pt; margin: 2pt 0 10pt; }
 .pagebreak{ break-after: page; page-break-after: always; }
 a{ color: var(--ink); text-decoration: underline; text-decoration-color: var(--rule); }
 .link-refused-target{ color: var(--muted); font-size: ${(ty.bodyPt * 0.85).toFixed(1)}pt; margin-left: 3pt; }`;
