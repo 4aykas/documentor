@@ -21,6 +21,7 @@
   "files": [
     "dist",
     "themes",
+    "templates",
     "README.md",
     "LICENSE",
     "NOTICE"

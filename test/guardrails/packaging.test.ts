@@ -76,6 +76,19 @@ describe('what an installed copy contains', () => {
     ).toMatch(/\brm\b|rmSync|rimraf|del\b/);
   });
 
+  it('ships the example template the README points readers at', () => {
+    // README.md is itself shipped (see `files` above) and tells the reader
+    // that templates/offer.example.md is a generic example to copy from.
+    // Derive the path from the README's own words rather than hardcoding
+    // it a second time, so a renamed example fails here instead of leaving
+    // a shipped README pointing at nothing.
+    const readme = readFileSync(join(ROOT, 'README.md'), 'utf8');
+    const referenced = readme.match(/`(templates\/[\w.-]+)`/);
+    expect(referenced, 'README.md no longer names a templates/ example file').not.toBeNull();
+    const path = referenced![1]!;
+    expect(shippedUnder(path), `README.md references ${path}, which is not under any "files" entry`).toBeDefined();
+  });
+
   it('builds before npm can pack or publish it', () => {
     // dist/ is gitignored, so the build has to happen inside npm's own
     // lifecycle — a human remembering to run it first is exactly the step that
