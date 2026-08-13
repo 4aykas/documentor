@@ -10,7 +10,9 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { chromium, type Browser } from 'playwright-core';
 import { assembleProposal } from '../proposal/assemble.js';
+import { budgetTotalCents } from '../proposal/blocks.js';
 import { readProposalData } from '../proposal/data.js';
+import { formatMoney } from '../proposal/money.js';
 import { ProposalError } from '../proposal/types.js';
 import { validateDoc, type Doc } from '../ir/validate.js';
 import { renderMarkdown } from '../render/md.js';
@@ -93,6 +95,57 @@ export async function loadProposal(input: string): Promise<{
  *  document's name, so it does not survive into the output. */
 export function proposalStem(input: string): string {
   return basename(input, extname(input)).replace(/\.proposal$/i, '');
+}
+
+/**
+ * `documentor inspect <data.json>` — what `proposal` would assemble, and
+ * every problem in its way, rendering nothing. Its own small report rather
+ * than build-inspect's DocInspection: that structure answers "what does this
+ * document contain", this one answers "will this data file assemble" — the
+ * counts a Doc inspection carries would all be derivable but say nothing a
+ * decision needs that the fields below do not.
+ */
+export async function runProposalInspect(input: string, json: boolean, io: Io): Promise<number> {
+  try {
+    const loaded = await loadProposal(input);
+    const { doc } = await assembleProposal({
+      data: loaded.data, template: loaded.template,
+      ...(loaded.annex === undefined ? {} : { annex: loaded.annex }),
+    });
+    const report = {
+      file: input,
+      status: 'ok' as const,
+      title: doc.meta.title,
+      weeks: loaded.data.team[0]?.hoursPerWeek.length ?? 0,
+      roles: loaded.data.team.map((r) => r.role),
+      budgetTotal: formatMoney(budgetTotalCents(loaded.data), loaded.data.currency),
+      sections: Object.keys(loaded.data.sections),
+      annex: loaded.data.annex !== undefined,
+      warnings: loaded.warnings,
+    };
+    if (json) {
+      io.log(JSON.stringify(report, null, 2));
+    } else {
+      io.log(`${basename(input)}: ok — "${report.title}"`);
+      io.log(`  team: ${report.roles.join(', ')} over ${report.weeks} week(s)`);
+      io.log(`  budget total: ${report.budgetTotal}`);
+      io.log(`  sections: ${report.sections.join(', ') || '(none)'}`);
+      io.log(`  annex: ${report.annex ? 'yes' : 'no'}`);
+      for (const w of report.warnings) io.log(`  warning: ${w}`);
+    }
+    return 0;
+  } catch (e) {
+    if (e instanceof ProposalError) {
+      if (json) {
+        io.log(JSON.stringify({ file: input, status: 'failed', errors: e.errors }, null, 2));
+      } else {
+        io.log(`${basename(input)}: failed — ${e.errors.length} problem(s):`);
+        for (const msg of e.errors) io.log(`  - ${msg}`);
+      }
+      return 2;
+    }
+    throw e;
+  }
 }
 
 export async function runProposal(argv: string[], io: Io): Promise<number> {

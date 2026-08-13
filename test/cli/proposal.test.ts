@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { proposalStem, runProposal } from '../../src/cli/proposal.js';
+import { runInspect } from '../../src/cli/inspect.js';
 import { docxPart } from '../helpers/docx-parts.js';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
@@ -95,5 +96,34 @@ describe('documentor proposal', () => {
     const code = await runProposal([join(dir, 'warn.proposal.json'), '--to', 'md'], o);
     expect(code).toBe(0);
     expect(o.errs.join('\n')).toMatch(/zero hours/);
+  });
+});
+
+describe('documentor inspect <data.json>', () => {
+  it('reports what would be assembled, without writing anything', async () => {
+    const o = io();
+    const code = await runInspect([join(dir, 'example.proposal.json'), '--json'], o);
+    expect(code).toBe(0);
+    const parsed = JSON.parse(o.out.join('\n')) as {
+      status: string; title: string; weeks: number; roles: string[];
+      budgetTotal: string; sections: string[]; annex: boolean; warnings: string[];
+    };
+    expect(parsed.status).toBe('ok');
+    expect(parsed.title).toBe('COMMERCIAL PROPOSAL — Example Project');
+    expect(parsed.weeks).toBe(5);
+    expect(parsed.roles).toEqual(['BIM Coordinator', 'Mechanical Engineer']);
+    expect(parsed.budgetTotal).toContain('4');
+    expect(parsed.annex).toBe(false);
+    expect(existsSync(join(dir, 'example.plain.pdf'))).toBe(false);
+  });
+
+  it('lists every validation error and exits 2', async () => {
+    const o = io();
+    await writeFile(join(dir, 'broken.proposal.json'), JSON.stringify({ template: './offer.template.md', bogus: 1 }), 'utf8');
+    const code = await runInspect([join(dir, 'broken.proposal.json'), '--json'], o);
+    expect(code).toBe(2);
+    const parsed = JSON.parse(o.out.join('\n')) as { status: string; errors: string[] };
+    expect(parsed.status).toBe('failed');
+    expect(parsed.errors.join('\n')).toMatch(/bogus/);
   });
 });

@@ -28,6 +28,7 @@ import { loadTheme, type Theme } from '../theme/resolve.js';
 import { PAGE_PT } from '../theme/types.js';
 import { checkFormats, discoverInputs, ingest, READABLE_EXTS, type IngestOpts } from './build.js';
 import { resolveConfig, type ConfigFlags, DEFAULT_THEME } from './config.js';
+import { runProposalInspect } from './proposal.js';
 
 type Io = { log: (s: string) => void; err: (s: string) => void };
 
@@ -524,6 +525,11 @@ export async function runInspect(argv: string[], io: Io): Promise<number> {
     batchFailed = discovered.unreadableDirs.length > 0;
   } else {
     const ext = extname(inputArg).toLowerCase();
+    // A .json input is a proposal data file — its own small report, because
+    // it answers a different question ("will this assemble?") than a
+    // document inspection does ("what does this contain?"). See
+    // runProposalInspect.
+    if (ext === '.json') return runProposalInspect(inputArg, args.json, io);
     if (ext !== '.md' && ext !== '.markdown' && ext !== '.docx' && ext !== '.xlsx') {
       io.err(`documentor: cannot read ${ext || 'a file with no extension'} yet — inspect reads .md, .docx and .xlsx`);
       return 2;
