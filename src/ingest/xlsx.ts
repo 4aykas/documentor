@@ -230,8 +230,23 @@ function extractV(content: string): string | undefined {
 // already treats as the practical ceiling for one A4-portrait page — wide
 // enough that no register in the corpus trips it, narrow enough that a sheet
 // built as a database export (hundreds of columns) still does.
+//
+// Both are applied to the table that would actually be built — after wholly
+// empty columns are dropped — because a sheet's used range spans every column
+// anything was ever typed in. Measured after the first version shipped: five
+// sheets in the corpus were refused on a width they did not have, one of them
+// an employee list holding 14 columns of data inside a 44-column span.
 const MAX_ROWS = 200;
 const MAX_COLS = 25;
+
+// The machine's bound, as opposed to the page's two above. `readWorksheet`
+// allocates a rows x cols grid before resolving a single value, so a sheet
+// whose raw used range is enormous has to be turned away before that
+// allocation — the 94,309-row sheet in the corpus is the case. Generous on
+// purpose: it exists to stop an allocation, not to judge a document. A
+// megacell is a few tens of MB of empty cells and comfortably above anything
+// a real sheet reaches once it is a table rather than a database.
+const MAX_GRID_CELLS = 1_000_000;
 
 // Above this many single-row merges *in one sheet*, listing each flattened
 // range by name stops being a report and starts being the thing it warns
@@ -437,10 +452,24 @@ export function readWorksheet(
 
   const rows = maxRow - minRow + 1;
   const cols = maxCol - minCol + 1;
-  if (rows > MAX_ROWS || cols > MAX_COLS) {
+  // Only the machine's bound is checked here, not the page's. The two are
+  // different limits for different reasons, and conflating them refused real
+  // documents: a sheet's used range spans every column anything was ever
+  // typed in, so an employee list carrying 14 columns of data spread over a
+  // 44-column span was declined for a width it does not have. Five sheets in
+  // the corpus were refused that way. The page's limit therefore moves to
+  // after the empty columns are gone, where it can be applied to the table
+  // that would really be built — see the caller.
+  //
+  // What stays here is the reason this scan is cheap in the first place: the
+  // grid below is rows x cols cells, allocated before a single value is
+  // resolved, so a sheet whose raw span is enormous has to be turned away
+  // before that allocation rather than after it. The bound is generous
+  // because it is protecting memory, not legibility.
+  if (rows * cols > MAX_GRID_CELLS) {
     return {
       kind: 'refused',
-      message: `sheet "${sheetName}" refused: ${rows} rows × ${cols} columns exceeds this build's ${MAX_ROWS}×${MAX_COLS} limit — a table nobody can read on paper has not been re-issued, it has been reformatted into uselessness; extract the range that matters into a small sheet, and re-issue that.`,
+      message: `sheet "${sheetName}" refused: its used range spans ${rows} rows × ${cols} columns, more than this build will build a grid for; extract the range that matters into a small sheet, and re-issue that.`,
     };
   }
 
@@ -646,6 +675,21 @@ export async function ingestXlsx(
     const rowTrimmed = trimLeadingRows(colTrimmed);
     if (rowTrimmed.length === 0) {
       sink.dropped.push(`sheet "${sheet.name}" is entirely empty once leading blank rows and wholly empty columns are trimmed — nothing to show`);
+      continue;
+    }
+
+    // The page's limit, applied here rather than at the raw used range,
+    // because this is the table a reader would be handed. Applied to the raw
+    // range it declined five sheets in the corpus for a width they did not
+    // have — see MAX_ROWS/MAX_COLS. The message therefore names the size the
+    // reader would have got, not the size the spreadsheet claims.
+    const keptRows = rowTrimmed.length;
+    const keptCols = rowTrimmed[0]!.length;
+    if (keptRows > MAX_ROWS || keptCols > MAX_COLS) {
+      refusedCount++;
+      refusalMessages.push(
+        `sheet "${sheet.name}" refused: ${keptRows} rows × ${keptCols} columns exceeds this build's ${MAX_ROWS}×${MAX_COLS} limit — a table nobody can read on paper has not been re-issued, it has been reformatted into uselessness; extract the range that matters into a small sheet, and re-issue that.`,
+      );
       continue;
     }
 

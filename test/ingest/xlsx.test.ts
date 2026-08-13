@@ -507,6 +507,39 @@ describe('ingestXlsx — merges: flatten a single-row span, refuse a row-spannin
     await expect(ingestXlsx(buf)).rejects.toThrow(/26 columns/);
   });
 
+  it('measures the column limit against the table it would build, not the used range', async () => {
+    // The defect this covers, found by running the tool at the real corpus:
+    // a sheet's used range spans every column anything was ever typed in, so
+    // five sheets were refused for widths they did not have — an employee
+    // list carrying 14 columns of data inside a 44-column span among them.
+    //
+    // Here A-Z is 26 columns of span, past MAX_COLS, but only A, B and Z hold
+    // a value; the other 23 are present because they carry a style, the same
+    // shape as the corpus's own. The table that would be built is 3 columns
+    // wide, so it must ingest.
+    const styled = (ref: string) => `<c r="${ref}" s="1"/>`;
+    const letters = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i));
+    const cells = (r: number) => letters
+      .map((l) => (l === 'A' || l === 'B' || l === 'Z' ? inlineStr(`${l}${r}`, `${l}${r}`) : styled(`${l}${r}`)))
+      .join('');
+    const buf = await oneSheetXlsx(row(1, cells(1)) + row(2, cells(2)));
+    const { doc } = await ingestXlsx(buf);
+    const table = doc.blocks[1] as { head: unknown[]; rows: unknown[][] };
+    expect(table.head).toHaveLength(3);
+    expect(table.rows[0]).toHaveLength(3);
+  });
+
+  it('names the size the reader would have got, not the size the sheet claims', async () => {
+    // Same shape, but 26 columns really do hold a value, so it is refused —
+    // and the number in the message has to be the one that mattered.
+    const letters = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i));
+    const full = (r: number) => row(r, letters.map((l) => inlineStr(`${l}${r}`, l)).join(''));
+    // A blank leading row, so the used range is 3 rows deep and the table that
+    // would be built is 2. The message has to say 2, not 3.
+    const buf = await oneSheetXlsx(row(1, '') + full(2) + full(3));
+    await expect(ingestXlsx(buf)).rejects.toThrow(/refused: 2 rows × 26 columns/);
+  });
+
   it('fails the whole ingest — not an empty document — when every sheet is refused', async () => {
     const mergedRows = row(1, inlineStr('A1', 'X')) + row(2, inlineStr('A2', 'Y'));
     const buf = await oneSheetXlsx(mergedRows, { merges: ['A1:A2'] }); // row-spanning — still refused
