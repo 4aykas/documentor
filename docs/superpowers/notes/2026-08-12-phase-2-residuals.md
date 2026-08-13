@@ -156,9 +156,22 @@ saying how wide it is. Closing the gap means a JPEG decoder — enough of one
 to read SOF0's height and width — which is a phase-3-sized piece of work, not
 a merge-eve one.
 
-**No visual baseline for DOCX.** Word cannot be driven headlessly here, and
-rasterising through a converter would test the converter, not the renderer.
-The agreement test (below) is what stands in for it.
+**No visual baseline for DOCX**, and the reason first given here was wrong.
+It said Word cannot be driven headlessly on this machine. It can: Word is
+installed and answers over COM, invisibly, and has now been used twice —
+once to measure the table column widths this note records further up, and
+once to ask Word what list numbers it draws, which is what settled the
+numbering change. Both were the deciding evidence, and neither would have
+been attempted by anyone reading this paragraph.
+
+What stands is the second half. Rasterising a `.docx` through a converter
+tests the converter; the agreement test is what stands in for a page image.
+But COM reaches the thing itself — `ListFormat.ListString`, a cell's width,
+a paragraph's style as Word resolves it — and that is a different and better
+instrument than a picture for anything with a number in it. It is
+Windows-only, so it cannot join CI; it belongs beside the human-approved
+page images as a local check, and it is the right first move whenever a
+question is really "what does Word do with this".
 
 **The duplicate-`w:styleId` question is answered by avoidance, not by
 measurement.** `styles.xml` gives every custom style a distinct id, which
