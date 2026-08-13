@@ -1,0 +1,35 @@
+// The facts of one offer — only what changes from offer to offer. Everything
+// stable lives in the template. See the spec's "Data model".
+
+export type ProposalRole = { role: string; rate: number; hoursPerWeek: number[] };
+export type ProposalSummaryLine = { item: string; price: number; covers?: 'budget' };
+export type ProposalAuthor = { name: string; email: string; phone?: string };
+
+export type ProposalData = {
+  template: string;
+  kind: string;
+  project: string;
+  date: string;
+  author: ProposalAuthor;
+  team: ProposalRole[];
+  currency: 'EUR';
+  sections: Record<string, string>;
+  stage?: string;
+  number?: string;
+  docNumber?: string;
+  rev?: string;
+  summary?: ProposalSummaryLine[];
+  annex?: string;
+};
+
+/**
+ * Carries every problem found in one pass. Filling a data file must not be a
+ * ping-pong with the build — one error per run is the failure mode this class
+ * exists to prevent.
+ */
+export class ProposalError extends Error {
+  constructor(public readonly errors: string[]) {
+    super(errors.join('\n'));
+    this.name = 'ProposalError';
+  }
+}
