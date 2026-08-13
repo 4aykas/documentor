@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { runProposal } from '../../src/cli/proposal.js';
+import { proposalStem, runProposal } from '../../src/cli/proposal.js';
 import { docxPart } from '../helpers/docx-parts.js';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
@@ -26,6 +26,14 @@ beforeAll(async () => {
   const data = JSON.parse(readFileSync(join(ROOT, 'test', 'fixtures', 'offer-example.proposal.json'), 'utf8')) as Record<string, unknown>;
   data['template'] = './offer.template.md';
   await writeFile(join(dir, 'example.proposal.json'), JSON.stringify(data, null, 2), 'utf8');
+});
+
+describe('proposalStem', () => {
+  it('strips the .proposal marker case-insensitively', () => {
+    expect(proposalStem('EXAMPLE.PROPOSAL.JSON')).toBe('EXAMPLE');
+    expect(proposalStem('example.proposal.json')).toBe('example');
+    expect(proposalStem('example.Proposal.json')).toBe('example');
+  });
 });
 
 describe('documentor proposal', () => {

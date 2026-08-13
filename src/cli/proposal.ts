@@ -92,7 +92,7 @@ export async function loadProposal(input: string): Promise<{
  *  The `.proposal` marker is the data file's own naming convention, not the
  *  document's name, so it does not survive into the output. */
 export function proposalStem(input: string): string {
-  return basename(input, extname(input)).replace(/\.proposal$/, '');
+  return basename(input, extname(input)).replace(/\.proposal$/i, '');
 }
 
 export async function runProposal(argv: string[], io: Io): Promise<number> {
@@ -161,6 +161,15 @@ export async function runProposal(argv: string[], io: Io): Promise<number> {
   try {
     for (const format of formats) {
       const target = join(dir, `${stem}.${theme.id}.${format}`);
+      // Unlike build.ts's own copy of this guard, this one cannot fire today:
+      // `input` is required above to end in `.json`, and every `format` this
+      // command writes is pdf, docx or md — none of them `json` — so `target`
+      // can never resolve back to `input`. Kept anyway, not deleted: it is
+      // the same protection `build` carries for the same reason, and the day
+      // this command grows something that could collide with its own input
+      // (a `--plain-names` equivalent, a format whose extension is `json`),
+      // a guard that was deleted here is a silent gap, where a guard that
+      // was already sitting here — explained — is already correct.
       if (resolve(target) === input) {
         io.err(`documentor: refusing to overwrite the input file ${input}`);
         refused = true;
