@@ -4,3 +4,8 @@ dist/
 *.log
 .superpowers/
 test/**/__actual__/
+# Working material, not source: the offers and templates a proposal is built
+# from are the company's own commercial documents, and this repository is
+# meant to be published. The brand book is kept out of the tebin-style repo
+# the same way, for the same reason.
+.input/
