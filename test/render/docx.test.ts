@@ -1046,6 +1046,16 @@ describe('heatmap', () => {
     expect(xml).toContain('>▪▪<');
   });
 
+  it('marks: deliberately paints the glyph runs in the brand colour', async () => {
+    const xml = await body(hm('marks'));
+    // A filled-square glyph is a fill wearing a text costume, not text, so
+    // it is exempt from "brandOnLight paints fills and large display type
+    // only, never small text" — unlike the numbers style above. A future
+    // change flipping marks to plain ink must update this test knowingly.
+    const runs = [...xml.matchAll(/<w:r>[\s\S]*?<\/w:r>/g)].map((m) => m[0]);
+    expect(runs.some((r) => r.includes('▪') && r.includes('DA291C'))).toBe(true);
+  });
+
   it('scale: renders the matrix with no trailing prose appended', async () => {
     const xml = await body(hm('scale'));
     // No legend sentence hardcoded into the renderer — that explanation is
