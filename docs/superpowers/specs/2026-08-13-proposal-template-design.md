@@ -201,7 +201,8 @@ BER01-shaped example, rendered to PDF, for the owner to pick by eye.
 xlsx ingest — same code, same rules on merges, sheet preambles, empty
 columns. Nothing is duplicated. The directive emits only the tables (one per
 sheet); the "ANNEX A" heading and the page break before it are template
-boilerplate (`\pagebreak` already exists).
+boilerplate (a `{{@pagebreak}}` directive was added for it — the ingest
+markdown had no page-break syntax of its own).
 
 The 200-row cap is a deliberate exception here. It stands elsewhere as "what
 a person reads on paper", and for a document body it is right. An annex is a
