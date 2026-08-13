@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Doc } from '../../src/ir/types.js';
 import { columnDxa, renderDocx } from '../../src/render/docx.js';
+import { HEATMAP_LEGEND, mixToWhite } from '../../src/render/tint.js';
 import { loadTheme, resolveTheme } from '../../src/theme/resolve.js';
 import { docxEntries, docxPart } from '../helpers/docx-parts.js';
 
@@ -1011,5 +1012,53 @@ describe('the letterhead', () => {
     await expect(
       renderDocx({ meta: { title: 'R', lang: 'en' }, blocks: [] }, brokenLogo, { epochSeconds: EPOCH }),
     ).rejects.toThrow(/theme\.logo\.png/);
+  });
+});
+
+describe('heatmap', () => {
+  const hm = (style: 'fill' | 'scale' | 'numbers' | 'marks') =>
+    doc({ t: 'heatmap', style, rows: [
+      { label: 'Electrical', values: [16, 8, 0] },
+      { label: 'BIM', values: [4, 4, 4] },
+    ] });
+
+  it('scale: shades cells with tints computed from the theme', async () => {
+    const xml = await body(hm('scale'));
+    // 16/16 → step 4 → t=1 → the brand colour itself; 8/16 → step 2 → t=0.32.
+    expect(xml).toContain('w:fill="DA291C"');
+    expect(xml).toContain(`w:fill="${mixToWhite('#DA291C', 0.32).slice(1)}"`);
+    // The zero cell is not shaded at all.
+    const cells = [...xml.matchAll(/<w:tc>[\s\S]*?<\/w:tc>/g)].map((m) => m[0]);
+    expect(cells.some((c) => !c.includes('w:fill'))).toBe(true);
+  });
+
+  it('numbers: prints the hours in ink, never in the brand red', async () => {
+    const xml = await body(hm('numbers'));
+    expect(xml).toContain('>16<');
+    // brandOnLight paints fills only — a digit run must not carry the brand colour.
+    const runs = [...xml.matchAll(/<w:r>[\s\S]*?<\/w:r>/g)].map((m) => m[0]);
+    expect(runs.filter((r) => r.includes('>16<')).every((r) => !r.includes('DA291C'))).toBe(true);
+  });
+
+  it('marks: steps marks against the matrix maximum', async () => {
+    const xml = await body(hm('marks'));
+    expect(xml).toContain('▪▪▪');
+    expect(xml).toContain('>▪▪<');
+  });
+
+  it('prints the legend for scale only', async () => {
+    expect(await body(hm('scale'))).toContain(HEATMAP_LEGEND);
+    expect(await body(hm('numbers'))).not.toContain(HEATMAP_LEGEND);
+  });
+
+  it('labels the weeks W01.. in the header row', async () => {
+    const xml = await body(hm('fill'));
+    expect(xml).toContain('W01');
+    expect(xml).toContain('W03');
+  });
+
+  it('is byte-identical twice with a heatmap in it', async () => {
+    const d = hm('scale');
+    expect((await render(d)).equals(await render(d))).toBe(true);
   });
 });

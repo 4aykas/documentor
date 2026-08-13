@@ -301,4 +301,21 @@ describe('Word says what the others say', () => {
     const rels = await docxPart(buf, 'word/_rels/document.xml.rels');
     expectSameSequence('link target', { label: 'IR', items: linkTargetsFromIr(doc) }, { label: 'Word', items: linkTargetsFromRels(rels) });
   });
+
+  it('shades the heatmap exactly where the IR puts the hours', async () => {
+    // Hand-built IR rather than wordFrom(): markdown cannot express a heatmap,
+    // and the offer assembler is the only producer — this pins the renderer
+    // against the IR directly, the same reference the other comparisons use.
+    const ir: Doc = {
+      meta: { title: 'T', lang: 'en' },
+      blocks: [{ t: 'heatmap', style: 'numbers', rows: [
+        { label: 'Electrical', values: [16, 8, 0] },
+        { label: 'BIM', values: [4, 0, 4] },
+      ] }],
+    };
+    const xml = await docxPart(await renderDocx(ir, await loadTheme('plain'), { epochSeconds: EPOCH }), 'word/document.xml');
+    const table = tablesFromDocx(xml)[0]!;
+    const values = table.slice(1).map((row) => row.slice(1).map((c) => (c.text === '' ? 0 : Number(c.text))));
+    expect(values).toEqual([[16, 8, 0], [4, 0, 4]]);
+  });
 });

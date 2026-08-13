@@ -17,7 +17,7 @@ import { PAGE_PT, type Theme } from '../theme/types.js';
 import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
 import { normalizeDocx } from './normalize-docx.js';
-import { weekLabel } from './tint.js';
+import { HEATMAP_LEGEND, mixToWhite, SCALE_STEPS, stepOf, weekLabel } from './tint.js';
 
 const halfPt = (pt: number): number => Math.round(pt * 2);
 const dxa = (pt: number): number => Math.round(pt * 20);
@@ -499,18 +499,71 @@ function table(b: Extract<Block, { t: 'table' }>, theme: Theme): Table {
 }
 
 /**
- * Minimal, honest rendering: the matrix as a plain IR table (hours as text,
- * no shading) drawn through the existing table machinery above, so the grid,
- * borders and column widths already agree with every other table in the
- * document. Tasks 5/6 replace this with the styled version.
+ * The involvement matrix. Shading carries the value; any text is ink —
+ * brandOnLight paints fills and large display type only, never digits at
+ * body size, which is the brand book's own line and the theme's law.
  */
-function heatmapAsTable(b: Extract<Block, { t: 'heatmap' }>, theme: Theme): Table {
+function heatmapBlocks(b: Extract<Block, { t: 'heatmap' }>, theme: Theme): (Paragraph | Table)[] {
   const weeks = b.rows[0]?.values.length ?? 0;
-  const text = (v: string): Inline[] => [{ t: 'text', v }];
-  const head: Inline[][] = [text(''), ...Array.from({ length: weeks }, (_, i) => text(weekLabel(i)))];
-  const rows: Inline[][][] = b.rows.map((r) => [text(r.label), ...r.values.map((v) => text(String(v)))]);
-  const align: import('../ir/types.js').Align[] = Array.from({ length: weeks + 1 }, () => 'l' as const);
-  return table({ t: 'table', head, rows, align }, theme);
+  const max = Math.max(0, ...b.rows.flatMap((r) => r.values));
+  const total = columnDxa(theme);
+  const labelW = Math.round(total * 0.28);
+  const weekW = weeks > 0 ? Math.floor((total - labelW) / weeks) : 0;
+  // Largest-remainder is overkill for equal columns: give the rounding slack
+  // to the label column so the widths still sum to the text column exactly.
+  const widths = [total - weekW * weeks, ...Array.from({ length: weeks }, () => weekW)];
+
+  const run = (text: string, brand: boolean) =>
+    new TextRun({ text, size: halfPt(theme.type.bodyPt * 0.95), ...(brand ? { color: hex(theme.colors.brandOnLight) } : {}) });
+  const cell = (children: Paragraph[], width: number, fill?: string) =>
+    new TableCell({
+      width: { size: width, type: WidthType.DXA },
+      borders: NO_BORDERS,
+      margins: { top: 40, bottom: 40, left: 40, right: 40 },
+      ...(fill === undefined ? {} : { shading: { type: ShadingType.CLEAR, color: 'auto', fill } }),
+      children,
+    });
+  const centred = (children: TextRun[]) => new Paragraph({ alignment: AlignmentType.CENTER, children });
+
+  const headerRow = new TableRow({
+    tableHeader: true, cantSplit: true,
+    children: [
+      cell([new Paragraph({ children: [] })], widths[0]!),
+      ...Array.from({ length: weeks }, (_, i) => cell([centred([run(weekLabel(i), false)])], weekW)),
+    ],
+  });
+  const bodyRows = b.rows.map((r) => new TableRow({
+    cantSplit: true,
+    children: [
+      cell([new Paragraph({ children: [run(r.label, false)] })], widths[0]!),
+      ...r.values.map((v) => {
+        if (b.style === 'marks') {
+          const marks = stepOf(v, max, 3);
+          return cell([centred(marks > 0 ? [run('▪'.repeat(marks), true)] : [])], weekW);
+        }
+        if (b.style === 'fill') return cell([new Paragraph({ children: [] })], weekW, v > 0 ? hex(theme.colors.brandOnLight) : undefined);
+        const step = stepOf(v, max, SCALE_STEPS.length);
+        const fill = step > 0 ? mixToWhite(theme.colors.brandOnLight, SCALE_STEPS[step - 1]!).slice(1) : undefined;
+        const text = b.style === 'numbers' && v > 0 ? centred([run(String(v), false)]) : new Paragraph({ children: [] });
+        return cell([text], weekW, fill);
+      }),
+    ],
+  }));
+
+  const table = new Table({
+    layout: TableLayoutType.FIXED,
+    width: { size: total, type: WidthType.DXA },
+    columnWidths: widths,
+    borders: NO_BORDERS,
+    rows: [headerRow, ...bodyRows],
+  });
+  const legend = b.style === 'scale'
+    ? [new Paragraph({
+        spacing: { before: dxa(2), after: dxa(10) },
+        children: [new TextRun({ text: HEATMAP_LEGEND, color: hex(theme.colors.muted), size: halfPt(theme.type.bodyPt * 0.85) })],
+      })]
+    : [new Paragraph({ spacing: { after: dxa(10) }, children: [] })];
+  return [table, ...legend];
 }
 
 function blocks(b: Block, theme: Theme, listRefs: Map<Block, string>): (Paragraph | Table)[] {
@@ -569,10 +622,7 @@ function blocks(b: Block, theme: Theme, listRefs: Map<Block, string>): (Paragrap
       children: [new TextRun({ text: '', size: halfPt(TABLE_GAP_LINE_PT) })],
       spacing: { line: dxa(TABLE_GAP_LINE_PT), lineRule: LineRuleType.EXACT, after: dxa(TABLE_GAP_AFTER_PT) },
     })];
-    case 'heatmap': return [heatmapAsTable(b, theme), new Paragraph({
-      children: [new TextRun({ text: '', size: halfPt(TABLE_GAP_LINE_PT) })],
-      spacing: { line: dxa(TABLE_GAP_LINE_PT), lineRule: LineRuleType.EXACT, after: dxa(TABLE_GAP_AFTER_PT) },
-    })];
+    case 'heatmap': return heatmapBlocks(b, theme);
     case 'code': {
       // One paragraph per line: a single paragraph with soft breaks would
       // shade as one block in Word but wrap differently from the PDF.
