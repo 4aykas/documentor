@@ -63,6 +63,19 @@ describe('what an installed copy contains', () => {
     expect(pkg.name).toBe(PACKAGE_NAME);
   });
 
+  it('builds from an empty dist, so a deleted module stops shipping', () => {
+    // tsc writes over dist/ and never clears it, so a file deleted from src/
+    // keeps its compiled copy there forever — and `files: ["dist"]` ships the
+    // whole directory. Found by reading `npm pack --dry-run` after deleting
+    // src/render/normalize-pdf.ts: the tarball still carried its .js, .d.ts
+    // and .js.map. Nothing in the working tree shows this; the only place it
+    // appears is the tarball, and by then it is published.
+    expect(
+      pkg.scripts['build'],
+      'the build must clear dist/ first, or a deleted source file keeps shipping',
+    ).toMatch(/\brm\b|rmSync|rimraf|del\b/);
+  });
+
   it('builds before npm can pack or publish it', () => {
     // dist/ is gitignored, so the build has to happen inside npm's own
     // lifecycle — a human remembering to run it first is exactly the step that

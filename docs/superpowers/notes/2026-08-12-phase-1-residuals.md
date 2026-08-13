@@ -142,11 +142,28 @@ call and not a triage's; a human then looked at the fresh renders and
 took them, in `c1b6cae` ("Re-photograph the page baselines after the
 rasteriser bump"). Both tests pass again on this machine.
 
-**The publish gate is clear.** `npm audit` and `npm audit --omit=dev` both
-report zero vulnerabilities; the whole suite passes (462 tests as of
-2026-08-13, including the two local-only pixel tests above); typecheck and
-build are clean; byte-identity of both shipped formats is confirmed by
-hash. Nothing blocks `npm publish` on dependency vulnerabilities.
+**The publish gate is clear**, re-measured on 2026-08-13 at the current tree.
+`npm audit` and `npm audit --omit=dev` both report zero vulnerabilities; the
+whole suite passes (461 tests, including the two local-only pixel tests
+above); typecheck and build are clean; and the kitchen sink rendered twice
+through both shipped formats at a fixed epoch is byte-identical — PDF
+`d5bcaef3f58ec727e8f26baacfd2ccb2b91a589009ea833e105ae0505d71cdd` (58,130
+bytes), DOCX `3630483450d849da7f631d784e6c564e703d859dfe8d423bdbee9db75f54969`
+(18,723 bytes), `tebin` theme. Those are not the figures recorded further up:
+those were a before/after pair for a dependency bump, and the renderers have
+moved a long way since (the stitched clean first page, real Word numbering,
+content-proportional table widths, cell margins). Two passes agreeing with
+each other is the claim; agreeing with a hash from a different renderer would
+have meant something was wrong.
+
+**One thing the gate did not check until now**, and it took reading `npm pack
+--dry-run` to see: `tsc` writes over `dist/` and never clears it, and
+`files: ["dist"]` ships the whole directory — so a module deleted from `src/`
+kept its compiled `.js`, `.d.ts` and `.js.map` in every tarball. Confirmed
+against the deletion above: the tarball still carried `normalize-pdf`. `build`
+now clears `dist/` first, and `test/guardrails/packaging.test.ts` requires it
+to, because nothing in the working tree ever shows this — the only place it
+appears is the tarball, and by then it is published.
 
 ## What the first CI run confirmed, and what it disproved
 
