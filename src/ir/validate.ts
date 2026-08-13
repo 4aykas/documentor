@@ -1,7 +1,7 @@
 import type { Align, Block, Doc, Inline } from './types.js';
 
 const BLOCK_TYPES = new Set([
-  'heading', 'para', 'list', 'table', 'image', 'code', 'quote', 'rule', 'pagebreak',
+  'heading', 'para', 'list', 'table', 'heatmap', 'image', 'code', 'quote', 'rule', 'pagebreak',
 ]);
 const INLINE_TYPES = new Set(['text', 'strong', 'em', 'code', 'link']);
 const ALIGNS = new Set<Align>(['l', 'r', 'c']);
@@ -83,6 +83,29 @@ function checkBlock(b: unknown, where: string): void {
           fail(`${where}.rows[${r}]`, `has ${row.length} cells for ${(n['head'] as unknown[]).length} columns`);
         }
         row.forEach((c, i) => checkInlines(c, `${where}.rows[${r}][${i}]`));
+      });
+      return;
+    }
+    case 'heatmap': {
+      const styles = new Set(['fill', 'scale', 'numbers', 'marks']);
+      if (typeof n['style'] !== 'string' || !styles.has(n['style'])) {
+        fail(where, `unknown heatmap style ${JSON.stringify(n['style'])} — expected fill, scale, numbers or marks`);
+      }
+      const rows = n['rows'];
+      if (!Array.isArray(rows) || rows.length === 0) fail(`${where}.rows`, 'a heatmap needs at least one row');
+      let weeks = -1;
+      rows.forEach((row, r) => {
+        const at = `${where}.rows[${r}]`;
+        if (typeof row !== 'object' || row === null) fail(at, 'expected an object');
+        const rr = row as Record<string, unknown>;
+        if (typeof rr['label'] !== 'string' || rr['label'] === '') fail(at, 'row needs a non-empty label');
+        const values = rr['values'];
+        if (!Array.isArray(values) || values.length === 0) fail(`${at}.values`, 'expected a non-empty array of numbers');
+        values.forEach((v, i) => {
+          if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) fail(`${at}.values[${i}]`, `expected a number ≥ 0, got ${JSON.stringify(v)}`);
+        });
+        if (weeks === -1) weeks = values.length;
+        else if (values.length !== weeks) fail(at, `has ${values.length} week(s) where the first row has ${weeks}`);
       });
       return;
     }

@@ -50,4 +50,30 @@ describe('validateDoc', () => {
     const doc = { ...good, blocks: [{ t: 'list', ordered: true, depth: 0, items: [[]], start: 0 }] };
     expect(() => validateDoc(doc)).toThrow(/blocks\[0\]\.start/);
   });
+
+  it('accepts a well-formed heatmap block', () => {
+    expect(() => validateDoc({
+      meta: { title: 'T', lang: 'en' },
+      blocks: [{ t: 'heatmap', style: 'scale', rows: [{ label: 'Electrical', values: [8, 8, 0] }] }],
+    })).not.toThrow();
+  });
+
+  it('refuses a heatmap whose rows disagree about the week count', () => {
+    expect(() => validateDoc({
+      meta: { title: 'T', lang: 'en' },
+      blocks: [{ t: 'heatmap', style: 'scale', rows: [
+        { label: 'A', values: [1, 2] }, { label: 'B', values: [1] },
+      ] }],
+    })).toThrow(/week/);
+  });
+
+  it('refuses an unknown heatmap style, a negative value, and an empty matrix', () => {
+    const mk = (over: object) => ({
+      meta: { title: 'T', lang: 'en' },
+      blocks: [{ t: 'heatmap', style: 'scale', rows: [{ label: 'A', values: [1] }], ...over }],
+    });
+    expect(() => validateDoc(mk({ style: 'rainbow' }))).toThrow(/style/);
+    expect(() => validateDoc(mk({ rows: [{ label: 'A', values: [-1] }] }))).toThrow(/values\[0\]/);
+    expect(() => validateDoc(mk({ rows: [] }))).toThrow(/at least one row/);
+  });
 });

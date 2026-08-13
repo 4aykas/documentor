@@ -17,6 +17,7 @@ import { PAGE_PT, type Theme } from '../theme/types.js';
 import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
 import { normalizeDocx } from './normalize-docx.js';
+import { weekLabel } from './tint.js';
 
 const halfPt = (pt: number): number => Math.round(pt * 2);
 const dxa = (pt: number): number => Math.round(pt * 20);
@@ -497,6 +498,21 @@ function table(b: Extract<Block, { t: 'table' }>, theme: Theme): Table {
   });
 }
 
+/**
+ * Minimal, honest rendering: the matrix as a plain IR table (hours as text,
+ * no shading) drawn through the existing table machinery above, so the grid,
+ * borders and column widths already agree with every other table in the
+ * document. Tasks 5/6 replace this with the styled version.
+ */
+function heatmapAsTable(b: Extract<Block, { t: 'heatmap' }>, theme: Theme): Table {
+  const weeks = b.rows[0]?.values.length ?? 0;
+  const text = (v: string): Inline[] => [{ t: 'text', v }];
+  const head: Inline[][] = [text(''), ...Array.from({ length: weeks }, (_, i) => text(weekLabel(i)))];
+  const rows: Inline[][][] = b.rows.map((r) => [text(r.label), ...r.values.map((v) => text(String(v)))]);
+  const align: import('../ir/types.js').Align[] = Array.from({ length: weeks + 1 }, () => 'l' as const);
+  return table({ t: 'table', head, rows, align }, theme);
+}
+
 function blocks(b: Block, theme: Theme, listRefs: Map<Block, string>): (Paragraph | Table)[] {
   switch (b.t) {
     case 'heading': {
@@ -550,6 +566,10 @@ function blocks(b: Block, theme: Theme, listRefs: Map<Block, string>): (Paragrap
       // mark's own size explicit rather than inherited from `Normal`, in
       // case some reader takes the run's font size into account for the
       // mark's height the way Word itself does not once `lineRule` is EXACT.
+      children: [new TextRun({ text: '', size: halfPt(TABLE_GAP_LINE_PT) })],
+      spacing: { line: dxa(TABLE_GAP_LINE_PT), lineRule: LineRuleType.EXACT, after: dxa(TABLE_GAP_AFTER_PT) },
+    })];
+    case 'heatmap': return [heatmapAsTable(b, theme), new Paragraph({
       children: [new TextRun({ text: '', size: halfPt(TABLE_GAP_LINE_PT) })],
       spacing: { line: dxa(TABLE_GAP_LINE_PT), lineRule: LineRuleType.EXACT, after: dxa(TABLE_GAP_AFTER_PT) },
     })];

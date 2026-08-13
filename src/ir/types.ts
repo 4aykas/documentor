@@ -24,6 +24,11 @@ export type Block =
   // that can actually produce a wide table. A flag both renderers appear to
   // honour and neither does is worse than no flag at all.
   | { t: 'table'; head: Inline[][]; rows: Inline[][][]; align: Align[] }
+  // A discipline-by-week involvement matrix — hours, not colours: colour
+  // belongs to the theme, and the renderers map a value to a fill or a mark.
+  // `style` travels in the block because the template chooses it per matrix.
+  // The week count is rows[0].values.length, deliberately not stored twice.
+  | { t: 'heatmap'; style: 'fill' | 'scale' | 'numbers' | 'marks'; rows: { label: string; values: number[] }[] }
   | { t: 'image'; src: string; alt: string; widthPt?: number }
   | { t: 'code'; lang?: string; text: string }
   | { t: 'quote'; paras: Inline[][] }

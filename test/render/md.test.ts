@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ingestMarkdown } from '../../src/ingest/md.js';
 import type { Doc } from '../../src/ir/types.js';
 import { renderMarkdown } from '../../src/render/md.js';
+import { HEATMAP_LEGEND } from '../../src/render/tint.js';
 
 const roundTrip = (md: string) => renderMarkdown(ingestMarkdown(md).doc);
 
@@ -85,5 +86,37 @@ describe('renderMarkdown', () => {
     // A fence must be longer than the longest backtick run it contains (here 4), so 5.
     expect(out).toBe('# T\n\n`````\nhas ```` inside\n`````\n');
     expect(renderMarkdown(ingestMarkdown(out).doc)).toBe(out);
+  });
+});
+
+describe('heatmap in Markdown', () => {
+  const doc = (style: 'fill' | 'scale' | 'numbers' | 'marks'): Doc => ({
+    meta: { title: 'T', lang: 'en' },
+    blocks: [{ t: 'heatmap', style, rows: [
+      { label: 'Electrical', values: [16, 8, 0] },
+      { label: 'BIM', values: [4, 4, 4] },
+    ] }],
+  });
+
+  it('writes numbers (and scale) as an hours table with week headers', () => {
+    const md = renderMarkdown(doc('numbers'));
+    expect(md).toContain('| W01 | W02 | W03 |');
+    expect(md).toContain('| Electrical | 16 | 8 |  |');
+    expect(md).toContain('| BIM | 4 | 4 | 4 |');
+  });
+
+  it('writes marks as marks, stepped against the matrix maximum', () => {
+    const md = renderMarkdown(doc('marks'));
+    expect(md).toContain('| Electrical | ▪▪▪ | ▪▪ |  |');
+  });
+
+  it('writes fill as filled-or-empty', () => {
+    const md = renderMarkdown(doc('fill'));
+    expect(md).toContain('| Electrical | ■ | ■ |  |');
+  });
+
+  it('prints the legend sentence for scale only', () => {
+    expect(renderMarkdown(doc('scale'))).toContain(HEATMAP_LEGEND);
+    expect(renderMarkdown(doc('numbers'))).not.toContain(HEATMAP_LEGEND);
   });
 });

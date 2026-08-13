@@ -49,6 +49,7 @@ export type Counts = {
   paragraphs: number;
   lists: number;
   tables: number;
+  heatmaps: number;
   images: number;
   code: number;
   quotes: number;
@@ -153,7 +154,7 @@ export type InspectResult = {
 
 function emptyCounts(): Counts {
   return {
-    headings: 0, paragraphs: 0, lists: 0, tables: 0, images: 0, code: 0, quotes: 0, rules: 0, pagebreaks: 0,
+    headings: 0, paragraphs: 0, lists: 0, tables: 0, heatmaps: 0, images: 0, code: 0, quotes: 0, rules: 0, pagebreaks: 0,
   };
 }
 
@@ -165,6 +166,7 @@ function countBlocks(blocks: readonly Block[]): Counts {
       case 'para': c.paragraphs++; break;
       case 'list': c.lists++; break;
       case 'table': c.tables++; break;
+      case 'heatmap': c.heatmaps++; break;
       case 'image': c.images++; break;
       case 'code': c.code++; break;
       case 'quote': c.quotes++; break;
@@ -312,6 +314,7 @@ const COUNT_LABELS: { key: keyof Counts; one: string; many: string }[] = [
   { key: 'paragraphs', one: 'paragraph', many: 'paragraphs' },
   { key: 'lists', one: 'list', many: 'lists' },
   { key: 'tables', one: 'table', many: 'tables' },
+  { key: 'heatmaps', one: 'heatmap', many: 'heatmaps' },
   { key: 'images', one: 'image', many: 'images' },
   { key: 'code', one: 'code block', many: 'code blocks' },
   { key: 'quotes', one: 'quote', many: 'quotes' },

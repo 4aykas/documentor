@@ -3,6 +3,7 @@
 
 import type { Block, Doc, Inline } from '../ir/types.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
+import { HEATMAP_LEGEND, stepOf, weekLabel } from './tint.js';
 
 /**
  * A refused link, written the way the HTML renderer writes it: the link's own
@@ -64,6 +65,24 @@ function block(b: Block): string {
       const sep = b.align.map((a) => (a === 'l' ? ':--' : a === 'r' ? '--:' : ':-:'));
       const row = (cells: Inline[][]) => `| ${cells.map(cell).join(' | ')} |`;
       return [row(b.head), `| ${sep.join(' | ')} |`, ...b.rows.map(row)].join('\n');
+    }
+    case 'heatmap': {
+      const weeks = b.rows[0]?.values.length ?? 0;
+      const max = Math.max(0, ...b.rows.flatMap((r) => r.values));
+      // Markdown is the readable intermediate, so scale — tint-only on paper —
+      // shows its hours here rather than an empty grid.
+      const cellFor = (v: number): string =>
+        b.style === 'marks' ? '▪'.repeat(stepOf(v, max, 3))
+        : b.style === 'fill' ? (v > 0 ? '■' : '')
+        : v > 0 ? String(v) : '';
+      const head = ['', ...Array.from({ length: weeks }, (_, i) => weekLabel(i))];
+      const sep = [':--', ...Array.from({ length: weeks }, () => ':-:')];
+      const lines = [
+        `| ${head.join(' | ')} |`,
+        `| ${sep.join(' | ')} |`,
+        ...b.rows.map((r) => `| ${[r.label, ...r.values.map(cellFor)].join(' | ')} |`),
+      ];
+      return (b.style === 'scale' ? [...lines, '', HEATMAP_LEGEND] : lines).join('\n');
     }
     case 'image':
       return `![${b.alt}](${b.src})`;

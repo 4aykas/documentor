@@ -7,6 +7,7 @@ import { PAGE_PT, toMm, type Theme } from '../theme/types.js';
 import { arimoFaceCss } from './fonts.js';
 import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
+import { weekLabel } from './tint.js';
 
 export function escapeHtml(s: string): string {
   return s
@@ -107,6 +108,21 @@ function block(b: Block): string {
         )
         .join('');
       return `<table><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+    }
+    case 'heatmap': {
+      // Minimal, honest rendering: a plain table of hours, no tint, no marks.
+      // Tasks 5/6 give this its styled appearance in html.ts and docx.ts.
+      const weeks = b.rows[0]?.values.length ?? 0;
+      const head = Array.from({ length: weeks }, (_, i) => `<th>${weekLabel(i)}</th>`).join('');
+      const rows = b.rows
+        .map(
+          (row) =>
+            `<tr><th>${escapeHtml(row.label)}</th>${row.values
+              .map((v) => `<td>${v}</td>`)
+              .join('')}</tr>`,
+        )
+        .join('');
+      return `<table><thead><tr><th></th>${head}</tr></thead><tbody>${rows}</tbody></table>`;
     }
     case 'image':
       return imageMarkup(b.src, b.alt, b.widthPt);
