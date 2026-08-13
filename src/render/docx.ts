@@ -177,7 +177,11 @@ function listNumbering(doc: Doc, theme: Theme): { refOf: Map<Block, string>; con
  * rather than applied at the leaf: `**bold *and italic***` must arrive as one
  * run that is both.
  */
-function inline(nodes: Inline[], fmt: { bold?: boolean; italics?: boolean; code?: boolean } = {}, theme: Theme): ParagraphChild[] {
+function inline(
+  nodes: Inline[],
+  fmt: { bold?: boolean; italics?: boolean; code?: boolean; link?: boolean } = {},
+  theme: Theme,
+): ParagraphChild[] {
   const out: ParagraphChild[] = [];
   for (const n of nodes) {
     switch (n.t) {
@@ -187,6 +191,10 @@ function inline(nodes: Inline[], fmt: { bold?: boolean; italics?: boolean; code?
           ...(fmt.bold ? { bold: true } : {}),
           // The option is `italics`, not `italic`.
           ...(fmt.italics ? { italics: true } : {}),
+          // Carried down rather than applied at the ExternalHyperlink, because
+          // a link's appearance is a property of its runs and a link's text
+          // can need more than one of them — see the `link` case below.
+          ...(fmt.link ? { style: 'Hyperlink', color: hex(theme.colors.ink) } : {}),
           // html.ts: `code{ … font-size: 0.92 × bodyPt; }`. Changing the font
           // and not the size is what makes a monospaced word read as larger
           // than the prose around it — Consolas sets a taller x-height at the
@@ -216,15 +224,24 @@ function inline(nodes: Inline[], fmt: { bold?: boolean; italics?: boolean; code?
           // theme's ink with only the underline (in the rule colour) marking
           // it as a link. The run's own `color` below overrides the style's,
           // so the theme keeps owning link colour in every renderer.
+          //
+          // The children go through the same recursion as any other inline
+          // span, carrying `link: true` down to the leaves. A link whose text
+          // is partly emphasised needs more than one run — one string could
+          // never hold "half of this is bold" — and every one of them has to
+          // be inside this single ExternalHyperlink and wear the Hyperlink
+          // style, or half the link stops looking like one.
+          const linkRuns = inline(n.children, { ...fmt, link: true }, theme);
           out.push(new ExternalHyperlink({
             link: n.href,
-            children: [new TextRun({
-              text: flatten(n.children),
-              style: 'Hyperlink',
-              color: hex(theme.colors.ink),
-              ...(fmt.bold ? { bold: true } : {}),
-              ...(fmt.italics ? { italics: true } : {}),
-            })],
+            // A link with no text at all would otherwise pack into a
+            // <w:hyperlink> with nothing inside it — legal-looking XML that no
+            // reader shows and nobody can click, so the target itself stands
+            // in. The IR does not forbid an empty link, so this does not
+            // assume it away.
+            children: linkRuns.length > 0
+              ? linkRuns
+              : [new TextRun({ text: n.href, style: 'Hyperlink', color: hex(theme.colors.ink) })],
           }));
         }
         break;
@@ -234,10 +251,14 @@ function inline(nodes: Inline[], fmt: { bold?: boolean; italics?: boolean; code?
 }
 
 /**
- * A link's text as one string. Nested emphasis inside a link is flattened
- * rather than carried: `ExternalHyperlink` takes runs, and the formatting
- * that survives is the formatting the link itself sits in. Named in the
- * phase's residuals — the IR can express it and this renderer cannot.
+ * An inline sequence as one string, with every span's formatting discarded.
+ * The one caller left is `columnDemand`, which measures how much text a table
+ * column carries: how that text is emphasised has no bearing on how wide the
+ * column should be.
+ *
+ * This used to be how a link's text reached Word, which cost the emphasis
+ * inside it — a limitation the phase's residuals named. It no longer is; see
+ * `inline`'s `link` case.
  */
 function flatten(nodes: Inline[]): string {
   return nodes.map((n) => (n.t === 'text' ? n.v : flatten(n.children))).join('');

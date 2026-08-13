@@ -161,14 +161,7 @@ describe('renderDocx', () => {
     }
   });
 
-  // Documented limitation, not a bug: ExternalHyperlink takes runs, and this
-  // renderer passes the link's text as a single flattened string (flatten()
-  // in docx.ts), so bold or italic nested inside a link's text is dropped.
-  // This test pins that behaviour — the one the residuals note already names
-  // ("Emphasis inside a link is flattened in Word") — so it fails loudly if
-  // the flattening ever silently changes, not because the flattening is the
-  // goal.
-  it('pins the documented limitation: emphasis inside link text is flattened away', async () => {
+  it('carries emphasis inside a link, rather than flattening it away', async () => {
     const xml = await body(doc({
       t: 'para',
       text: [{ t: 'link', href: 'https://example.com/bold', children: [{ t: 'strong', children: [{ t: 'text', v: 'bold link' }] }] }],
@@ -176,8 +169,40 @@ describe('renderDocx', () => {
     const hyperlink = xml.match(/<w:hyperlink[\s\S]*?<\/w:hyperlink>/)?.[0];
     expect(hyperlink, 'expected a <w:hyperlink> in the body').toBeDefined();
     expect(hyperlink).toContain('bold link');
-    // The text survives; the bold does not.
-    expect(hyperlink).not.toContain('<w:b/>');
+    expect(hyperlink).toContain('<w:b/>');
+  });
+
+  it('splits a part-emphasised link into runs, and keeps every one a link', async () => {
+    // The case flattening could never express: half the link's text is bold
+    // and half is not, so one run cannot carry it. Every run still has to be
+    // inside the one <w:hyperlink> and still has to look like a link, or the
+    // reader gets a document where half the words are underlined.
+    const xml = await body(doc({
+      t: 'para',
+      text: [{
+        t: 'link',
+        href: 'https://example.com/mixed',
+        children: [{ t: 'strong', children: [{ t: 'text', v: 'read ' }] }, { t: 'text', v: 'the report' }],
+      }],
+    }));
+    const hyperlink = xml.match(/<w:hyperlink[\s\S]*?<\/w:hyperlink>/)?.[0];
+    expect(hyperlink).toBeDefined();
+    expect(hyperlink!.match(/<w:r>/g) ?? []).toHaveLength(2);
+    expect(hyperlink!.match(/<w:rStyle w:val="Hyperlink"\/>/g) ?? []).toHaveLength(2);
+    expect(hyperlink!.match(/<w:b\/>/g) ?? []).toHaveLength(1);
+  });
+
+  it('keeps a link with nothing but italic text underlined', async () => {
+    // The whole link is emphasised, so the emphasis and the link style land on
+    // the same single run — the shape most likely to lose one of the two.
+    const xml = await body(doc({
+      t: 'para',
+      text: [{ t: 'link', href: 'https://example.com/i', children: [{ t: 'em', children: [{ t: 'text', v: 'go' }] }] }],
+    }));
+    const hyperlink = xml.match(/<w:hyperlink[\s\S]*?<\/w:hyperlink>/)?.[0];
+    expect(hyperlink).toContain('<w:i/>');
+    expect(hyperlink).toContain('<w:rStyle w:val="Hyperlink"/>');
+    expect(hyperlink).toContain('<w:color w:val="1A1A1A"/>');
   });
 
   it('numbers an ordered list from the IR’s own start', async () => {

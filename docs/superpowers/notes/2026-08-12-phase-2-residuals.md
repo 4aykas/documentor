@@ -211,15 +211,27 @@ loud on a bad asset is preferable to a render that silently omits the logo.
 Worth stating because the blast radius is wider than "the letterhead is
 wrong" — it is "the build fails," for every format, until the theme is fixed.
 
-**Emphasis inside a link is flattened in Word.** `ExternalHyperlink` takes
-runs, and the renderer passes the link's text as a single run, so the IR can
-express `[**bold** link](…)` and this renderer cannot reproduce the bold. The
-kitchen-sink fixture has no such link today; the moment one is added, the
-agreement test's emphasis comparison fails, because it compares Word's bold
-runs against the IR's. That is the right outcome — a limitation that
-announces itself the first time it is exercised, rather than a silent loss
-that would have shipped unnoticed. (`src/render/docx.ts`'s `flatten()`
-comment points here; this is that promise kept.)
+**~~Emphasis inside a link is flattened in Word.~~** *Closed on 2026-08-13.*
+The note said `ExternalHyperlink` takes runs and the renderer passes one, so
+the IR could express `[**bold** link](…)` and this renderer could not
+reproduce the bold. The fix is the recursion the rest of the file already
+uses: a `link: true` flag rides down through `inline()` to the leaves, where
+it puts the `Hyperlink` style and the theme's ink on each run, and the
+children go through `inline()` like any other span instead of through
+`flatten()`. `flatten()` survives with one caller — `columnDemand()`, which
+counts a column's characters and has no interest in how they are emphasised.
+
+The case worth the trouble is the one a single run could never express:
+half a link's text bold and half not. Word was asked directly rather than
+inferred from XML — over COM, the document reports **one** hyperlink whose
+`TextToDisplay` is the whole phrase, every character underlined and styled
+`Hyperlink`, with `Font.Bold` true across the first two words and false
+across the rest. Two runs, one link, both halves still looking like one.
+
+An empty link — no children at all — now falls back to printing its own
+target rather than packing a `<w:hyperlink>` with nothing inside it, which is
+legal-looking XML that no reader shows and nobody can click. The IR does not
+forbid one, so the renderer does not assume it away.
 
 ## Named work for phase 3
 
@@ -307,10 +319,12 @@ a wrong renderer, and are worth recording so the distinction doesn't blur:
   `rIdLink*` relationship ids, each resolving to its own `Target`, plural
   and correct. Not a renderer defect; the test's assumption about attribute
   order was wrong.
-- Emphasis inside a link's text is flattened away, as already documented
-  below ("Emphasis inside a link is flattened in Word") — the new case pins
-  the flattening as the observed behaviour rather than treating it as a bug
-  to fix, and says so in its own name and comment.
+- Emphasis inside a link's text was flattened away, and the case written
+  here pinned that as observed behaviour rather than treating it as a bug —
+  which is what made it cheap to notice when the behaviour was fixed. It has
+  since been (see "Emphasis inside a link is flattened in Word" above); the
+  case now requires the emphasis to survive, and two more beside it cover a
+  part-emphasised link and a wholly italic one.
 
 No defect was found in `inline()`, `flatten()`, or the table/heading/list
 paths it's reached from. What both "failures" actually were is the finding
