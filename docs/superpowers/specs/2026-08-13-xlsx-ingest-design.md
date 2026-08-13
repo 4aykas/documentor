@@ -44,6 +44,13 @@ other two ingesters have.
 - **Each worksheet becomes a heading followed by one table.** The sheet's name
   is the heading; a workbook of one sheet named `Sheet1` gets no heading,
   because "Sheet1" tells a reader nothing.
+
+  A single-sheet workbook whose first row was promoted to the document title
+  therefore shows two labels above one table — the title and the sheet's name.
+  That was put to the owner on 2026-08-13 with the page in front of them, and
+  the answer was to keep it: the two say different things, and dropping the
+  heading would lose the sheet's name with nothing to catch it. Do not
+  "simplify" this later without asking again.
 - **Values, not formulas.** A cell carrying a formula also carries the value
   Excel last computed, and that cached value is what a reader saw. It is used
   directly, and the fact is reported once per document — a workbook last saved

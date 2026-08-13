@@ -93,6 +93,27 @@ edge case in the corpus; it is the majority of sheets.
 Neither rule may discard what it removes. A preamble row is a title or a
 caption — it becomes text above the table, not a deletion.
 
+## A second thing the same run showed
+
+The lift was reported through `dropped`, and the CLI prints that list as
+*things the document format cannot hold were left out*. So a register with
+nothing missing announced two losses: a flattened merge, which is real, and
+"preamble row 1 lifted and used as the document title", which is not — that
+row is on the page, as the title, exactly where a reader wants it.
+
+`dropped` is what `inspect` puts in front of somebody deciding whether a
+conversion is safe. Every line in it is read as something to go and check, so a
+line naming content that arrived safely spends the reader's attention and
+teaches them to skim — which is how the line that matters gets skimmed too.
+Both pushes are gone; the move is still visible, because `inspect` prints the
+title it understood and the paragraph sits above its table.
+
+Every other `dropped.push` in `src/` was then read, all of them: they name a
+style, a merge's span, a link, a field code, a formula — things genuinely not
+carried. This was the only pure success notice. The rule the rest already
+follow, now written down: **a message belongs in `dropped` when something did
+not arrive, not when something arrived somewhere else.**
+
 ## Why this is here
 
 Every test in `test/ingest/xlsx.test.ts` passes, and each one is a fixture
