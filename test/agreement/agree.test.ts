@@ -14,9 +14,9 @@ import { docxPart } from '../helpers/docx-parts.js';
 import { resetPdfjsWorkerGlobal } from '../helpers/pdfjs-worker.js';
 import type { Block, Doc } from '../../src/ir/types.js';
 import {
-  type Run, classify, expectSameSequence, norm, runsFromMarkdown,
-  alignFromDocx, boldRunsFromDocx, cellsFromDocx, docTitleFromDocx, emphasisFromIr, flattenInline, headingsFromDocx,
-  italicRunsFromDocx, linkTargetsFromIr, linkTargetsFromRels,
+  type DocxCell, type Run, classify, expectSameSequence, norm, runsFromMarkdown,
+  boldRunsFromDocx, docTitleFromDocx, emphasisFromIr, flattenInline, headingsFromDocx,
+  italicRunsFromDocx, linkTargetsFromIr, linkTargetsFromRels, tablesFromDocx,
 } from './runs.js';
 
 // The brief's plain `new URL('.', import.meta.url).pathname` strips the
@@ -162,46 +162,65 @@ describe('Word says what the others say', () => {
     expect(docTitleFromDocx(xml), 'the title is missing its DocTitle style').toBe(doc.meta.title);
   });
 
-  it('puts each table value in its own cell, which the PDF cannot show', async () => {
-    // The PDF comparison flattens a table to a sequence of words because an
-    // untagged PDF has no cell boundaries to read. Word has <w:tc>, so this is
-    // the renderer that can catch a value landing in the wrong column with the
-    // reading order unchanged.
-    const { doc } = ingestMarkdown(source);
-    const xml = await docxPart(await renderDocx(doc, await loadTheme('plain'), { epochSeconds: EPOCH }), 'word/document.xml');
-    const table = doc.blocks.find((b) => b.t === 'table');
-    expect(table).toBeDefined();
-    const expected = [
-      ...table!.head.map(flattenInline),
-      ...table!.rows.flatMap((r) => r.map(flattenInline)),
-    ];
-    expectSameSequence('table cell', { label: 'IR', items: expected }, { label: 'Word', items: cellsFromDocx(xml) });
-  });
+  /**
+   * The IR's tables as the grid a reader sees: the header row, then the body
+   * rows, each cell carrying the text it should hold and the alignment its
+   * column asked for. `align` is stored once per column in the IR and stamped
+   * on every cell's paragraph by Word, so it is broadcast down each row here —
+   * comparing Word's header row alone would miss a body cell landing under the
+   * wrong column's alignment.
+   */
+  const tablesFromIr = (doc: Doc): DocxCell[][][] =>
+    doc.blocks
+      .filter((b): b is Extract<Block, { t: 'table' }> => b.t === 'table')
+      .map((b) =>
+        [b.head, ...b.rows].map((row) =>
+          row.map((cell, i) => ({ text: flattenInline(cell), align: b.align[i] ?? 'l' })),
+        ),
+      );
 
-  it('aligns each cell the column asked for, which the PDF cannot show', async () => {
-    // Word carries alignment as `<w:jc>` on the cell's own paragraph — same
-    // reasoning as the heading and link-target comparisons above: `align`
-    // is structure the IR defines and Word reproduces, and an untagged PDF's
-    // text extraction has no notion of alignment at all, so there is no third
-    // opinion to reconcile and the IR is the only reference.
+  it('puts each table value in its own cell, in its own row', async () => {
+    // The PDF comparison flattens a table to a sequence of words because an
+    // untagged PDF has no cell boundaries to read. Word has <w:tbl>, <w:tr>
+    // and <w:tc>, so this is the renderer that can catch a value landing in
+    // the wrong column, or the grid itself coming out the wrong shape.
     //
-    // The IR stores `align` once per column (`b.align[i]`), but Word stamps
-    // it on every cell's paragraph, so comparing per column against Word's
-    // header row alone would miss a body cell landing under the wrong
-    // column's alignment. Comparing every cell instead — the column value
-    // broadcast down each row, in the same reading order `cellsFromDocx`
-    // already walks — means a value on the wrong column fails here exactly
-    // the way it would fail the cell-value comparison above.
+    // Compared table by table and row by row, not as one flat sequence of
+    // cells. A flat sequence agrees with itself for a 5×2 grid rendered as
+    // 2×5, and agrees just as happily when the document has two tables and
+    // the comparison has only one to check them against — this fixture has
+    // exactly one today, and the assertion that says so is the first one
+    // below rather than an assumption the next reader has to reconstruct
+    // from a confusing failure.
+    //
+    // Alignment travels with the cell it belongs to for the same reason:
+    // `align` is structure the IR defines and Word reproduces, an untagged
+    // PDF has no notion of it at all, and reading it in a separate walk is
+    // one more way for the two halves to get out of step.
     const { doc } = ingestMarkdown(source);
     const xml = await docxPart(await renderDocx(doc, await loadTheme('plain'), { epochSeconds: EPOCH }), 'word/document.xml');
-    const table = doc.blocks.find((b): b is Extract<Block, { t: 'table' }> => b.t === 'table');
-    expect(table).toBeDefined();
-    const column = (i: number) => table!.align[i] ?? 'l';
-    const expected = [
-      ...table!.head.map((_, i) => column(i)),
-      ...table!.rows.flatMap((r) => r.map((_, i) => column(i))),
-    ];
-    expectSameSequence('cell alignment', { label: 'IR', items: expected }, { label: 'Word', items: alignFromDocx(xml) });
+    const expected = tablesFromIr(doc);
+    const actual = tablesFromDocx(xml);
+
+    expect(expected.length, 'the fixture is expected to carry exactly one table').toBe(1);
+    expect(actual.length, 'Word wrote a different number of tables than the IR describes').toBe(expected.length);
+
+    for (const [t, table] of expected.entries()) {
+      const shape = (rows: DocxCell[][]) => rows.map((r) => r.length);
+      expect(shape(actual[t]!), `table ${t + 1} came out a different shape`).toEqual(shape(table));
+      for (const [r, row] of table.entries()) {
+        expectSameSequence(
+          `table ${t + 1} row ${r + 1} cell`,
+          { label: 'IR', items: row.map((c) => c.text) },
+          { label: 'Word', items: actual[t]![r]!.map((c) => c.text) },
+        );
+        expectSameSequence(
+          `table ${t + 1} row ${r + 1} alignment`,
+          { label: 'IR', items: row.map((c) => c.align) },
+          { label: 'Word', items: actual[t]![r]!.map((c) => c.align) },
+        );
+      }
+    }
   });
 
   /**

@@ -164,27 +164,44 @@ export function docTitleFromDocx(xml: string): string | undefined {
   return p === undefined ? undefined : norm(textOf(p.xml));
 }
 
-export function cellsFromDocx(xml: string): string[] {
-  return [...xml.matchAll(/<w:tc>([\s\S]*?)<\/w:tc>/g)].map((m) => norm(textOf(m[1] ?? '')));
-}
+export type DocxCell = { text: string; align: Align };
 
 /**
- * Every cell's alignment, in the same `<w:tc>` reading order as
- * `cellsFromDocx`, read from `<w:jc>` on the cell's paragraph. Probed
- * directly against this renderer's own output before writing this: it emits
- * `<w:jc w:val="left"/>` explicitly for a left-aligned cell rather than
- * omitting the tag and relying on Word's own default, so a missing `<w:jc>`
- * never occurs in practice today — but the fallback to `'l'` is kept anyway,
- * matching the `?? 'l'` default `src/render/docx.ts` applies to `b.align[i]`,
- * so a future renderer that switched to leaving `left` implicit would still
- * compare correctly instead of silently reporting every cell as unaligned.
+ * Every table in the part, kept in its own shape: table → row → cell.
+ *
+ * The shape is the point. A flat list of every `<w:tc>` in the document —
+ * which is what this used to return — cannot tell a 5×2 table from a 2×5 one,
+ * and cannot tell one table from two, so it silently compared whatever cells
+ * it found against whichever single IR table the test had picked. Both are
+ * failures a reader would notice immediately and the comparison could not.
+ *
+ * `<w:tblPr>`, `<w:trPr>` and `<w:tcPr>` do not collide with these patterns:
+ * each requires a `>` or a space straight after the element name. Nested
+ * tables would, because the non-greedy match would close the outer table on
+ * the inner one's `</w:tbl>` — the IR has no way to express a table inside a
+ * cell, so this renderer never emits one, and the day that changes this is
+ * the function to fix rather than the tests that use it.
+ *
+ * Alignment is read here rather than in a second walk, so a cell's text and
+ * its alignment cannot be read out of step with each other. It comes off
+ * `<w:jc>` on the cell's paragraph. Probed against this renderer's own output:
+ * it emits `<w:jc w:val="left"/>` explicitly rather than relying on Word's
+ * default, so a missing `<w:jc>` does not occur today — the fallback to `'l'`
+ * is kept anyway, matching the `?? 'l'` default `src/render/docx.ts` applies
+ * to `b.align[i]`, so a renderer that later left `left` implicit would still
+ * compare correctly instead of reporting every cell as unaligned.
  */
-export function alignFromDocx(xml: string): Align[] {
+export function tablesFromDocx(xml: string): DocxCell[][][] {
   const JC: Record<string, Align> = { left: 'l', right: 'r', center: 'c' };
-  return [...xml.matchAll(/<w:tc>([\s\S]*?)<\/w:tc>/g)].map((m) => {
-    const val = (m[1] ?? '').match(/<w:jc w:val="([^"]+)"\/>/)?.[1];
-    return (val !== undefined ? JC[val] : undefined) ?? 'l';
-  });
+  return [...xml.matchAll(/<w:tbl(?: [^>]*)?>([\s\S]*?)<\/w:tbl>/g)].map((table) =>
+    [...(table[1] ?? '').matchAll(/<w:tr(?: [^>]*)?>([\s\S]*?)<\/w:tr>/g)].map((row) =>
+      [...(row[1] ?? '').matchAll(/<w:tc(?: [^>]*)?>([\s\S]*?)<\/w:tc>/g)].map((cell) => {
+        const inner = cell[1] ?? '';
+        const val = inner.match(/<w:jc w:val="([^"]+)"\/>/)?.[1];
+        return { text: norm(textOf(inner)), align: (val !== undefined ? JC[val] : undefined) ?? 'l' };
+      }),
+    ),
+  );
 }
 
 /**

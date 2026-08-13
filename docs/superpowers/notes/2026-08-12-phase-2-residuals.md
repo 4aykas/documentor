@@ -275,9 +275,20 @@ the PDF half of this gap remains, the same shape as inline emphasis.
 
 **Table cells are still compared as a value sequence, not per cell**, in the
 PDF half of the agreement test — an untagged PDF has no readable cell
-boundaries. DOCX does have readable cell boundaries and could be compared per
-cell instead of as a flat sequence; phase 2 did not do this. A value landing
-in the wrong DOCX column with unchanged reading order would still pass.
+boundaries, and nothing closes that.
+
+*The DOCX half is closed as of 2026-08-13.* It had already moved to
+per-`<w:tc>` comparison, which catches a value landing in the wrong column;
+what it still could not see was the grid itself. `tablesFromDocx` now returns
+table → row → cell, and the comparison runs table by table and row by row
+against the IR, each cell carrying its own alignment so the text and the
+`<w:jc>` cannot be read out of step. Two failures that used to pass are caught
+now: a 5×2 grid emitted as 2×5 — the same cells in the same reading order,
+verified by making the renderer emit every body row as one long row, watching
+the shape assertion fail, and reverting — and a document with a second table
+the comparison had nothing to check against. "This fixture has exactly one
+table", which the old test left for the next reader to reconstruct from a
+confusing failure, is now its first assertion.
 
 ## Coverage the DOCX fixtures leave thin
 
@@ -361,12 +372,12 @@ ingester that does not make that promise, or for hand-built IR that skips
   failure reads "`word/document.xml` carries …", not "entry 4 carries …".
   `docxEntryDates` in `test/helpers/docx-parts.ts` was changed to return
   `{ name, date }` pairs to make that possible.
-- The per-cell agreement test compares only the first `table` block against
-  every `<w:tc>` in the document. That's fine as long as a fixture has one
-  table — it fails loudly, not silently, the day a second one is added and
-  the counts stop lining up — but the test itself doesn't say that's the
-  assumption, so the next reader has to work it out from the failure rather
-  than being told up front.
+- ~~The per-cell agreement test compares only the first `table` block against
+  every `<w:tc>` in the document.~~ *Closed on 2026-08-13* — it walks every
+  table, and the "this fixture has one" assumption is an assertion in the
+  test rather than something the next reader reconstructs from a confusing
+  failure. See the DOCX half of "What the agreement test still cannot see"
+  above.
 - The link-target comparison in the agreement test now carries the same kind
   of comment its two siblings (emphasis, table alignment) already had: an
   untagged PDF's text extraction reads only a run's text and size, never a
