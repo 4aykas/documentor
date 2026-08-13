@@ -18,7 +18,7 @@ import { ingestMarkdown } from '../ingest/md.js';
 import { ingestXlsx } from '../ingest/xlsx.js';
 import type { Block, Doc } from '../ir/types.js';
 import { budgetTable, budgetTotalCents, heatmapOf, scheduleTable, summaryTable } from './blocks.js';
-import { formatMoney, toCents } from './money.js';
+import { formatMoney } from './money.js';
 import { flattenTemplate, parseTemplate, type FlatItem } from './template.js';
 import { ProposalError, type ProposalData } from './types.js';
 
@@ -42,7 +42,7 @@ export async function assembleProposal(
   // offer costs more than a failed build.
   const covering = data.summary?.find((s) => s.covers === 'budget');
   if (covering !== undefined) {
-    const claimed = toCents(covering.price, `summary "${covering.item}"`);
+    const claimed = covering.priceCents;
     const computed = budgetTotalCents(data);
     if (claimed !== computed) {
       errors.push(

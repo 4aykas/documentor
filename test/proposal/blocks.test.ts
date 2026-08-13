@@ -8,12 +8,12 @@ const DATA: ProposalData = {
   template: 't.md', kind: 'COMMERCIAL PROPOSAL', project: 'Daimler Truck', date: '13.04.2026',
   author: { name: 'M. Mionchynsky', email: 'm@tebin.pro' },
   team: [
-    { role: 'BIM Coordinator', rate: 45, hoursPerWeek: [4, 4, 4, 4, 4] },
-    { role: 'Mechanical Engineer', rate: 45, hoursPerWeek: [16, 16, 16, 16, 16] },
+    { role: 'BIM Coordinator', rateCents: 4500, hoursPerWeek: [4, 4, 4, 4, 4] },
+    { role: 'Mechanical Engineer', rateCents: 4500, hoursPerWeek: [16, 16, 16, 16, 16] },
   ],
   currency: 'EUR',
   sections: {},
-  summary: [{ item: 'Engineering works', price: 4500, covers: 'budget' }],
+  summary: [{ item: 'Engineering works', priceCents: 450000, covers: 'budget' }],
 };
 
 const text = (cell: Inline[]): string => cell.map((n) => (n.t === 'text' ? n.v : '')).join('');
@@ -61,7 +61,7 @@ describe('scheduleTable', () => {
     expect(b.rows[1]!.map(text)).toEqual(['Mechanical Engineer', '2 days / week', '2 days / week', '2 days / week', '2 days / week', '2 days / week']);
   });
   it('writes a dash for a zero week and the singular at one day or less', () => {
-    const d: ProposalData = { ...DATA, team: [{ role: 'X', rate: 45, hoursPerWeek: [0, 8, 6] }] };
+    const d: ProposalData = { ...DATA, team: [{ role: 'X', rateCents: 4500, hoursPerWeek: [0, 8, 6] }] };
     const b = scheduleTable(d);
     if (b.t !== 'table') throw new Error('expected a table');
     expect(b.rows[0]!.map(text)).toEqual(['X', '—', '1 day / week', '0.75 day / week']);

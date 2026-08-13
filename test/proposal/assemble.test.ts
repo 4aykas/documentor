@@ -41,7 +41,7 @@ describe('assembleProposal', () => {
   });
 
   it('fails when the covering summary line and the budget disagree, quoting both figures', async () => {
-    const data: ProposalData = { ...DATA, summary: [{ item: 'Engineering works', price: 5000, covers: 'budget' }] };
+    const data: ProposalData = { ...DATA, summary: [{ item: 'Engineering works', priceCents: 500000, covers: 'budget' }] };
     const errs = await errorsOf(() => assembleProposal({ data, template: TEMPLATE }));
     expect(errs.join('\n')).toContain('5 000,00');
     expect(errs.join('\n')).toContain('4 500,00');

@@ -92,8 +92,9 @@ export function readProposalData(jsonText: string): { data: ProposalData; warnin
       }
       const role = typeof r['role'] === 'string' && r['role'] !== '' ? r['role'] : undefined;
       if (role === undefined) errors.push(`${at}.role: expected a non-empty string`);
+      let rateCents: number | undefined;
       try {
-        toCents(r['rate'], `${at}.rate`);
+        rateCents = toCents(r['rate'], `${at}.rate`);
       } catch (e) {
         errors.push((e as Error).message);
       }
@@ -110,8 +111,8 @@ export function readProposalData(jsonText: string): { data: ProposalData; warnin
           warnings.push(`${role} has zero hours across all weeks — deliberate, or a line that should not be in the team at all?`);
         }
       }
-      if (role !== undefined && typeof r['rate'] === 'number' && Array.isArray(hours)) {
-        team.push({ role, rate: r['rate'], hoursPerWeek: hours as number[] });
+      if (role !== undefined && rateCents !== undefined && Array.isArray(hours)) {
+        team.push({ role, rateCents, hoursPerWeek: hours as number[] });
       }
     });
     // The common length *is* the week count — @schedule and @heatmap have no
@@ -140,16 +141,17 @@ export function readProposalData(jsonText: string): { data: ProposalData; warnin
         }
         const item = typeof s['item'] === 'string' && s['item'] !== '' ? s['item'] : undefined;
         if (item === undefined) errors.push(`${at}.item: expected a non-empty string`);
+        let priceCents: number | undefined;
         try {
-          toCents(s['price'], `${at}.price`);
+          priceCents = toCents(s['price'], `${at}.price`);
         } catch (e) {
           errors.push((e as Error).message);
         }
         if (s['covers'] !== undefined && s['covers'] !== 'budget') {
           errors.push(`${at}.covers: the only known value is "budget", got ${JSON.stringify(s['covers'])}`);
         }
-        if (item !== undefined && typeof s['price'] === 'number') {
-          summary!.push({ item, price: s['price'], ...(s['covers'] === 'budget' ? { covers: 'budget' as const } : {}) });
+        if (item !== undefined && priceCents !== undefined) {
+          summary!.push({ item, priceCents, ...(s['covers'] === 'budget' ? { covers: 'budget' as const } : {}) });
         }
       });
       const covering = summary.filter((s) => s.covers === 'budget');

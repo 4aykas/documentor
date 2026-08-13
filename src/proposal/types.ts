@@ -1,8 +1,8 @@
 // The facts of one offer — only what changes from offer to offer. Everything
 // stable lives in the template. See the spec's "Data model".
 
-export type ProposalRole = { role: string; rate: number; hoursPerWeek: number[] };
-export type ProposalSummaryLine = { item: string; price: number; covers?: 'budget' };
+export type ProposalRole = { role: string; rateCents: number; hoursPerWeek: number[] };
+export type ProposalSummaryLine = { item: string; priceCents: number; covers?: 'budget' };
 export type ProposalAuthor = { name: string; email: string; phone?: string };
 
 export type ProposalData = {

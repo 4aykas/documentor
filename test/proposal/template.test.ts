@@ -5,7 +5,7 @@ import { ProposalError, type ProposalData } from '../../src/proposal/types.js';
 const DATA: ProposalData = {
   template: 't.md', kind: 'COMMERCIAL OFFER', project: 'BER01', date: '13.04.2026',
   author: { name: 'A. Sheronov', email: 'a@tebin.pro' },
-  team: [{ role: 'Electrical', rate: 45, hoursPerWeek: [8, 8] }],
+  team: [{ role: 'Electrical', rateCents: 4500, hoursPerWeek: [8, 8] }],
   currency: 'EUR',
   sections: { general: 'The general text.' },
   stage: 'LP5',

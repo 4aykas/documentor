@@ -4,16 +4,21 @@
 
 import type { Block, Inline } from '../ir/types.js';
 import { weekLabel } from '../render/tint.js';
-import { formatMoney, toCents } from './money.js';
+import { formatMoney } from './money.js';
 import { ProposalError, type ProposalData } from './types.js';
 
 const cell = (v: string): Inline[] => [{ t: 'text', v }];
 
+/** Hours booked for one role, summed over every week. */
+const roleHours = (r: ProposalData['team'][number]): number => r.hoursPerWeek.reduce((a, b) => a + b, 0);
+
+/** Hours × rate for one role, in cents — the one expression every budget
+ *  figure for a role is built from, so the per-row and grand-total numbers
+ *  cannot drift apart. */
+const roleBudgetCents = (r: ProposalData['team'][number]): number => roleHours(r) * r.rateCents;
+
 export function budgetTotalCents(data: ProposalData): number {
-  return data.team.reduce((sum, r) => {
-    const hours = r.hoursPerWeek.reduce((a, b) => a + b, 0);
-    return sum + hours * toCents(r.rate, `${r.role}.rate`);
-  }, 0);
+  return data.team.reduce((sum, r) => sum + roleBudgetCents(r), 0);
 }
 
 export function summaryTable(data: ProposalData): Block {
@@ -24,16 +29,17 @@ export function summaryTable(data: ProposalData): Block {
     t: 'table',
     head: [cell('DESCRIPTION'), cell('PRICE')],
     align: ['l', 'r'],
-    rows: data.summary.map((s) => [cell(s.item), cell(formatMoney(toCents(s.price, `summary "${s.item}"`), data.currency))]),
+    rows: data.summary.map((s) => [cell(s.item), cell(formatMoney(s.priceCents, data.currency))]),
   };
 }
 
 export function budgetTable(data: ProposalData): Block {
-  const rows = data.team.map((r) => {
-    const hours = r.hoursPerWeek.reduce((a, b) => a + b, 0);
-    const rateCents = toCents(r.rate, `${r.role}.rate`);
-    return [cell(r.role), cell(String(hours)), cell(formatMoney(rateCents, data.currency)), cell(formatMoney(hours * rateCents, data.currency))];
-  });
+  const rows = data.team.map((r) => [
+    cell(r.role),
+    cell(String(roleHours(r))),
+    cell(formatMoney(r.rateCents, data.currency)),
+    cell(formatMoney(roleBudgetCents(r), data.currency)),
+  ]);
   rows.push([cell('TOTAL'), cell(''), cell(''), cell(formatMoney(budgetTotalCents(data), data.currency))]);
   return { t: 'table', head: [cell('DESCRIPTION'), cell('Hours'), cell('Rate'), cell('Budget')], align: ['l', 'r', 'r', 'r'], rows };
 }
