@@ -690,14 +690,22 @@ export async function ingestXlsx(
     const canPromoteTitle =
       sheets.length === 1 && preambleEntries.length === 1 && liftedTitle === undefined &&
       (opts.title === undefined || opts.title === '');
+    // Neither branch reports anything, and that is deliberate. `dropped` means
+    // this document could not carry something — the CLI prints it as "things
+    // the document format cannot hold were left out", and `inspect` puts it in
+    // front of somebody deciding whether a conversion is safe. A caption that
+    // became a paragraph, or a title row that became the title, was carried:
+    // it is in the output, visible, in a place the reader can see. Filing it
+    // under loss costs more than it gives — every entry in that list is read
+    // as something to go and check, and a list that cries wolf stops being
+    // read at all, which is how a real loss slips past. The move is not
+    // invisible either way: `inspect` prints the title it understood, and the
+    // paragraph is in the document above its table.
     if (canPromoteTitle) {
-      const entry = preambleEntries[0]!;
-      liftedTitle = entry.text;
-      sink.dropped.push(`sheet "${sheet.name}": preamble row ${entry.row} ("${entry.text}") lifted and used as the document title`);
+      liftedTitle = preambleEntries[0]!.text;
     } else {
       for (const entry of preambleEntries) {
         sink.blocks.push({ t: 'para', text: [{ t: 'text', v: entry.text }] });
-        sink.dropped.push(`sheet "${sheet.name}": preamble row ${entry.row} ("${entry.text}") lifted above the table as text`);
       }
     }
 

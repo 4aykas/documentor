@@ -321,7 +321,10 @@ describe('ingestXlsx — preamble lifted out, empty columns dropped', () => {
       },
     ]);
     expect(dropped.some((d) => d.includes('not a header'))).toBe(false);
-    expect(dropped.some((d) => d.includes('lifted') && d.includes('document title'))).toBe(true);
+    // And nothing is reported: the title row was carried, not lost. `dropped`
+    // is what this document could not hold, and a caller reads it to decide
+    // whether a conversion is safe — see the comment at the lift itself.
+    expect(dropped).toEqual([]);
   });
 
   it('drops a wholly empty column between two populated ones and one at the right edge, keeping order and alignment', async () => {
@@ -368,9 +371,13 @@ describe('ingestXlsx — preamble lifted out, empty columns dropped', () => {
     expect(dropped.some((d) => d.includes('lifted'))).toBe(false);
   });
 
-  it('reports each lifted preamble row by sheet, row number and text, and keeps it as a para block above the table', async () => {
+  it('keeps a lifted preamble row as a para block above the table, and reports nothing', async () => {
     // An explicit --title disables the "promote to document title" path, so
-    // this exercises the ordinary para-block destination and its report.
+    // this exercises the ordinary para-block destination. It reports nothing
+    // for the same reason the promotion does: the caption is in the document,
+    // above its table, where the reader can see it. `dropped` is for what
+    // could not be carried, and a list that names carried content teaches
+    // people to skim past the entries that matter.
     const rows =
       row(1, inlineStr('A1', 'Legal Structure, Locations')) +
       row(2, `${inlineStr('A2', 'Entity')}${inlineStr('B2', 'Country')}`) +
@@ -388,12 +395,7 @@ describe('ingestXlsx — preamble lifted out, empty columns dropped', () => {
         align: ['l', 'l'],
       },
     ]);
-    const msg = dropped.find((d) => d.includes('lifted'));
-    expect(msg).toBeDefined();
-    expect(msg).toContain('"Structure"');
-    expect(msg).toContain('row 1');
-    expect(msg).toContain('Legal Structure, Locations');
-    expect(msg).toContain('above the table as text');
+    expect(dropped).toEqual([]);
   });
 });
 
