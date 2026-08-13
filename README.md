@@ -33,10 +33,11 @@ runs the same code without installing anything.
 
 ## What it does
 
-`documentor` reads a source document into a small, format-agnostic
-representation, then draws that representation with a theme. The look lives in
-one place, so a PDF and a Word file made from the same source cannot drift
-apart.
+`documentor` builds a small, format-agnostic representation — from a source
+document it reads, or, for a proposal, assembled from a data file and a
+template — then draws that representation with a theme. The look lives in
+one place, so a PDF and a Word file made from the same representation cannot
+drift apart.
 
 ## What it reads and writes
 
