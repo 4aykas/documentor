@@ -663,7 +663,19 @@ const RASTER = /^data:image\/(png|jpeg);base64,/;
  * function is one place for that to change.
  */
 export function canEmbedInDocx(src: string): boolean {
-  return RASTER.test(src);
+  if (!RASTER.test(src)) return false;
+  // And the bytes have to hold a size this file can find, which is the same
+  // question `blocks()` asks a moment later. Answering only the declared type
+  // here would let `inspect` promise a picture that the build then turns into
+  // a placeholder — a truncated photograph, or one labelled PNG that is
+  // really something else. This command exists to say what will happen, so it
+  // has to do the work the renderer does rather than a cheaper test that
+  // usually agrees.
+  try {
+    return rasterSize(Buffer.from(src.slice(src.indexOf(',') + 1), 'base64')) !== null;
+  } catch {
+    return false; // Undecodable base64 is not a picture either.
+  }
 }
 
 /**

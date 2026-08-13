@@ -384,11 +384,26 @@ describe('runInspect: single file', () => {
     expect(doc.warnings.some((w) => /columns/.test(w))).toBe(false);
   });
 
-  it('warns about an image that will not embed in Word', async () => {
-    // render/docx.ts only ever embeds a PNG (see RASTER there), so a
-    // non-PNG image block can only be exercised through the Markdown
-    // ingester, which carries an image's src verbatim without checking its
-    // format at all.
+  it('warns about an image in a format Word cannot take', async () => {
+    // render/docx.ts embeds a PNG or a JPEG (see RASTER there). A GIF has no
+    // reader, so it becomes a placeholder — and this warning is how somebody
+    // finds that out before the build rather than after. The block can only be
+    // built through the Markdown ingester, which carries an image's src
+    // verbatim without checking its format at all.
+    const gif = `data:image/gif;base64,${Buffer.from('GIF89a').toString('base64')}`;
+    const file = await fixture(`# Pics\n\n![an animation](${gif})\n`);
+    const { io, log } = collect();
+    await runInspect([file, '--json'], io);
+    const doc = parseJson(log).documents[0]!;
+    expect(doc.status).toBe('ok');
+    if (doc.status !== 'ok') throw new Error('unreachable');
+    expect(doc.warnings.some((w) => /will not embed in Word/.test(w))).toBe(true);
+  });
+
+  it('warns about a picture whose declared format its bytes do not back up', async () => {
+    // Labelled JPEG, and the bytes are not one. Judging by the label alone
+    // would promise a picture here and produce a placeholder at build time —
+    // inspect's whole job is to not do that.
     const jpeg = `data:image/jpeg;base64,${Buffer.from('not really jpeg bytes').toString('base64')}`;
     const file = await fixture(`# Pics\n\n![a photo](${jpeg})\n`);
     const { io, log } = collect();
@@ -397,6 +412,24 @@ describe('runInspect: single file', () => {
     expect(doc.status).toBe('ok');
     if (doc.status !== 'ok') throw new Error('unreachable');
     expect(doc.warnings.some((w) => /will not embed in Word/.test(w))).toBe(true);
+  });
+
+  it('does not warn about a real JPEG', async () => {
+    // A minimal baseline frame: start-of-image, a frame header carrying 8x8,
+    // end-of-image. Enough for the size reader, which is what decides.
+    const bytes = Buffer.from([
+      0xff, 0xd8,
+      0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x08, 0x00, 0x08,
+      0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01,
+      0xff, 0xd9,
+    ]);
+    const file = await fixture(`# Pics\n\n![a photo](data:image/jpeg;base64,${bytes.toString('base64')})\n`);
+    const { io, log } = collect();
+    await runInspect([file, '--json'], io);
+    const doc = parseJson(log).documents[0]!;
+    expect(doc.status).toBe('ok');
+    if (doc.status !== 'ok') throw new Error('unreachable');
+    expect(doc.warnings.some((w) => /will not embed/.test(w))).toBe(false);
   });
 
   it('does not warn about a PNG image', async () => {
