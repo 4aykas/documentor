@@ -9,7 +9,11 @@ description: Re-issue an existing Markdown, Word or Excel document as a well-typ
 It reads the content into an intermediate representation and draws that
 representation with a theme. **It never touches the text** — only how the
 document looks. If a document's wording needs to change, that is a separate,
-human request; do not fold it into a documentor run.
+human request; do not fold it into a documentor run. The one exception is a
+commercial proposal, which does not exist yet when this flow starts:
+`documentor proposal` assembles it from a data file and a template, but it
+still never *invents* text — every sentence comes from one of those two
+inputs, and a missing piece is an error, never a sentence documentor made up.
 
 ## When to use this skill
 
@@ -192,6 +196,10 @@ missing — relay it and ask, never fill the gap yourself.
 ## What this skill is not
 
 A second execution path. It never re-implements ingesting, rendering,
-naming, or validation — every one of those stays in the CLI. This skill's
-only job is: run `inspect`, ask the few questions whose answers change the
-sidecar, write and show the sidecar, run `build`.
+naming, or validation — every one of those stays in the CLI. This skill has
+two jobs, and each writes a different file: for an existing document, run
+`inspect`, ask the few questions whose answers change the sidecar, write and
+show the sidecar, run `build`; for a proposal that does not exist yet, run
+the proposal flow above, which writes a *data file*, not a sidecar — the
+data file is not layered over some other source of truth, it is the
+decisions file itself, which is why `proposal` reads no sidecar at all.

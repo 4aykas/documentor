@@ -1,6 +1,9 @@
 # documentor
 
-Take a document somebody already wrote and re-issue it as a well-typeset one.
+Take a document somebody already wrote and re-issue it as a well-typeset
+one — or, for a commercial proposal, assemble one from a data file and a
+template. Re-issuing is still the main thing this tool does; proposals are
+the one case where the document does not exist yet.
 
 ```bash
 documentor build report.md --to pdf
@@ -43,6 +46,11 @@ apart.
 | **Word `.docx`** | yes | yes | yes | — |
 | **Excel `.xlsx`** | yes | yes | yes | — |
 | **PDF** | — | — | — | — |
+
+This table is about re-issuing a single existing source. Proposals sit
+outside it: `documentor proposal` takes two inputs, a data `.json` file and
+a `.md` template, and writes PDF, Word or Markdown from the pair — see
+"Proposals" below.
 
 Markdown out is not a second design — it is the intermediate representation in
 a form a human reads, which makes it the cheapest way to see what an ingester
