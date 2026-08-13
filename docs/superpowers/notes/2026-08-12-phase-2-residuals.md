@@ -83,6 +83,23 @@ kitchen-sink fixture's `Item/Quantity/Unit price/Currency/Total` table (A4,
 gives `Item` 224.7pt, `Quantity` 69.75pt, `Unit price` 87.15pt, `Currency`
 69.75pt, `Total` 47.95pt, and the same cell wraps onto two.
 
+**~~Word embeds a PNG and nothing else, where HTML and PDF embed any
+raster.~~** *Narrowed on 2026-08-13: Word now embeds a JPEG too.* This entry
+called a JPEG decoder "a phase-3-sized piece of work"; it is not, because
+nothing here needs to decode a JPEG — only to find its start-of-frame segment
+and read the two integers in it. What made that worth writing down anyway is
+what the walk has to get right: there are several start-of-frame markers and
+the common one today is `0xC2` (progressive), not `0xC0`; `0xC4` sits inside
+the same range and is a Huffman table, not a frame; and `0xD0`–`0xD7` carry no
+length field, so reading one walks into the middle of the next segment. A
+reader that handles only the baseline case passes every test written against a
+hand-made baseline fixture and sends most real photographs to the placeholder.
+
+The size is now sniffed from the bytes rather than taken from the `data:`
+URI's declared type, so a picture labelled PNG that is really a JPEG lands in
+the right reader. A GIF or a WebP is still a placeholder — the original text
+follows, because the reasoning still holds for every format without a reader.
+
 **Word embeds a PNG and nothing else, where HTML and PDF embed any
 raster.** `src/render/docx.ts` reads a picture's natural dimensions from
 PNG's IHDR chunk, and that is the only decoder it has. A picture needs its

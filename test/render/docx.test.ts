@@ -569,20 +569,104 @@ describe('images', () => {
     expect(xml).toContain('mislabelled');
   });
 
-  it('will not embed a JPEG, and says so where the picture would have been', async () => {
-    // A deliberate divergence, recorded in the phase-2 residuals: html.ts
-    // embeds any raster `data:` URI and a JPEG is one, but this renderer reads
-    // natural dimensions from PNG's IHDR only, and a picture needs its aspect
-    // ratio even when the block supplies widthPt. Accepting `image/jpeg` and
-    // then always falling through to the placeholder is what this used to do;
-    // the placeholder is the same, the promise is no longer false.
-    const jpeg = `data:image/jpeg;base64,${Buffer.from('\xFF\xD8\xFF\xE0 not really decoded', 'binary').toString('base64')}`;
-    const xml = await docxPart(await render(doc({ t: 'image', src: jpeg, alt: 'a photo', widthPt: 200 })), 'word/document.xml');
+  /**
+   * A JPEG built marker by marker, so each test says exactly which shape it is
+   * exercising. `lead` goes between the start-of-image and the frame — that is
+   * where a real file keeps its EXIF, its thumbnail and its colour profile, and
+   * where a size reader that trusts a fixed offset goes wrong.
+   */
+  const jpegBytes = (sofMarker: number, w: number, h: number, lead: number[] = []): Buffer => {
+    const frame = [0xff, sofMarker, 0x00, 0x11, 0x08, h >> 8, h & 0xff, w >> 8, w & 0xff,
+      0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01];
+    return Buffer.from([0xff, 0xd8, ...lead, ...frame, 0xff, 0xd9]);
+  };
+  const asJpeg = (b: Buffer): string => `data:image/jpeg;base64,${b.toString('base64')}`;
+  const APP0 = [0xff, 0xe0, 0x00, 0x06, 0x4a, 0x46, 0x49, 0x46]; // A JFIF header, four bytes of payload.
+
+  it('embeds a baseline JPEG at its own aspect ratio', async () => {
+    // 200pt wide and twice as tall as it is wide: the height can only come
+    // from the frame header, so a wrong reader shows up as a wrong height
+    // rather than as a missing picture.
+    const xml = await docxPart(
+      await render(doc({ t: 'image', src: asJpeg(jpegBytes(0xc0, 50, 100)), alt: 'a photo', widthPt: 200 })),
+      'word/document.xml',
+    );
+    expect(xml).toContain('<w:drawing>');
+    expect(xml).not.toContain('a photo'); // The alt text is the placeholder's, and there is no placeholder.
+    // 200pt wide → 400pt tall → px at 96dpi → EMU.
+    expect(xml).toContain(`cx="${Math.round((200 * 4) / 3 * 9525)}"`);
+    expect(xml).toContain(`cy="${Math.round((400 * 4) / 3 * 9525)}"`);
+  });
+
+  it('embeds a progressive JPEG, which is what most cameras write', async () => {
+    // 0xC2, not 0xC0. A reader accepting only the baseline marker would send
+    // the common case to the placeholder and look correct in every test using
+    // a hand-made baseline fixture.
+    const xml = await docxPart(
+      await render(doc({ t: 'image', src: asJpeg(jpegBytes(0xc2, 40, 20)), alt: 'p' })),
+      'word/document.xml',
+    );
+    expect(xml).toContain('<w:drawing>');
+  });
+
+  it('walks past the segments a real JPEG carries before its frame', async () => {
+    // A JFIF header, then a restart marker that carries no length at all —
+    // reading a length after that one walks into the middle of the next
+    // segment and the frame is never found.
+    const lead = [...APP0, 0xff, 0xd0];
+    const xml = await docxPart(
+      await render(doc({ t: 'image', src: asJpeg(jpegBytes(0xc0, 30, 30, lead)), alt: 'x' })),
+      'word/document.xml',
+    );
+    expect(xml).toContain('<w:drawing>');
+  });
+
+  it('does not mistake a Huffman table for a frame', async () => {
+    // 0xC4 sits inside the 0xC0-0xCF range but is a table, not a frame. Read
+    // as one, its payload yields a nonsense size instead of the real picture's.
+    const lead = [0xff, 0xc4, 0x00, 0x06, 0x00, 0x01, 0x02, 0x03];
+    const xml = await docxPart(
+      await render(doc({ t: 'image', src: asJpeg(jpegBytes(0xc0, 60, 30, lead)), alt: 'x' })),
+      'word/document.xml',
+    );
+    expect(xml).toContain(`cx="${Math.round((45 * 4) / 3 * 9525)}"`); // 60px → 45pt, from the real frame.
+  });
+
+  it('falls back to a placeholder for a JPEG whose frame never arrives', async () => {
+    // Start-of-image and a scan, no frame — truncated or corrupt. One bad
+    // picture degrades to a placeholder rather than taking the document down.
+    const headerOnly = Buffer.from([0xff, 0xd8, ...APP0, 0xff, 0xda, 0x00, 0x02]);
+    const xml = await docxPart(
+      await render(doc({ t: 'image', src: asJpeg(headerOnly), alt: 'a photo', widthPt: 200 })),
+      'word/document.xml',
+    );
     expect(xml).not.toContain('<w:drawing>');
     expect(xml).toContain('a photo');
-    // Even with widthPt supplied — the branch whose old comment claimed the
-    // block could rescue a JPEG by saying how wide it is.
-    expect(xml).toContain('data:image/jpeg;');
+  });
+
+  it('reads the bytes, not the label, when the two disagree', async () => {
+    // Declared PNG, actually a JPEG. The declared type only decides whether to
+    // try; handing these bytes to the PNG reader would produce a placeholder
+    // for a picture this renderer can carry perfectly well.
+    const mislabelled = `data:image/png;base64,${jpegBytes(0xc0, 10, 10).toString('base64')}`;
+    const xml = await docxPart(
+      await render(doc({ t: 'image', src: mislabelled, alt: 'x' })),
+      'word/document.xml',
+    );
+    expect(xml).toContain('<w:drawing>');
+  });
+
+  it('still refuses a GIF, and says so where the picture would have been', async () => {
+    // The renderer disagreement named in the phase-2 residuals, now narrowed:
+    // html.ts embeds any raster `data:` URI; this file can only size the two
+    // formats it has readers for.
+    const gif = `data:image/gif;base64,${Buffer.from('GIF89a').toString('base64')}`;
+    const xml = await docxPart(
+      await render(doc({ t: 'image', src: gif, alt: 'an animation', widthPt: 200 })),
+      'word/document.xml',
+    );
+    expect(xml).not.toContain('<w:drawing>');
+    expect(xml).toContain('an animation');
   });
 
   it('turns a remote image into a placeholder naming its host', async () => {

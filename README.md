@@ -67,10 +67,12 @@ deliberate rather than unfinished:
   by size, so a lost table is loud rather than silent. Nothing else is
   silently dropped either: comments, tracked changes, footnotes, text boxes and
   the old letterhead are all named in the run's report.
-- **Writing Word embeds a PNG and nothing else.** Word's SVG support is
-  version-dependent and embedding one properly means shipping a raster
-  alongside it, which cannot be produced reproducibly — so an SVG becomes a
-  visible placeholder naming what it was. The PDF path embeds any raster.
+- **Writing Word embeds a PNG or a JPEG, and nothing else.** A picture needs
+  its natural proportions, and those come from reading the file — so a format
+  this renderer cannot measure becomes a visible placeholder naming what it
+  was. That includes SVG, whose Word support is version-dependent and which
+  would need a raster shipped alongside it that cannot be produced
+  reproducibly. The PDF path embeds any raster.
 
 ## The decisions live in a file, not in a conversation
 

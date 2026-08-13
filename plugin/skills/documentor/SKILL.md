@@ -51,8 +51,8 @@ Know these before promising anything to the user:
   *reported*, not carried — a lost table is loud, not silent.
   Paragraphs, headings, lists, emphasis, links, page breaks, and PNG images
   all carry through.
-- **Word embeds PNG only.** An SVG or other image becomes a visible
-  placeholder naming what it was; the PDF path embeds any raster.
+- **Word embeds PNG and JPEG only.** An SVG, a GIF or anything else becomes a
+  visible placeholder naming what it was; the PDF path embeds any raster.
 
 ## The flow
 

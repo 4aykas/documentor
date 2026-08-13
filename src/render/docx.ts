@@ -528,12 +528,12 @@ function blocks(b: Block, theme: Theme): (Paragraph | Table)[] {
     case 'image': {
       if (!canEmbedInDocx(b.src)) return [imagePlaceholder(b, theme)];
       const bytes = Buffer.from(b.src.slice(b.src.indexOf(',') + 1), 'base64');
-      const natural = pngSize(bytes);
+      const natural = rasterSize(bytes);
       if (natural === null) return [imagePlaceholder(b, theme)];
       const widthPt = b.widthPt ?? Math.min(PAGE_PT[theme.page.size].w - theme.page.marginPt * 2, natural.w * 0.75);
       const heightPt = (widthPt * natural.h) / natural.w;
       return [new Paragraph({
-        children: [new ImageRun({ data: bytes, type: 'png', transformation: { width: px96(widthPt), height: px96(heightPt) } })],
+        children: [new ImageRun({ data: bytes, type: natural.type, transformation: { width: px96(widthPt), height: px96(heightPt) } })],
         spacing: { after: dxa(8) },
       })];
     }
@@ -563,22 +563,92 @@ function pngSize(bytes: Buffer): { w: number; h: number } | null {
   return w > 0 && h > 0 ? { w, h } : null;
 }
 
+/**
+ * A JPEG's dimensions live in its start-of-frame segment, and finding that
+ * segment means walking the file's markers rather than reading a fixed offset
+ * the way PNG allows: a JPEG opens with any number of variable-length
+ * segments — thumbnails, colour profiles, EXIF, comments — before the frame
+ * header appears, and their order is not fixed.
+ *
+ * Two details decide whether this walk is correct.
+ *
+ * **There is more than one start-of-frame marker.** `FFC0` is baseline, but
+ * `FFC1`, `FFC2` (progressive — what most photo software writes today) and
+ * the rest through `FFCF` are frames too, and all carry height and width in
+ * the same place. The two exceptions inside that range are `FFC4` (Huffman
+ * tables) and `FFC8`/`FFCC`, which are not frames at all and must be skipped
+ * like any other segment. Accepting only `FFC0` would make every progressive
+ * JPEG — the common case — silently fall back to a placeholder, which is
+ * exactly the failure this function exists to remove.
+ *
+ * **Standalone markers carry no length.** `FF01` and `FFD0`–`FFD7` are two
+ * bytes and nothing more; reading a length after them walks into the middle
+ * of somebody else's data. So does treating a fill byte (`FF FF`) as a
+ * marker. Both are stepped over explicitly.
+ *
+ * `null` means the same thing it means for PNG, and the caller decides what
+ * to do with it — see pngSize's comment, which owns that contract.
+ */
+function jpegSize(bytes: Buffer): { w: number; h: number } | null {
+  if (bytes.length < 4 || bytes.readUInt16BE(0) !== 0xffd8) return null;
+  let at = 2;
+  while (at + 3 < bytes.length) {
+    if (bytes[at] !== 0xff) return null; // Not where a marker should be.
+    const marker = bytes[at + 1]!;
+    if (marker === 0xff) { at += 1; continue; } // Fill byte before a marker.
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { at += 2; continue; }
+    if (marker === 0xda || marker === 0xd9) return null; // Scan data or end: no frame found.
+    const length = bytes.readUInt16BE(at + 2);
+    if (length < 2) return null; // A segment cannot be shorter than its own length field.
+    const isFrame = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+    if (isFrame) {
+      // Frame header: length, sample precision, then height and width.
+      if (at + 9 > bytes.length) return null;
+      const h = bytes.readUInt16BE(at + 5);
+      const w = bytes.readUInt16BE(at + 7);
+      return w > 0 && h > 0 ? { w, h } : null;
+    }
+    at += 2 + length;
+  }
+  return null;
+}
+
+/**
+ * The picture's natural size and the format tag Word needs for it, or `null`
+ * when this renderer cannot carry the bytes at all. Sniffing the bytes rather
+ * than trusting the `data:` URI's declared type is deliberate: the type is
+ * whatever produced the document said it was, and a picture labelled PNG that
+ * is really a JPEG would otherwise be handed to the wrong reader.
+ */
+function rasterSize(bytes: Buffer): { w: number; h: number; type: 'png' | 'jpg' } | null {
+  const png = pngSize(bytes);
+  if (png !== null) return { ...png, type: 'png' };
+  const jpeg = jpegSize(bytes);
+  if (jpeg !== null) return { ...jpeg, type: 'jpg' };
+  return null;
+}
+
 /** Word describes a picture in pixels at 96 dpi; the theme thinks in points. */
 const px96 = (pt: number): number => (pt * 4) / 3;
 
 /**
- * PNG only, because pngSize() is the only decoder in this file and a picture
- * needs its natural aspect ratio even when the block supplies `widthPt` — the
- * height has nothing else to come from. This regex used to accept jpeg and gif
- * as well, which changed nothing except where the placeholder came from: both
- * fell through to it anyway, one branch further down. Accepting a format and
- * then never embedding it is the shape of promise this project exists to stop
- * making, so the promise is narrowed to what the code can carry.
+ * PNG and JPEG, because those are the two this file can read a size out of,
+ * and a picture needs its natural aspect ratio even when the block supplies
+ * `widthPt` — the height has nothing else to come from. The rule stays "what
+ * the code can carry", not "what the format list looks like": this regex once
+ * accepted GIF too, which changed nothing except which branch produced the
+ * placeholder. Accepting a format and then never embedding it is the shape of
+ * promise this project exists to stop making.
  *
- * The cost is a renderer disagreement, named in the phase's residuals: HTML
- * and PDF embed any raster `data:` URI, and Word embeds only a PNG.
+ * The declared type only decides whether to try; `rasterSize` then sniffs the
+ * bytes and has the final say, so a mislabelled picture still lands in the
+ * right reader or in the placeholder.
+ *
+ * A GIF or a WebP is still a placeholder in Word while HTML and PDF embed any
+ * raster `data:` URI — the renderer disagreement named in the phase's
+ * residuals, now narrowed to the formats nobody photographs in.
  */
-const RASTER = /^data:image\/png;base64,/;
+const RASTER = /^data:image\/(png|jpeg);base64,/;
 
 /**
  * Whether this renderer can embed `src` as a real picture — the question
