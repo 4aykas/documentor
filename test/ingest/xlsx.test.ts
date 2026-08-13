@@ -200,6 +200,96 @@ describe('ingestXlsx — trimming and header detection', () => {
     ]);
     expect(dropped.some((d) => d.includes('no header row'))).toBe(true);
   });
+
+  it('recognises a header with one unlabelled column — the shareholders-register shape', async () => {
+    // 6 columns, 5 filled (5/6 ≈ 0.83) is the shareholders register's own
+    // measured ratio (docs/superpowers/notes/2026-08-13-what-a-real-register-looks-like.md):
+    // one column carries no label anywhere in the header row. The old rule
+    // (every cell filled) rejected this; HEADER_FILL_RATIO (src/ingest/xlsx.ts) recovers it.
+    // Column F carries no header label — a bare cell in row 1 — but does
+    // carry a value in row 2, so dropEmptyColumns leaves it in place instead
+    // of removing it as a style-only column; that is what keeps this at 5/6
+    // rather than a trivially full 5/5.
+    const rows =
+      row(1, `${inlineStr('A1', 'Name')}${inlineStr('B1', 'Role')}${inlineStr('C1', 'Class')}${inlineStr('D1', 'Shares')}${inlineStr('E1', 'Since')}<c r="F1"/>`) +
+      row(2, `${inlineStr('A2', 'Alice')}${inlineStr('B2', 'Director')}${inlineStr('C2', 'Ordinary')}${inlineStr('D2', '100')}${inlineStr('E2', '2020')}${inlineStr('F2', 'note')}`);
+    const buf = await oneSheetXlsx(rows);
+    const { doc, dropped } = await ingestXlsx(buf);
+    const table = doc.blocks[1] as { head: unknown };
+    expect(table.head).toEqual([
+      [{ t: 'text', v: 'Name' }], [{ t: 'text', v: 'Role' }], [{ t: 'text', v: 'Class' }], [{ t: 'text', v: 'Shares' }], [{ t: 'text', v: 'Since' }], [],
+    ]);
+    expect(dropped.some((d) => d.includes('not a header'))).toBe(false);
+  });
+
+  it('still refuses a row as a header if any cell in it is numeric, no matter how full', async () => {
+    // 9 of 10 columns filled — well above HEADER_FILL_RATIO — but one cell is
+    // numeric. The numeric check is absolute and must not be traded off
+    // against fill: a header with a number in it has never been seen in the
+    // corpus, and printing a number as a column label is the wrong failure
+    // mode to risk for a looser fill rule.
+    const cells = Array.from({ length: 9 }, (_, i) => inlineStr(`${String.fromCharCode(65 + i)}1`, `Col${i}`)).join('') + num('J1', 42);
+    const dataCells = Array.from({ length: 10 }, (_, i) => inlineStr(`${String.fromCharCode(65 + i)}2`, `v${i}`)).join('');
+    const rows = row(1, cells) + row(2, dataCells);
+    const buf = await oneSheetXlsx(rows);
+    const { doc, dropped } = await ingestXlsx(buf);
+    const table = doc.blocks[1] as { head: unknown };
+    expect(table.head).toEqual(Array.from({ length: 10 }, () => []));
+    expect(dropped.some((d) => d.includes('not a header'))).toBe(true);
+  });
+
+  it('does not promote a first data row of half-filled all-text values — the case criterion 3 protects', async () => {
+    // 5 of 10 columns filled (0.5), all text, no numeric — the shape measured
+    // in the corpus as the highest-ratio candidate that is *not* a real
+    // header (see HEADER_FILL_RATIO's own comment). Row 2 fills every column
+    // so none of the other five are wholly empty and dropped by
+    // dropEmptyColumns before header detection even runs. A threshold picked
+    // from fill ratio alone has to stay above this shape or it starts
+    // promoting ordinary sparse data rows to headers.
+    const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+    const headerCells = letters.map((l, i) => (i % 2 === 0 ? inlineStr(`${l}1`, `v${i}`) : `<c r="${l}1"/>`)).join('');
+    const dataCells = letters.map((l) => inlineStr(`${l}2`, 'v')).join('');
+    const buf = await oneSheetXlsx(row(1, headerCells) + row(2, dataCells));
+    const { doc, dropped } = await ingestXlsx(buf);
+    const table = doc.blocks[1] as { head: unknown };
+    expect(table.head).toEqual(Array.from({ length: 10 }, () => []));
+    expect(dropped.some((d) => d.includes('not a header'))).toBe(true);
+  });
+
+  it('refuses a row too sparse to be a header', async () => {
+    // 2 of 8 columns filled in the header row (0.25); row 2 fills every
+    // column so none of the other six are wholly empty and dropped by
+    // dropEmptyColumns — this test is about sparseness, not empty columns.
+    const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+    const headerCells = `${inlineStr('A1', 'x')}${inlineStr('B1', 'y')}` + letters.slice(2).map((l) => `<c r="${l}1"/>`).join('');
+    const dataCells = letters.map((l) => inlineStr(`${l}2`, 'v')).join('');
+    const buf = await oneSheetXlsx(row(1, headerCells) + row(2, dataCells));
+    const { doc, dropped } = await ingestXlsx(buf);
+    const table = doc.blocks[1] as { head: unknown };
+    expect(table.head).toEqual(Array.from({ length: 8 }, () => []));
+    expect(dropped.some((d) => d.includes('not a header'))).toBe(true);
+  });
+
+  it('exercises the HEADER_FILL_RATIO boundary on both sides: 6/10 filled recognised, 5/10 refused', async () => {
+    // HEADER_FILL_RATIO (src/ingest/xlsx.ts) is 0.6. With 10 columns the
+    // boundary lands on a whole cell, so this is the tightest fixture that
+    // can exercise both sides of it: one cell's difference flips the result.
+    const letters = Array.from({ length: 10 }, (_, i) => String.fromCharCode(65 + i));
+    const atThreshold = letters.map((l, i) => (i < 6 ? inlineStr(`${l}1`, `h${i}`) : `<c r="${l}1"/>`)).join('');
+    const belowThreshold = letters.map((l, i) => (i < 5 ? inlineStr(`${l}1`, `h${i}`) : `<c r="${l}1"/>`)).join('');
+    const dataRow = letters.map((l) => inlineStr(`${l}2`, 'v')).join('');
+
+    const atBuf = await oneSheetXlsx(row(1, atThreshold) + row(2, dataRow));
+    const { doc: atDoc, dropped: atDropped } = await ingestXlsx(atBuf);
+    const atHead = (atDoc.blocks[1] as { head: unknown[][] }).head;
+    expect(atHead.filter((h) => h.length > 0)).toHaveLength(6); // the 6 filled header cells came through as text, not as data
+    expect(atDropped.some((d) => d.includes('not a header'))).toBe(false);
+
+    const belowBuf = await oneSheetXlsx(row(1, belowThreshold) + row(2, dataRow));
+    const { doc: belowDoc, dropped: belowDropped } = await ingestXlsx(belowBuf);
+    expect((belowDoc.blocks[1] as { head: unknown[] }).head).toEqual(Array.from({ length: 10 }, () => []));
+    expect(belowDropped.some((d) => d.includes('not a header'))).toBe(true);
+  });
 });
 
 describe('ingestXlsx — preamble lifted out, empty columns dropped', () => {

@@ -21,7 +21,15 @@ import JSZip from 'jszip';
 import { posix } from 'node:path';
 import type { Block, Ingested, Inline } from '../ir/types.js';
 
-type Sink = { blocks: Block[]; dropped: string[] };
+// Several internal helpers below are exported — not for any consumer of this
+// module, but for the corpus measurement scripts under
+// docs/superpowers/notes that pick the header-detection fill threshold. The
+// point of that measurement is to run the ingester's *own* trimming, not a
+// reimplementation of it, so the pipeline stages it depends on
+// (parseWorkbook/parseRels/parseSharedStrings/parseStyles/readWorksheet/
+// dropEmptyColumns/trimLeadingRows/liftPreamble) have to be reachable from
+// outside this file.
+export type Sink = { blocks: Block[]; dropped: string[] };
 
 // ---------------------------------------------------------------------------
 // XML entity / text plumbing (mirrors docx.ts's own; not shared, on purpose —
@@ -46,7 +54,7 @@ function decodeXmlEntities(s: string): string {
 // Relationships (xl/_rels/workbook.xml.rels): rId → target
 // ---------------------------------------------------------------------------
 
-function parseRels(xml: string): Map<string, string> {
+export function parseRels(xml: string): Map<string, string> {
   const out = new Map<string, string>();
   for (const tag of xml.match(/<Relationship\b[^>]*\/>/g) ?? []) {
     const id = /\bId="([^"]*)"/.exec(tag)?.[1];
@@ -61,9 +69,9 @@ function parseRels(xml: string): Map<string, string> {
 // number needs before it can become a calendar date at all.
 // ---------------------------------------------------------------------------
 
-type SheetRef = { name: string; rId: string };
+export type SheetRef = { name: string; rId: string };
 
-function parseWorkbook(xml: string): { sheets: SheetRef[]; date1904: boolean } {
+export function parseWorkbook(xml: string): { sheets: SheetRef[]; date1904: boolean } {
   // Excel's "1904 date system" (Preferences ▸ Calculate, a macOS-era
   // holdover) shifts every serial by a fixed number of days. Not seen in the
   // measured corpus, but the flag costs one regex to honour and produces a
@@ -89,7 +97,7 @@ function parseWorkbook(xml: string): { sheets: SheetRef[]; date1904: boolean } {
 // for a direct child `<t>` would see nothing at all for those three files.
 // ---------------------------------------------------------------------------
 
-function parseSharedStrings(xml: string | null): string[] {
+export function parseSharedStrings(xml: string | null): string[] {
   if (xml === null) return [];
   const out: string[] = [];
   for (const si of xml.matchAll(/<si>([\s\S]*?)<\/si>|<si\/>/g)) {
@@ -109,9 +117,9 @@ function parseSharedStrings(xml: string | null): string[] {
 // wearing the same digits.
 // ---------------------------------------------------------------------------
 
-type Styles = { numFmts: Map<number, string>; cellXfNumFmtIds: number[]; present: boolean };
+export type Styles = { numFmts: Map<number, string>; cellXfNumFmtIds: number[]; present: boolean };
 
-function parseStyles(xml: string | null): Styles {
+export function parseStyles(xml: string | null): Styles {
   const numFmts = new Map<number, string>();
   const cellXfNumFmtIds: number[] = [];
   if (xml === null) return { numFmts, cellXfNumFmtIds, present: false };
@@ -239,7 +247,7 @@ const MAX_COLS = 25;
 // possible".
 const FLATTEN_REPORT_CAP = 20;
 
-type Cell = { text: string; isNumeric: boolean };
+export type Cell = { text: string; isNumeric: boolean };
 
 const EMPTY_CELL: Cell = { text: '', isNumeric: false };
 
@@ -247,13 +255,41 @@ function cellToInline(cell: Cell): Inline[] {
   return cell.text === '' ? [] : [{ t: 'text', v: cell.text }];
 }
 
-/** A row "looks like" a header exactly when every one of its cells is filled
- *  with non-numeric text — the design's own rule. A row with even one blank
- *  or one number in it is ordinary data that happens to sit first, and
- *  treating it as a header anyway is the "quiet misreading" the design warns
- *  against. */
-function looksLikeHeader(row: readonly Cell[]): boolean {
-  return row.length > 0 && row.every((c) => c.text.trim() !== '' && !c.isNumeric);
+// Measured over the 53 header-candidate rows the corpus actually presents
+// (docs/superpowers/specs/2026-08-13-xlsx-ingest-design.md's "the first row
+// is the header" section) by running this file's own dropEmptyColumns ->
+// trimLeadingRows -> liftPreamble pipeline and reading the fill ratio —
+// filled cells / total cells — of the row each of those leaves as row zero.
+// Sorted by ratio, the corpus splits cleanly:
+//   1.000–0.909  11 distinct sheets, several rows each, all fully or almost
+//                fully filled (some excluded anyway by the numeric rule)
+//   0.833        the shareholders register (5 of 6 columns)
+//   0.667–0.600  three sheets, the lowest of which is "PoA October2024"'s
+//                own header (3 of 5 columns)
+//   0.500        the next-highest candidate that is *not* a real header —
+//                a data row's own shape, not a caption the preamble step
+//                missed (below-row shapes checked by hand, corpus
+//                confidential — see docs/superpowers/notes)
+//   0.444 and down  fourteen more, all well clear
+// So 0.5 and 0.6 bracket the only gap in the whole distribution, and both
+// named registers sit at or above 0.6 — the minimal threshold that recovers
+// them without reaching into the row at 0.5 that criterion 3 protects
+// against: a first data row promoted because it happened to be mostly text.
+const HEADER_FILL_RATIO = 0.6;
+
+/** A row "looks like" a header when no cell in it is numeric — that test
+ *  stays absolute, because a header with a number in it has never been seen
+ *  in the corpus and a false negative there is cheap (the row just becomes
+ *  data) while a false positive would print a number as a column label —
+ *  and at least HEADER_FILL_RATIO of its cells are filled. The original
+ *  rule required every cell filled; real headers routinely leave one column
+ *  unlabelled (the shareholders register does), so "every cell" rejected
+ *  headers the corpus actually has. See HEADER_FILL_RATIO's own comment for
+ *  where the loosened line was measured. */
+export function looksLikeHeader(row: readonly Cell[]): boolean {
+  if (row.length === 0 || row.some((c) => c.isNumeric)) return false;
+  const filled = row.reduce((n, c) => (c.text.trim() !== '' ? n + 1 : n), 0);
+  return filled / row.length >= HEADER_FILL_RATIO;
 }
 
 /** Drops every column that holds no value in *any* row of the grid — not
@@ -261,12 +297,13 @@ function looksLikeHeader(row: readonly Cell[]): boolean {
  *  column like this is in the file because it carries a style, not data
  *  (see docs/superpowers/notes/2026-08-13-what-a-real-register-looks-like.md,
  *  measured at 62 of 112 worksheets, 642 columns in total). This has to run
- *  *before* header and preamble detection, not after: `looksLikeHeader`
- *  requires every cell in a row to be filled, and a style-only empty column
- *  sitting in the used range would fail that test on every row forever,
- *  including the real header — which is exactly what happened to the
- *  shareholders register the design was built from. */
-function dropEmptyColumns(grid: readonly Cell[][]): Cell[][] {
+ *  *before* header and preamble detection, not after: a style-only empty
+ *  column sitting in the used range holds down every row's fill ratio
+ *  forever, including the real header's — enough, on its own, to push the
+ *  shareholders register's own header below HEADER_FILL_RATIO even after
+ *  that threshold was loosened, which is exactly what happened to it before
+ *  this function existed. */
+export function dropEmptyColumns(grid: readonly Cell[][]): Cell[][] {
   if (grid.length === 0) return [];
   const cols = grid[0]!.length;
   const keep: number[] = [];
@@ -285,7 +322,7 @@ function dropEmptyColumns(grid: readonly Cell[][]): Cell[][] {
  *  nothing "trailing" left to trim once that boundary is the one the grid
  *  was built to. Column trimming is `dropEmptyColumns`'s job now, not this
  *  function's — see that function's comment for why it has to run first. */
-function trimLeadingRows(grid: readonly Cell[][]): Cell[][] {
+export function trimLeadingRows(grid: readonly Cell[][]): Cell[][] {
   let firstRow = 0;
   while (firstRow < grid.length && grid[firstRow]!.every((c) => c.text === '')) firstRow++;
   return grid.slice(firstRow);
@@ -306,7 +343,7 @@ function trimLeadingRows(grid: readonly Cell[][]): Cell[][] {
  *  table — the single worst outcome this rule could produce. When the scan
  *  reaches the end without finding a wide row, there is no preamble: the
  *  sheet is one column of data, and every row of it is the table. */
-function liftPreamble(grid: readonly Cell[][]): { preamble: Cell[][]; table: Cell[][] } {
+export function liftPreamble(grid: readonly Cell[][]): { preamble: Cell[][]; table: Cell[][] } {
   let split = 0;
   while (split < grid.length) {
     const filled = grid[split]!.reduce((n, c) => (c.text.trim() !== '' ? n + 1 : n), 0);
@@ -345,7 +382,7 @@ function parseMergeCells(sheetXml: string): MergeRange[] {
 // One worksheet
 // ---------------------------------------------------------------------------
 
-type SheetOutcome =
+export type SheetOutcome =
   | { kind: 'refused'; message: string }
   | { kind: 'empty' }
   // `minRow` is the sheet's first used row (1-based, from the address scan
@@ -362,7 +399,7 @@ type SheetOutcome =
  * scan instead of after resolving 94,309 cells' shared strings and number
  * formats for a grid that is about to be thrown away.
  */
-function readWorksheet(
+export function readWorksheet(
   sheetXml: string, sheetName: string, sharedStrings: readonly string[], styles: Styles, date1904: boolean, sink: Sink,
 ): SheetOutcome {
   // Measured over the corpus, not assumed (see the design doc's "what it
@@ -632,7 +669,7 @@ export async function ingestXlsx(
       head = header.map(cellToInline);
       dataRows = tableGrid.slice(1);
     } else {
-      sink.dropped.push(`sheet "${sheet.name}": first row is not a header (every header cell must be filled with non-numeric text) — the table has no header row, and every row (including what would have been the header) was kept as data`);
+      sink.dropped.push(`sheet "${sheet.name}": first row is not a header (no cell in it may be numeric, and at least ${Math.round(HEADER_FILL_RATIO * 100)}% of its cells must be filled) — the table has no header row, and every row (including what would have been the header) was kept as data`);
       head = header.map(() => []);
       dataRows = tableGrid;
     }
