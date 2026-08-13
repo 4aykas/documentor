@@ -7,21 +7,10 @@ import { ingestMarkdown } from '../../src/ingest/md.js';
 import { pdfText } from '../helpers/pdf-text.js';
 import { rasterPages } from '../helpers/raster.js';
 import { inkRowsFromPng } from '../helpers/png-ink.js';
+import { resetPdfjsWorkerGlobal } from '../helpers/pdfjs-worker.js';
 
 const EPOCH = 1_000_000_000;
 const theme = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C' } });
-
-/**
- * `pdf-to-img` (used by rasterPages) bundles its own pdfjs-dist, pinned
- * independently of this project's own pdfjs-dist — see the identical
- * comment in test/baseline/local-only-pixels.test.ts, which this is copied
- * from verbatim (already flagged there as duplicated three times over; see
- * docs/superpowers/notes/2026-08-12-phase-2-residuals.md's "small things
- * worth naming"). This file is now the fourth copy.
- */
-function resetPdfjsWorkerGlobal(): void {
-  delete (globalThis as { pdfjsWorker?: unknown }).pdfjsWorker;
-}
 
 let browser: Browser;
 beforeAll(async () => { browser = await chromium.launch(); });

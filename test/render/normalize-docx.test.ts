@@ -64,8 +64,8 @@ describe('normalizeDocx', () => {
     // byte-identity test above cannot tell a pinned stamp from an unpinned one
     // that got lucky. This asserts the stamp directly, on every entry.
     const dates = await docxEntryDates(await normalizeDocx(Buffer.from(await build()), EPOCH));
-    dates.forEach((d, i) => {
-      expect(d.getTime(), `entry ${i} carries ${d.toISOString()} instead of the epoch`).toBe(EPOCH * 1000);
+    dates.forEach(({ name, date }) => {
+      expect(date.getTime(), `${name} carries ${date.toISOString()} instead of the epoch`).toBe(EPOCH * 1000);
     });
   });
 

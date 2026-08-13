@@ -118,6 +118,13 @@ describe('runBuild', () => {
     expect(await runBuild([file, '--to', 'docx'], io)).toBe(0);
     const written = await readdir(join(file, '..'));
     expect(written.sort()).toEqual(['report.md', 'report.plain.docx']);
+    // An empty or truncated buffer would pass the existence check above.
+    // This proves the file is a real .docx package — a zip with a document
+    // part in it — without duplicating what the renderer's own tests already
+    // assert about that part's content.
+    const { docxPart } = await import('../helpers/docx-parts.js');
+    const part = await docxPart(await readFile(join(file, '..', 'report.plain.docx')), 'word/document.xml');
+    expect(part.length).toBeGreaterThan(0);
   });
 
   it('produces identical Word bytes on two runs', async () => {
