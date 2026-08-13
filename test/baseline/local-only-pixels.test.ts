@@ -8,6 +8,7 @@ import { ingestMarkdown } from '../../src/ingest/md.js';
 import { renderPdf } from '../../src/render/pdf.js';
 import { loadTheme } from '../../src/theme/resolve.js';
 import { rasterPages } from '../helpers/raster.js';
+import { resetPdfjsWorkerGlobal } from '../helpers/pdfjs-worker.js';
 
 // Everything in this file is a byte comparison of a rasterised PNG against a
 // committed baseline, and none of it runs in CI. A PNG produced from the
@@ -33,23 +34,6 @@ const HERE = fileURLToPath(new URL('.', import.meta.url));
 const BASELINE = join(HERE, '__baseline__');
 const ACTUAL = join(HERE, '__actual__');
 const EPOCH = 1_000_000_000;
-
-/**
- * `pdf-to-img` (used by rasterPages) bundles its own pdfjs-dist@4.2.67,
- * pinned independently of this project's pdfjs-dist@4.10.38 — npm cannot
- * dedupe across the version conflict, so both copies load into the same
- * process. In Node, pdfjs-dist has no real worker thread; it falls back to
- * a "fake worker" and caches its message handler on `globalThis.pdfjsWorker`,
- * keyed by nothing but insertion order. Whichever copy resolves first wins
- * that global permanently, so the next *different* copy to run finds a
- * handler tagged with the wrong version and throws instead of loading its
- * own. Clearing the slot right before a copy's first use in this file lets
- * it load fresh; after that, pdfjs-dist memoizes the resolution per module,
- * so later calls to the same copy are unaffected by this reset.
- */
-function resetPdfjsWorkerGlobal(): void {
-  delete (globalThis as { pdfjsWorker?: unknown }).pdfjsWorker;
-}
 
 let browser: Browser;
 let source: string;

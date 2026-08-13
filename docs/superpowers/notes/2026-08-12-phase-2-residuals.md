@@ -255,31 +255,36 @@ ingester that does not make that promise, or for hand-built IR that skips
 
 ## Small things worth naming
 
-- `resetPdfjsWorkerGlobal` and its explanatory comment are duplicated
-  verbatim in `test/agreement/agree.test.ts`, `test/baseline/kitchen-sink.test.ts`,
-  and (since `ci-local-baselines` split the byte-compared pixel checks out
-  of that file) `test/baseline/local-only-pixels.test.ts`. Three places to
-  keep in sync if pdf.js's worker-reset requirement ever changes.
-- The CLI test asserting "writes a Word document" only checks that the
-  output file exists. An empty buffer would pass it; the buffer's actual
-  content is covered separately, by the renderer's own tests, not by this
-  one.
-- `test/render/normalize-docx.test.ts`'s timestamp assertion names the
-  offending zip entry by its array index in a failure message
-  (`` `entry ${i} carries …` ``), not by the entry's own name. A failure
-  points at "entry 4," which a reader then has to go look up.
+- `resetPdfjsWorkerGlobal` and its explanatory comment had drifted to four
+  verbatim copies — `test/agreement/agree.test.ts`,
+  `test/baseline/kitchen-sink.test.ts`, `test/baseline/local-only-pixels.test.ts`,
+  and `test/render/pdf.test.ts` (added after this note was first written; its
+  own comment already named itself "the fourth copy"). All four now import
+  `resetPdfjsWorkerGlobal` from `test/helpers/pdfjs-worker.ts`, which carries
+  the explanation once, beside the code it explains.
+- The CLI test asserting "writes a Word document" now also reads
+  `word/document.xml` out of the written file via `docxPart` and asserts it's
+  non-empty. An empty or truncated buffer fails there — `JSZip.loadAsync`
+  throws on it — rather than passing the way a bare existence check did. It
+  still doesn't check the part's content, which is the renderer's own tests'
+  job.
+- `test/render/normalize-docx.test.ts`'s timestamp assertion now names the
+  offending zip entry by its own name rather than its array index — a
+  failure reads "`word/document.xml` carries …", not "entry 4 carries …".
+  `docxEntryDates` in `test/helpers/docx-parts.ts` was changed to return
+  `{ name, date }` pairs to make that possible.
 - The per-cell agreement test compares only the first `table` block against
   every `<w:tc>` in the document. That's fine as long as a fixture has one
   table — it fails loudly, not silently, the day a second one is added and
   the counts stop lining up — but the test itself doesn't say that's the
   assumption, so the next reader has to work it out from the failure rather
   than being told up front.
-- The link-target comparison in the agreement test carries no comment
-  explaining why the IR is its reference point — unlike its two sibling
-  comparisons (emphasis, table alignment), which do say why. The one
-  comparison whose reasoning is least obvious — a live href, not just text,
-  compared against a relationship target — is the one that doesn't explain
-  itself.
+- The link-target comparison in the agreement test now carries the same kind
+  of comment its two siblings (emphasis, table alignment) already had: an
+  untagged PDF's text extraction reads only a run's text and size, never a
+  link's target, so the IR's `href` is the only reference a live
+  `Target="…"` in Word's relationships can be checked against — not a third
+  opinion being reconciled with two others.
 - Three of the minors first parked here were fixed before the branch
   merged: the horizontal-rule paragraph now carries `keepNext` (html.ts's
   `hr{ break-after: avoid; }`), table rows carry `cantSplit` (its

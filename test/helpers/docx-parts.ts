@@ -16,8 +16,9 @@ export async function docxEntries(buf: Buffer): Promise<string[]> {
 
 // The stored DOS timestamp is one of the three things that vary between two
 // packs of the same input, so a caller checking reproducibility needs it, not
-// just the entry names.
-export async function docxEntryDates(buf: Buffer): Promise<Date[]> {
+// just the entry names — paired with the name so a failure can name the entry
+// it's about, not just its position in an iteration order.
+export async function docxEntryDates(buf: Buffer): Promise<{ name: string; date: Date }[]> {
   const zip = await JSZip.loadAsync(buf);
-  return Object.values(zip.files).map((f) => f.date);
+  return Object.entries(zip.files).map(([name, f]) => ({ name, date: f.date }));
 }

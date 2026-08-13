@@ -11,6 +11,7 @@ import { pdfText } from '../helpers/pdf-text.js';
 import { pdfRuns } from '../helpers/pdf-runs.js';
 import { renderDocx } from '../../src/render/docx.js';
 import { docxPart } from '../helpers/docx-parts.js';
+import { resetPdfjsWorkerGlobal } from '../helpers/pdfjs-worker.js';
 import type { Block, Doc } from '../../src/ir/types.js';
 import {
   type Run, classify, expectSameSequence, norm, runsFromMarkdown,
@@ -26,24 +27,6 @@ import {
 // every platform.
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const EPOCH = 1_000_000_000;
-
-/**
- * `pdf-to-img` (used by rasterPages) bundles its own pdfjs-dist@4.2.67,
- * pinned independently of this project's pdfjs-dist@4.10.38 (used by
- * pdfText and below) — npm cannot dedupe across the version conflict, so
- * both copies load into the same process. In Node, pdfjs-dist has no real
- * worker thread; it falls back to a "fake worker" and caches its message
- * handler on `globalThis.pdfjsWorker`, keyed by nothing but insertion
- * order. Whichever copy resolves first wins that global permanently, so the
- * next *different* copy to run finds a handler tagged with the wrong
- * version and throws instead of loading its own. Clearing the slot right
- * before a copy's first use in this file lets it load fresh; after that,
- * pdfjs-dist memoizes the resolution per module, so later calls to the same
- * copy are unaffected by this reset.
- */
-function resetPdfjsWorkerGlobal(): void {
-  delete (globalThis as { pdfjsWorker?: unknown }).pdfjsWorker;
-}
 
 let browser: Browser;
 let source: string;
@@ -287,6 +270,13 @@ describe('Word says what the others say', () => {
   });
 
   it('points every link where the IR points it, which the PDF cannot show', async () => {
+    // Compared against the IR, not against Markdown or the PDF, for the same
+    // reason as the emphasis and alignment comparisons above: pdf-runs.ts only
+    // ever reads a run's visible text and size off pdf.js's text-content
+    // items, which carry no target at all, so an untagged PDF has nothing to
+    // say about where a link points. The IR's `href` is therefore the only
+    // reference a live `Target="…"` in Word's relationships can be checked
+    // against, not a third opinion being reconciled with two others.
     const { doc } = ingestMarkdown(source);
     const buf = await renderDocx(doc, await loadTheme('plain'), { epochSeconds: EPOCH });
     const rels = await docxPart(buf, 'word/_rels/document.xml.rels');
