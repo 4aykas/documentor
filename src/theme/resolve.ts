@@ -127,13 +127,21 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
   return {
     id: String(t['id'] ?? opts.id ?? 'unnamed'),
     name: String(t['name'] ?? t['id'] ?? 'Unnamed'),
-    colors: {
-      brandOnLight: hex(colors['brandOnLight'], 'colors.brandOnLight', '#1A1A1A'),
-      brandOnDark: (brandOnDark as string | null | undefined) ?? null,
-      ink: hex(colors['ink'], 'colors.ink', '#1A1A1A'),
-      muted: hex(colors['muted'], 'colors.muted', '#6B6B6B'),
-      rule: hex(colors['rule'], 'colors.rule', '#D8D8D8'),
-    },
+    colors: (() => {
+      const ink = hex(colors['ink'], 'colors.ink', '#1A1A1A');
+      return {
+        brandOnLight: hex(colors['brandOnLight'], 'colors.brandOnLight', '#1A1A1A'),
+        brandOnDark: (brandOnDark as string | null | undefined) ?? null,
+        ink,
+        muted: hex(colors['muted'], 'colors.muted', '#6B6B6B'),
+        rule: hex(colors['rule'], 'colors.rule', '#D8D8D8'),
+        // Defaults to the theme's own ink, not a fixed colour: a theme that
+        // says nothing about its title colour wants the title to read like
+        // ordinary ink text, whatever that theme's ink is — not a colour
+        // borrowed from a different theme.
+        title: hex(colors['title'], 'colors.title', ink),
+      };
+    })(),
     font: { document: String(font['document'] ?? 'Arial'), embed: 'arimo' },
     logo,
     page: { size, marginPt },

@@ -37,6 +37,20 @@ describe('renderDocx', () => {
     expect(docH1).toContain(`w:sz w:val="${18 * 2}"`);
   });
 
+  it('colours the DocTitle style from the theme\'s resolved title colour', async () => {
+    const grey = resolveTheme({ id: 't', colors: { ink: '#1A1A1A', title: '#898D8D' } });
+    const styles = await docxPart(await renderDocx(doc({ t: 'para', text: [{ t: 'text', v: 'x' }] }), grey, { epochSeconds: EPOCH }), 'word/styles.xml');
+    const docTitle = styles.match(/<w:style[^>]*w:styleId="DocTitle"[\s\S]*?<\/w:style>/)?.[0] ?? '';
+    expect(docTitle).toContain('w:color w:val="898D8D"');
+  });
+
+  it('defaults the DocTitle colour to ink when the theme sets no title colour', async () => {
+    const untitled = resolveTheme({ id: 't', colors: { ink: '#2B2B2B' } });
+    const styles = await docxPart(await renderDocx(doc({ t: 'para', text: [{ t: 'text', v: 'x' }] }), untitled, { epochSeconds: EPOCH }), 'word/styles.xml');
+    const docTitle = styles.match(/<w:style[^>]*w:styleId="DocTitle"[\s\S]*?<\/w:style>/)?.[0] ?? '';
+    expect(docTitle).toContain('w:color w:val="2B2B2B"');
+  });
+
   it('keeps a heading in Word’s outline', async () => {
     expect(await body(doc({ t: 'heading', level: 2, text: [{ t: 'text', v: 'H' }] }))).toContain('<w:outlineLvl w:val="1"/>');
   });

@@ -36,6 +36,23 @@ describe('resolveTheme', () => {
     expect(() => resolveTheme({ id: 'x', colors: { ink: '#abc' } })).toThrow(/colors\.ink/);
   });
 
+  it('defaults colors.title to the theme\'s own ink when the theme sets neither', () => {
+    const t = resolveTheme({ id: 'x', colors: { ink: '#123456' } });
+    expect(t.colors.title).toBe(t.colors.ink);
+    expect(t.colors.title).toBe('#123456');
+  });
+
+  it('keeps an explicit colors.title distinct from ink', () => {
+    const t = resolveTheme({ id: 'x', colors: { ink: '#1A1A1A', title: '#898D8D' } });
+    expect(t.colors.title).toBe('#898D8D');
+    expect(t.colors.ink).toBe('#1A1A1A');
+  });
+
+  it('rejects a colors.title that is not a six-digit hex, like its siblings', () => {
+    expect(() => resolveTheme({ id: 'x', colors: { title: 'red' } })).toThrow(/colors\.title/);
+    expect(() => resolveTheme({ id: 'x', colors: { title: '#abc' } })).toThrow(/colors\.title/);
+  });
+
   it('keeps brandOnDark null rather than falling back to the light value', () => {
     const t = resolveTheme({ id: 'x', colors: { brandOnLight: '#DA291C' } });
     expect(t.colors.brandOnDark).toBeNull();

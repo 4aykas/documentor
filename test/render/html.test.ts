@@ -86,6 +86,19 @@ describe('buildHtml', () => {
     expect(html).not.toContain('.doc-title{ font-size: 18pt;');
   });
 
+  it('draws .doc-title in the theme\'s resolved title colour', async () => {
+    const grey = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C', ink: '#1A1A1A', title: '#898D8D' } });
+    const html = await buildHtml(doc, grey);
+    expect(html).toContain('--title: #898D8D');
+    expect(html).toContain('.doc-title{ font-size: 18pt; font-weight: 700; margin: 22pt 0 0; letter-spacing: -0.01em; color: var(--title);');
+  });
+
+  it('defaults .doc-title\'s colour to ink when the theme sets no title colour', async () => {
+    const untitled = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C', ink: '#2B2B2B' } });
+    const html = await buildHtml(doc, untitled);
+    expect(html).toContain('--title: #2B2B2B');
+  });
+
   it('omits the logo block entirely when the theme has none', async () => {
     expect(await build()).not.toContain('class="logo"');
   });

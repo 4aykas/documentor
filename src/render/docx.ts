@@ -63,10 +63,12 @@ function styles(theme: Theme) {
       // numbers would silently drift from the PDF/HTML rendering of the same
       // document. `before` mirrors the rule's top margin, `after` its bottom
       // margin; where the CSS sets only one side, the other stays 0 here too.
-      // Grey, not ink — see html.ts's `.doc-title` comment: the three real
-      // originals this theme was built from all set their cover title in a
-      // lighter grey, matched here by `c.muted` rather than `c.ink`.
-      para('DocTitle', 'Doc Title', { size: halfPt(ty.titlePt), bold: true, color: hex(c.muted) }, {
+      // Colour is a theme value — c.title, not c.ink or c.muted — see
+      // html.ts's `.doc-title` comment: it defaults to the theme's own ink,
+      // and TEBIN's generated theme sets it to grey because all three real
+      // originals this theme was built from set their cover title in a
+      // lighter grey.
+      para('DocTitle', 'Doc Title', { size: halfPt(ty.titlePt), bold: true, color: hex(c.title) }, {
         // html.ts: `.doc-title{ margin: 22pt 0 0; }`
         spacing: { before: dxa(22), after: 0 },
       }),

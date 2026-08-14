@@ -37,6 +37,13 @@ export type Theme = {
     ink: string;
     muted: string;
     rule: string;
+    /**
+     * The document title (meta.title), drawn on a cover/title page. Defaults
+     * to the theme's own ink when a theme does not set one — see
+     * resolveTheme — so a theme that says nothing about its title colour
+     * renders it exactly like any other ink text, not muted.
+     */
+    title: string;
   };
   font: {
     /** The family name written into DOCX, where fonts are not embedded. */

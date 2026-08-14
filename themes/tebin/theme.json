@@ -18,7 +18,8 @@
     "brandOnDark": null,
     "ink": "#1A1A1A",
     "muted": "#898D8D",
-    "rule": "#CDCDCE"
+    "rule": "#CDCDCE",
+    "title": "#898D8D"
   },
   "font": {
     "document": "Arial",
