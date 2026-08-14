@@ -102,6 +102,19 @@ describe('assembleProposal', () => {
     expect(image).toMatchObject({ t: 'image', src: expect.stringMatching(/^data:image\/png;base64,/) });
   });
 
+  it('refuses {{@clientlogo}} bytes that are not one of the four embeddable raster formats, naming the field', async () => {
+    // Same technique as test/render/docx.test.ts's WebP header: a
+    // recognisable non-embeddable format, not a fake string, so sniffRaster
+    // is genuinely exercised down its refusal path.
+    const webp = Buffer.concat([
+      Buffer.from('RIFF', 'ascii'), Buffer.from([0x1a, 0x00, 0x00, 0x00]),
+      Buffer.from('WEBPVP8 ', 'ascii'),
+    ]);
+    const data: ProposalData = { ...DATA, clientLogo: './client-logo.webp' };
+    const errs = await errorsOf(() => assembleProposal({ data, template: '# T\n\n{{@clientlogo}}\n', clientLogo: webp }));
+    expect(errs.join('\n')).toMatch(/clientLogo/i);
+  });
+
   it('splices a {{@pagebreak}} directive where its line stood', async () => {
     const template = '# T\n\nBefore.\n\n{{@pagebreak}}\n\nAfter.\n';
     const { doc } = await assembleProposal({ data: DATA, template });
