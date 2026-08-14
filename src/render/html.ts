@@ -4,6 +4,7 @@
 
 import type { Block, Doc, Inline } from '../ir/types.js';
 import { PAGE_PT, toMm, type Theme } from '../theme/types.js';
+import { partitionCoverBlocks, ruleIndexes, splitAtFirstPagebreak } from './cover-zones.js';
 import { arimoFaceCss } from './fonts.js';
 import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
@@ -142,6 +143,76 @@ function block(b: Block): string {
   }
 }
 
+/**
+ * The document title and subtitle at the theme's cover size/colour — the one
+ * piece of markup a plain cover (no rules) and a zoned cover (>=1 rule) both
+ * need, drawn either by firstPageHeader (plain) or inside the panel div
+ * (zoned, see coverMain below). Kept as one function so the two paths cannot
+ * quietly drift into two different-looking titles.
+ */
+function coverTitleMarkup(doc: Doc): string {
+  return `<h1 class="doc-title doc-title--cover">${escapeHtml(doc.meta.title)}</h1>${
+    doc.meta.subtitle ? `<p class="doc-subtitle">${escapeHtml(doc.meta.subtitle)}</p>` : ''
+  }`;
+}
+
+/**
+ * The brand's corner glyph, inline, sized to `heightPt` and painted through
+ * the same `.logo`-style class rules the wordmark uses (see the CSS below) —
+ * `cls` picks which positioning rule places it (page corner vs. panel
+ * corner). Empty when the theme carries no mark, so a theme that names none
+ * draws nothing rather than an invented approximation — see this feature's
+ * "do not draw an approximation with CSS borders" rule.
+ */
+function cornerMarkMarkup(theme: Theme, cls: string, heightPt: number): string {
+  if (!theme.cornerMark) return '';
+  return `<div class="${cls}" style="height: ${heightPt}pt">${theme.cornerMark.svg}</div>`;
+}
+
+/**
+ * The cover page's body when it has at least one `rule` to divide it into
+ * zones — the panel (bordered, holds the title down through the leading
+ * blocks), whatever flows between the first and last rule, and the foot
+ * (only with >=2 rules, pinned to the bottom of the page via `.cover-frame`'s
+ * flex layout). See this feature's own spec for the zone rule; the two
+ * corner-mark placements are drawn here rather than in coverTitleMarkup
+ * because one of them (the page corner) has nothing to do with the panel.
+ *
+ * Blocks from the first `pagebreak` onward render completely unaffected,
+ * outside every zone wrapper — a cover's own content is bounded by its own
+ * page break, and a multi-page proposal's later sections must not become a
+ * flex child of a layout trick meant for one page. `restBlocks` therefore
+ * includes the `pagebreak` block itself, so the break still happens exactly
+ * where it always did.
+ */
+function coverMain(doc: Doc, theme: Theme): string {
+  const { pageBlocks, restBlocks } = splitAtFirstPagebreak(doc.blocks);
+  const ruleIdxs = ruleIndexes(pageBlocks);
+
+  if (ruleIdxs.length === 0) {
+    // No rule at all: render exactly as this feature's predecessor did — see
+    // this feature's "a cover with no rules must render exactly as it does
+    // today" rule. No panel, no foot, no corner mark: nothing here is
+    // guessed from an unmarked document.
+    return `${coverTitleMarkup(doc)}${doc.blocks.map(block).join('\n')}`;
+  }
+
+  const { panel, flowing, foot } = partitionCoverBlocks(pageBlocks, ruleIdxs);
+  const panelMark = cornerMarkMarkup(theme, 'corner-mark-panel', (theme.cornerMark?.heightPt ?? 0) * 0.6);
+  const panelHtml = `<div class="cover-panel">${panelMark}${coverTitleMarkup(doc)}${panel.map(block).join('\n')}</div>`;
+  const flowingHtml = flowing.map(block).join('\n');
+  const pageMark = cornerMarkMarkup(theme, 'corner-mark-page', theme.cornerMark?.heightPt ?? 0);
+  const top = `<div class="cover-top">${panelHtml}${flowingHtml}</div>`;
+  // Only >=2 rules produce a foot (see partitionCoverBlocks); with exactly
+  // one, `foot` is empty and there is nothing to pin to the bottom, so the
+  // page-height flex frame — which exists only to push the foot down — is
+  // skipped and `top` renders in plain flow instead.
+  const body = foot.length > 0
+    ? `<div class="cover-frame">${top}<div class="cover-foot">${foot.map(block).join('\n')}</div></div>`
+    : top;
+  return `${pageMark}${body}${restBlocks.map(block).join('\n')}`;
+}
+
 function firstPageHeader(doc: Doc, theme: Theme): string {
   // `meta.cover === true` suppresses the theme's chrome — logo, letterhead
   // lines, this document's own entity/date lines and the brand tick rule —
@@ -173,9 +244,11 @@ function firstPageHeader(doc: Doc, theme: Theme): string {
 <div class="tick-row"><span class="tick"></span><span class="hair"></span></div>
 `;
   })();
-  return `${chrome}<h1 class="doc-title${cover ? ' doc-title--cover' : ''}">${escapeHtml(doc.meta.title)}</h1>${
-    doc.meta.subtitle ? `<p class="doc-subtitle">${escapeHtml(doc.meta.subtitle)}</p>` : ''
-  }`;
+  return cover
+    ? `${chrome}${coverTitleMarkup(doc)}`
+    : `${chrome}<h1 class="doc-title">${escapeHtml(doc.meta.title)}</h1>${
+        doc.meta.subtitle ? `<p class="doc-subtitle">${escapeHtml(doc.meta.subtitle)}</p>` : ''
+      }`;
 }
 
 export async function buildHtml(doc: Doc, theme: Theme): Promise<string> {
@@ -276,18 +349,57 @@ ${SCALE_STEPS.map((t, i) => `.hm-s${i + 1}{ background: color-mix(in srgb, var(-
 .hm-marks{ color: var(--brand); letter-spacing: 1pt; } /* deliberate exemption from brandOnLight: a fill-shaped glyph, not small text; see heatmapBlocks() in docx.ts */
 .pagebreak{ break-after: page; page-break-after: always; }
 a{ color: var(--ink); text-decoration: underline; text-decoration-color: var(--rule); }
-.link-refused-target{ color: var(--muted); font-size: ${(ty.bodyPt * 0.85).toFixed(1)}pt; margin-left: 3pt; }`;
+.link-refused-target{ color: var(--muted); font-size: ${(ty.bodyPt * 0.85).toFixed(1)}pt; margin-left: 3pt; }
+/* A cover with >=1 rule (see coverMain): body needs position:relative so the
+   page-corner mark — position:absolute, offset negative — has something to
+   anchor to besides the viewport. Harmless for every other document: nothing
+   else on the page is absolutely positioned. */
+body{ position: relative; }
+/* The panel a cover's leading blocks sit inside (see coverMain/coverTitleMarkup).
+   colors.rule is reused for the border rather than a new theme value —
+   the same hairline colour already draws every rule and table edge on the
+   page, and the panel is exactly that: a rule folded into a box. */
+.cover-panel{ position: relative; border: 0.75pt solid var(--rule); padding: 20pt 24pt; }
+.cover-panel .doc-title--cover{ margin-top: 0; }
+/* min-height, not height: a cover whose panel + flowing content already
+   exceeds one page overflows into a second page exactly as any other
+   overlong block would, rather than clipping — see coverMain's comment on
+   why only the pre-pagebreak blocks ever reach this frame. With content
+   shorter than one page, flex's space-between has somewhere to put the
+   slack and the foot lands at the page's bottom edge; with content taller
+   than the page, there is no slack to distribute and space-between
+   degrades to ordinary top-to-bottom flow. */
+.cover-frame{ display: flex; flex-direction: column; justify-content: space-between; min-height: ${(trim.h - page.marginPt * 2).toFixed(2)}pt; }
+.cover-foot{ margin-top: 24pt; }
+/* The brand's corner glyph (see theme.cornerMark) at the page's physical
+   top-right, offset past the print margin so part of it bleeds off the
+   trimmed edge rather than merely touching it — the same look the three
+   real originals this feature was built from carry. The extra offset is
+   35% of the mark's own height, a taste call, not a measured brand value:
+   the brand book prices the glyph's colour and shape, not how far off the
+   page it hangs. */
+.corner-mark-page{ position: absolute; top: -${(page.marginPt + (theme.cornerMark?.heightPt ?? 0) * 0.35).toFixed(2)}pt; right: -${(page.marginPt + (theme.cornerMark?.heightPt ?? 0) * 0.35).toFixed(2)}pt; }
+/* The second placement: straddling the panel's own top-right corner. */
+.corner-mark-panel{ position: absolute; top: 0; right: 0; transform: translate(35%, -35%); }
+/* Same paint-by-class rule as .logo (see its own comment above), extended to
+   the two corner-mark placements rather than duplicated for them. */
+.corner-mark-page svg, .corner-mark-panel svg{ height: 100%; width: auto; display: block; }
+.corner-mark-page .c-brand, .corner-mark-panel .c-brand{ fill: var(--brand); }
+.corner-mark-page .c-muted, .corner-mark-panel .c-muted{ fill: var(--muted); }
+.corner-mark-page .c-ink, .corner-mark-panel .c-ink{ fill: var(--ink); }`;
 
-  const body = doc.blocks.map(block).join('\n');
+  const cover = doc.meta.cover === true;
+  const headerHtml = cover ? '' : firstPageHeader(doc, theme);
+  const mainHtml = cover ? coverMain(doc, theme) : doc.blocks.map(block).join('\n');
 
   return `<!doctype html>
 <html lang="${escapeHtml(doc.meta.lang)}">
 <head><meta charset="utf-8"><title>${escapeHtml(doc.meta.title)}</title>
 <style>${css}</style></head>
 <body>
-${firstPageHeader(doc, theme)}
+${headerHtml}
 <main>
-${body}
+${mainHtml}
 </main>
 </body></html>`;
 }

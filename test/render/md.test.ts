@@ -88,6 +88,30 @@ describe('renderMarkdown', () => {
   });
 });
 
+describe('meta.cover', () => {
+  it('changes nothing about the Markdown output — zones are visual and this renderer does not draw them', () => {
+    // The panel/foot zone feature lives entirely in html.ts and docx.ts (see
+    // src/render/cover-zones.ts): Markdown is the readable intermediate and
+    // has no way to express "these blocks sit inside a bordered box" or
+    // "these sit at the page foot", so a `rule` renders as `---` here exactly
+    // as it always did, on a cover or off one.
+    const doc: Doc = {
+      meta: { title: 'Cover', subtitle: 'Sub', lang: 'en', entity: 'Acme', date: '2026-08-12' },
+      blocks: [
+        { t: 'para', text: [{ t: 'text', v: 'lead' }] },
+        { t: 'rule' },
+        { t: 'para', text: [{ t: 'text', v: 'mid' }] },
+        { t: 'rule' },
+        { t: 'para', text: [{ t: 'text', v: 'foot' }] },
+      ],
+    };
+    const plain = renderMarkdown(doc);
+    const cover = renderMarkdown({ ...doc, meta: { ...doc.meta, cover: true } });
+    expect(cover).toBe(plain);
+    expect(cover).toContain('---\n\nmid\n\n---\n\nfoot');
+  });
+});
+
 describe('heatmap in Markdown', () => {
   const doc = (style: 'scale' | 'numbers' | 'marks'): Doc => ({
     meta: { title: 'T', lang: 'en' },

@@ -273,6 +273,109 @@ describe('buildHtml', () => {
   });
 });
 
+describe('cover zones', () => {
+  const rule: Doc['blocks'][number] = { t: 'rule' };
+  const para = (v: string): Doc['blocks'][number] => ({ t: 'para', text: [{ t: 'text', v }] });
+  const markedTheme = resolveTheme({
+    id: 't', colors: { brandOnLight: '#DA291C' },
+    cornerMark: { svg: '<svg viewBox="0 0 10 10"><rect class="c-brand"/></svg>' },
+  });
+  // The stylesheet always defines the `.cover-*`/`.corner-mark-*` rules (a
+  // theme owns its decoration regardless of whether any document uses it,
+  // same reasoning as `.doc-title--cover`) — so "not drawn" has to be checked
+  // against the rendered markup, not the whole document, or these assertions
+  // would pass by accident against a stylesheet that merely declares the class.
+  const mainOf = (html: string) => html.match(/<main>([\s\S]*)<\/main>/)?.[1] ?? '';
+
+  it("an ordinary document's rule renders as an <hr>, never a panel — the regression this feature must not leak into", async () => {
+    const doc: Doc = { meta: { title: 'T', lang: 'en' }, blocks: [para('before'), rule, para('after')] };
+    const main = mainOf(await buildHtml(doc, markedTheme));
+    expect(main).toContain('<hr>');
+    expect(main).not.toContain('cover-panel');
+    expect(main).not.toContain('cover-frame');
+    expect(main).not.toContain('cover-foot');
+    expect(main).not.toContain('corner-mark-page');
+    expect(main).not.toContain('corner-mark-panel');
+  });
+
+  it('a cover with no rule renders exactly as before this feature — no panel, no foot, no mark', async () => {
+    const doc: Doc = { meta: { title: 'Cover', lang: 'en', cover: true }, blocks: [para('a'), para('b')] };
+    const main = mainOf(await buildHtml(doc, markedTheme));
+    expect(main).toContain('<h1 class="doc-title doc-title--cover">Cover</h1>');
+    expect(main).not.toContain('cover-panel');
+    expect(main).not.toContain('cover-frame');
+    expect(main).not.toContain('cover-foot');
+    expect(main).not.toContain('corner-mark-page');
+    expect(main).not.toContain('corner-mark-panel');
+    // The blocks render in the same plain sequence they always did.
+    expect(main).toMatch(/<p>a<\/p>\s*<p>b<\/p>/);
+  });
+
+  it('a cover with one rule draws a panel around the leading blocks, then flows the rest normally with no foot', async () => {
+    const doc: Doc = { meta: { title: 'Cover', lang: 'en', cover: true }, blocks: [para('lead'), rule, para('tail')] };
+    const html = await buildHtml(doc, markedTheme);
+    expect(html).toContain('class="cover-panel"');
+    expect(html).not.toContain('class="cover-frame"');
+    expect(html).not.toContain('class="cover-foot"');
+    // The title and the leading block sit inside the panel div.
+    const panel = html.match(/<div class="cover-panel">([\s\S]*?)<\/div>\s*<p>tail/)?.[1] ?? '';
+    expect(panel).toContain('Cover');
+    expect(panel).toContain('lead');
+    expect(html).toContain('<p>tail</p>');
+    // A panel exists, so both corner-mark placements are drawn.
+    expect(html).toContain('class="corner-mark-page"');
+    expect(html).toContain('class="corner-mark-panel"');
+  });
+
+  it('a cover with two rules draws a panel, flowing content, and a foot pinned to the bottom via .cover-frame', async () => {
+    const doc: Doc = {
+      meta: { title: 'Cover', lang: 'en', cover: true },
+      blocks: [para('lead'), rule, para('mid'), rule, para('foot content')],
+    };
+    const html = await buildHtml(doc, markedTheme);
+    expect(html).toContain('class="cover-frame"');
+    expect(html).toContain('class="cover-panel"');
+    expect(html).toContain('class="cover-foot"');
+    const foot = html.match(/<div class="cover-foot">([\s\S]*?)<\/div>\s*<\/div>/)?.[1] ?? '';
+    expect(foot).toContain('foot content');
+    expect(html).toContain('class="corner-mark-page"');
+    expect(html).toContain('class="corner-mark-panel"');
+  });
+
+  it('draws no corner mark at all when the theme carries none, even with a panel', async () => {
+    const noMark = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C' } });
+    const doc: Doc = { meta: { title: 'Cover', lang: 'en', cover: true }, blocks: [para('lead'), rule, rule, para('foot')] };
+    const main = mainOf(await buildHtml(doc, noMark));
+    expect(main).toContain('class="cover-panel"');
+    expect(main).not.toContain('corner-mark-page');
+    expect(main).not.toContain('corner-mark-panel');
+  });
+
+  it("a multi-page cover's content after the first pagebreak renders unaffected, outside every zone wrapper", async () => {
+    const doc: Doc = {
+      meta: { title: 'Cover', lang: 'en', cover: true },
+      blocks: [para('lead'), rule, para('mid'), rule, para('foot content'), { t: 'pagebreak' }, { t: 'heading', level: 2, text: [{ t: 'text', v: 'Section 2' }] }],
+    };
+    const html = await buildHtml(doc, markedTheme);
+    expect(html).toContain('<div class="pagebreak"></div>');
+    expect(html).toContain('<h2>Section 2</h2>');
+    // The later heading is not inside the cover-frame div.
+    const frameEnd = html.indexOf('</div>', html.indexOf('class="cover-frame"'));
+    const headingStart = html.indexOf('<h2>Section 2</h2>');
+    expect(headingStart).toBeGreaterThan(frameEnd);
+  });
+
+  it('produces byte-identical output on two runs of the same cover document', async () => {
+    const doc: Doc = {
+      meta: { title: 'Cover', lang: 'en', cover: true },
+      blocks: [para('lead'), rule, para('mid'), rule, para('foot content')],
+    };
+    const a = await buildHtml(doc, markedTheme);
+    const b = await buildHtml(doc, markedTheme);
+    expect(a).toBe(b);
+  });
+});
+
 describe('link schemes', () => {
   const linked = async (href: string) => {
     const d: Doc = {
