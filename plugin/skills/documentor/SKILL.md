@@ -87,9 +87,10 @@ Read the JSON. The fields that matter:
 - `documents[].warnings` — things that are not losses but will surprise
   whoever opens the result (no title found, a heading level skipped a step,
   a table too wide for the page, an image that cannot embed in Word).
-- `documents[].status` — `"ok"`, `"refused"` (documentor would refuse to
-  build this — table too wide even after documentor's own landscape/shrink
-  steps, for instance), or `"failed"` (unreadable file).
+- `documents[].status` — `"ok"`, `"refused"` (the IR failed its own
+  internal validation — a table row with a different number of cells than
+  its header, for instance — meaning `build` would also refuse it), or
+  `"failed"` (unreadable file).
 
 **Show `dropped` and `warnings` to the user as reported — do not summarise
 them away, and do not offer to patch a loss by rewriting content.** A missing
@@ -112,11 +113,14 @@ dialogue instead of decisions.
 | What entity/letterhead line? | Only if a theme with a letterhead was chosen (e.g. `tebin`) — `entity` has no source inside any document, so under `plain` (no letterhead) asking is noise | `entity` |
 | A subtitle line? | Only if the user is already choosing a title/theme and a themed letterhead is in play — optional, skip silently if declined | `subtitle` |
 
-Do **not** ask about table width, landscape orientation, or narrowing a wide
-table — documentor already handles that automatically at build time
-(landscape, then font shrink to a 7pt floor, then refuse), and the sidecar
-has no field to override it yet. Just surface the warning; there is no
-decision for the sidecar to record here.
+**Do** raise a wide-table warning with the user — nothing downstream handles
+it. `inspect` only warns; no renderer in this project shrinks a table's
+font, turns the page landscape, or refuses one for being too wide, so a
+table too wide for the page is simply drawn too wide for the page. Relay
+the warning as reported — it already names what a person can do about it
+(ask for landscape, or a narrower table) — but there is nothing to write
+into the sidecar for it: that field doesn't exist yet, so the fix, if any,
+has to happen in the source document, not in this file.
 
 Do **not** ask about `--plain-names` (dropping the theme id from the output
 filename) unless the user is running a batch and explicitly cares about the
