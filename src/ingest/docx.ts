@@ -830,6 +830,12 @@ async function scanHeadersAndFooters(zip: JSZip, sink: Sink): Promise<string | u
 // renderer in this project embeds rather than fetches (see src/render/*.ts),
 // so an ingester that emitted a path instead would break that promise one
 // layer up, the moment the .docx that carried the picture was deleted.
+//
+// sniffRaster is exported: src/proposal/assemble.ts reuses it to sniff a
+// client logo's bytes rather than carry a second copy of this magic-byte
+// table. That makes it shared, not docx-private — narrowing the formats it
+// accepts would silently change what a proposal can embed, not just what
+// this ingester reads.
 // ---------------------------------------------------------------------------
 
 const RASTER_SIGNATURES: Array<{ mime: string; sig: number[] }> = [
