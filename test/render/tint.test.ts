@@ -31,7 +31,7 @@ describe('mixToWhite', () => {
     expect(mixToWhite('#DA291C', 0.32)).toBe('#F3BBB6');
   });
   it('exposes the same steps every renderer uses', () => {
-    expect(SCALE_STEPS).toEqual([0.12, 0.32, 0.6, 1]);
+    expect(SCALE_STEPS).toEqual([0.18, 0.32, 0.6, 1]);
   });
 });
 

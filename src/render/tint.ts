@@ -5,7 +5,7 @@
 
 /** Tint fractions for the scale/numbers styles, palest to full. Four steps:
  *  few enough to tell apart on paper, and an odd middle is not needed. */
-export const SCALE_STEPS: readonly number[] = [0.12, 0.32, 0.6, 1];
+export const SCALE_STEPS: readonly number[] = [0.18, 0.32, 0.6, 1];
 
 /** 0 for an empty cell, else 1..steps by ceiling against the matrix maximum. */
 export function stepOf(value: number, max: number, steps: number): number {
