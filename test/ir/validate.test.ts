@@ -73,6 +73,9 @@ describe('validateDoc', () => {
       blocks: [{ t: 'heatmap', style: 'scale', rows: [{ label: 'A', values: [1] }], ...over }],
     });
     expect(() => validateDoc(mk({ style: 'rainbow' }))).toThrow(/style/);
+    // fill was removed as a style; it must be refused like any other unknown
+    // name, never silently accepted or rendered as something else.
+    expect(() => validateDoc(mk({ style: 'fill' }))).toThrow(/fill/);
     expect(() => validateDoc(mk({ rows: [{ label: 'A', values: [-1] }] }))).toThrow(/values\[0\]/);
     expect(() => validateDoc(mk({ rows: [] }))).toThrow(/at least one row/);
   });

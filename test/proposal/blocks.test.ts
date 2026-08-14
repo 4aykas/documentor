@@ -82,5 +82,8 @@ describe('heatmapOf', () => {
   it('honours a chosen style and refuses an unknown one by name', () => {
     expect(heatmapOf(DATA, 'marks')).toMatchObject({ style: 'marks' });
     expect(() => heatmapOf(DATA, 'rainbow')).toThrow(/rainbow/);
+    // fill was removed as a style; it must be refused like any other
+    // unknown name, never silently accepted or rendered as something else.
+    expect(() => heatmapOf(DATA, 'fill')).toThrow(/fill/);
   });
 });

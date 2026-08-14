@@ -211,7 +211,7 @@ describe('escapeHtml', () => {
 });
 
 describe('heatmap', () => {
-  const doc = (style: 'fill' | 'scale' | 'numbers' | 'marks'): Doc => ({
+  const doc = (style: 'scale' | 'numbers' | 'marks'): Doc => ({
     meta: { title: 'T', lang: 'en' },
     blocks: [{ t: 'heatmap', style, rows: [
       { label: 'Electrical', values: [16, 8, 0] },
@@ -243,12 +243,6 @@ describe('heatmap', () => {
     expect(html).toMatch(/<td class="hm hm-marks">▪▪▪<\/td>/);
     // marks carries no hm-s* tint class — its glyph count is the signal.
     expect(html).not.toMatch(/<td class="hm hm-s[1-9]"/);
-  });
-
-  it('fill: binary brand fill', async () => {
-    const html = await buildHtml(doc('fill'), theme);
-    expect(html).toMatch(/<td class="hm hm-fill"><\/td>/);
-    expect(html).toMatch(/<td class="hm hm-s0"><\/td>/);
   });
 
   it('the stylesheet computes tints from the theme and survives print', async () => {

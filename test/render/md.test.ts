@@ -89,7 +89,7 @@ describe('renderMarkdown', () => {
 });
 
 describe('heatmap in Markdown', () => {
-  const doc = (style: 'fill' | 'scale' | 'numbers' | 'marks'): Doc => ({
+  const doc = (style: 'scale' | 'numbers' | 'marks'): Doc => ({
     meta: { title: 'T', lang: 'en' },
     blocks: [{ t: 'heatmap', style, rows: [
       { label: 'Electrical', values: [16, 8, 0] },
@@ -107,11 +107,6 @@ describe('heatmap in Markdown', () => {
   it('writes marks as marks, stepped against the matrix maximum', () => {
     const md = renderMarkdown(doc('marks'));
     expect(md).toContain('| Electrical | ▪▪▪ | ▪▪ |  |');
-  });
-
-  it('writes fill as filled-or-empty', () => {
-    const md = renderMarkdown(doc('fill'));
-    expect(md).toContain('| Electrical | ■ | ■ |  |');
   });
 
   it('renders scale with no trailing prose — the matrix, nothing appended', () => {

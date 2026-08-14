@@ -1016,7 +1016,7 @@ describe('the letterhead', () => {
 });
 
 describe('heatmap', () => {
-  const hm = (style: 'fill' | 'scale' | 'numbers' | 'marks') =>
+  const hm = (style: 'scale' | 'numbers' | 'marks') =>
     doc({ t: 'heatmap', style, rows: [
       { label: 'Electrical', values: [16, 8, 0] },
       { label: 'BIM', values: [4, 4, 4] },
@@ -1065,7 +1065,7 @@ describe('heatmap', () => {
   });
 
   it('labels the weeks W01.. in the header row', async () => {
-    const xml = await body(hm('fill'));
+    const xml = await body(hm('scale'));
     expect(xml).toContain('W01');
     expect(xml).toContain('W03');
   });
