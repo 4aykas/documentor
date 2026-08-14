@@ -219,7 +219,14 @@ body{
 .tick-row{ display:flex; align-items:center; gap: 6pt; margin: 14pt 0 0; }
 .tick{ display:block; width: 28pt; height: 3pt; background: var(--brand); }
 .hair{ display:block; flex:1; height: 0.75pt; background: var(--rule); }
-.doc-title{ font-size: ${ty.titlePt}pt; font-weight: 700; margin: 22pt 0 0; letter-spacing: -0.01em; }
+/* Grey rather than ink: all three real originals this theme was built from
+   (Goehler, BER01, QTS) set their cover title in a lighter grey, not solid
+   black — measured by eye against the theme's own muted colour, which the
+   subtitle and letterhead already use. Solid ink at title size read as a
+   shout the originals never make; this brings the two in line without
+   touching the template, since colour is the theme's decision, not the
+   document's. */
+.doc-title{ font-size: ${ty.titlePt}pt; font-weight: 700; margin: 22pt 0 0; letter-spacing: -0.01em; color: var(--muted); }
 .doc-subtitle{ color: var(--muted); margin: 4pt 0 0; }
 h1,h2,h3{ break-after: avoid; page-break-after: avoid; }
 h2{ font-size: ${ty.h2Pt}pt; font-weight: 700; margin: 18pt 0 4pt; }

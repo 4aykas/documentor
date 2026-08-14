@@ -63,7 +63,10 @@ function styles(theme: Theme) {
       // numbers would silently drift from the PDF/HTML rendering of the same
       // document. `before` mirrors the rule's top margin, `after` its bottom
       // margin; where the CSS sets only one side, the other stays 0 here too.
-      para('DocTitle', 'Doc Title', { size: halfPt(ty.titlePt), bold: true, color: hex(c.ink) }, {
+      // Grey, not ink — see html.ts's `.doc-title` comment: the three real
+      // originals this theme was built from all set their cover title in a
+      // lighter grey, matched here by `c.muted` rather than `c.ink`.
+      para('DocTitle', 'Doc Title', { size: halfPt(ty.titlePt), bold: true, color: hex(c.muted) }, {
         // html.ts: `.doc-title{ margin: 22pt 0 0; }`
         spacing: { before: dxa(22), after: 0 },
       }),

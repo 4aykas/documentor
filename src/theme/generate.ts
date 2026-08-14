@@ -164,14 +164,21 @@ export function buildTheme(args: {
       png: `data:image/png;base64,${args.logoPngBase64}`,
     },
     page: { size: 'A4', marginPt: 48 },
-    // titlePt: measured off orig-ber01-p1.png, a rasterised original offer at
-    // ~2.00px/pt (1190px wide for an A4 page's 595.28pt). Its title's cap
-    // height is 36px there, i.e. 18.0pt. documentor's own title at the old
-    // h1Pt (18pt), rendered through the same pipeline at the same scale
-    // (cover-1.png), has a 14px = 7.0pt cap height — a cap-height/font-size
-    // ratio of ~0.389 for this font and weight. Solving 18.0pt / 0.389 gives
-    // ~46.3pt, rounded to 46.
-    type: { bodyPt: 10, leading: 1.45, titlePt: 46, h1Pt: 18, h2Pt: 13, h3Pt: 11, smallPt: 8 },
+    // titlePt: re-measured 2026-08-13 against the actual constraint that
+    // matters — fitting on one line — rather than against a cap-height ratio
+    // borrowed from a single sample word ("COMMERCIAL OFFER"). The longest
+    // title this theme has to set on one line is "COMMERCIAL PROPOSAL" (20
+    // characters, none of the three real originals wrap their title). Its
+    // usable width at this page/margin is 595.28pt (A4) − 2×48pt = 499.28pt.
+    // Measured with Playwright/Chromium loading this project's own embedded
+    // Arimo Bold and this theme's `letter-spacing: -0.01em` (the exact
+    // pipeline html.ts uses), "COMMERCIAL PROPOSAL" set at 39pt is 490.23pt
+    // wide — 9.05pt (1.8%) of clearance below the 499.28pt budget, comfortably
+    // one line. 39.5pt was measured at 496.45pt (2.83pt clearance, too tight
+    // to trust across platforms); 40pt already overflows at 502.77pt. 46 (the
+    // old value) wraps "COMMERCIAL PROPOSAL" onto two lines, which is the
+    // defect this re-measurement fixes.
+    type: { bodyPt: 10, leading: 1.45, titlePt: 39, h1Pt: 18, h2Pt: 13, h3Pt: 11, smallPt: 8 },
     letterhead: LETTERHEAD,
   };
 }
