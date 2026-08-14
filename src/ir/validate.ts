@@ -87,9 +87,9 @@ function checkBlock(b: unknown, where: string): void {
       return;
     }
     case 'heatmap': {
-      const styles = new Set(['fill', 'scale', 'numbers', 'marks']);
+      const styles = new Set(['scale', 'numbers', 'marks']);
       if (typeof n['style'] !== 'string' || !styles.has(n['style'])) {
-        fail(where, `unknown heatmap style ${JSON.stringify(n['style'])} — expected fill, scale, numbers or marks`);
+        fail(where, `unknown heatmap style ${JSON.stringify(n['style'])} — expected scale, numbers or marks`);
       }
       const rows = n['rows'];
       if (!Array.isArray(rows) || rows.length === 0) fail(`${where}.rows`, 'a heatmap needs at least one row');

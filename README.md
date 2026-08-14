@@ -97,7 +97,7 @@ from one of the two, verbatim — the command assembles, it does not write.
 The budget is computed, never typed: hours × rate per role, summed, printed
 as `€ 4 500,00`. A summary line marked `"covers": "budget"` must equal that
 total or the build fails quoting both figures. The involvement heatmap is
-drawn from the same team array (`{{@heatmap style=scale|fill|numbers|marks}}`,
+drawn from the same team array (`{{@heatmap style=scale|numbers|marks}}`,
 `scale` by default), and a deliverables register named by `"annex"` joins as
 an annex through the spreadsheet reader — with its row cap raised to 2000 for
 this one path, because a reference register is searched, not read.

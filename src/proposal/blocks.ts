@@ -61,16 +61,16 @@ export function scheduleTable(data: ProposalData): Block {
   };
 }
 
-const HEATMAP_STYLES = new Set(['fill', 'scale', 'numbers', 'marks']);
+const HEATMAP_STYLES = new Set(['scale', 'numbers', 'marks']);
 
 export function heatmapOf(data: ProposalData, style: string | undefined): Block {
   const chosen = style ?? 'scale';
   if (!HEATMAP_STYLES.has(chosen)) {
-    throw new ProposalError([`{{@heatmap}}: unknown style ${JSON.stringify(chosen)} — expected fill, scale, numbers or marks`]);
+    throw new ProposalError([`{{@heatmap}}: unknown style ${JSON.stringify(chosen)} — expected scale, numbers or marks`]);
   }
   return {
     t: 'heatmap',
-    style: chosen as 'fill' | 'scale' | 'numbers' | 'marks',
+    style: chosen as 'scale' | 'numbers' | 'marks',
     rows: data.team.map((r) => ({ label: r.role, values: [...r.hoursPerWeek] })),
   };
 }

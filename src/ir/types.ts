@@ -28,7 +28,7 @@ export type Block =
   // belongs to the theme, and the renderers map a value to a fill or a mark.
   // `style` travels in the block because the template chooses it per matrix.
   // The week count is rows[0].values.length, deliberately not stored twice.
-  | { t: 'heatmap'; style: 'fill' | 'scale' | 'numbers' | 'marks'; rows: { label: string; values: number[] }[] }
+  | { t: 'heatmap'; style: 'scale' | 'numbers' | 'marks'; rows: { label: string; values: number[] }[] }
   | { t: 'image'; src: string; alt: string; widthPt?: number }
   | { t: 'code'; lang?: string; text: string }
   | { t: 'quote'; paras: Inline[][] }

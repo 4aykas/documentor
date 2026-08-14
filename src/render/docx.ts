@@ -546,7 +546,6 @@ function heatmapBlocks(b: Extract<Block, { t: 'heatmap' }>, theme: Theme): (Para
           // unaffected (a red square prints as a grey square).
           return cell([centred(marks > 0 ? [run('▪'.repeat(marks), true)] : [])], weekW);
         }
-        if (b.style === 'fill') return cell([new Paragraph({ children: [] })], weekW, v > 0 ? hex(theme.colors.brandOnLight) : undefined);
         const step = stepOf(v, max, SCALE_STEPS.length);
         const fill = step > 0 ? mixToWhite(theme.colors.brandOnLight, SCALE_STEPS[step - 1]!).slice(1) : undefined;
         const text = b.style === 'numbers' && v > 0 ? centred([run(String(v), false)]) : new Paragraph({ children: [] });

@@ -73,7 +73,6 @@ function block(b: Block): string {
       // shows its hours here rather than an empty grid.
       const cellFor = (v: number): string =>
         b.style === 'marks' ? '▪'.repeat(stepOf(v, max, 3))
-        : b.style === 'fill' ? (v > 0 ? '■' : '')
         : v > 0 ? String(v) : '';
       const head = ['', ...Array.from({ length: weeks }, (_, i) => weekLabel(i))];
       const sep = [':--', ...Array.from({ length: weeks }, () => ':-:')];

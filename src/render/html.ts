@@ -119,7 +119,6 @@ function block(b: Block): string {
         // text costume, not text, and the greyscale-printing promise this
         // style makes is unaffected (a red square prints as a grey square).
         if (b.style === 'marks') return `<td class="hm hm-marks">${'▪'.repeat(stepOf(v, max, 3))}</td>`;
-        if (b.style === 'fill') return v > 0 ? '<td class="hm hm-fill"></td>' : '<td class="hm hm-s0"></td>';
         const cls = `hm hm-s${stepOf(v, max, SCALE_STEPS.length)}`;
         const text = b.style === 'numbers' && v > 0 ? String(v) : '';
         return `<td class="${cls}">${text}</td>`;
@@ -247,7 +246,6 @@ table.heatmap td, table.heatmap th{ border-bottom: none; text-align: center; pad
 table.heatmap thead th:first-child{ width: 28%; }
 table.heatmap td.hm-label{ text-align: left; }
 ${SCALE_STEPS.map((t, i) => `.hm-s${i + 1}{ background: color-mix(in srgb, var(--brand) ${Math.round(t * 100)}%, white); }`).join('\n')}
-.hm-fill{ background: var(--brand); }
 .hm-marks{ color: var(--brand); letter-spacing: 1pt; } /* deliberate exemption from brandOnLight: a fill-shaped glyph, not small text; see heatmapBlocks() in docx.ts */
 .pagebreak{ break-after: page; page-break-after: always; }
 a{ color: var(--ink); text-decoration: underline; text-decoration-color: var(--rule); }
