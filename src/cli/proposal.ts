@@ -70,6 +70,7 @@ export async function loadProposal(input: string): Promise<{
   warnings: string[];
   template: string;
   annex?: Buffer;
+  clientLogo?: Buffer;
 }> {
   const dataText = await readFile(input, 'utf8').catch((e: Error) => {
     throw new ProposalError([`cannot read ${input}: ${e.message}`]);
@@ -87,7 +88,18 @@ export async function loadProposal(input: string): Promise<{
       throw new ProposalError([`cannot read the annex ${annexPath}: ${e.message}`]);
     });
   }
-  return { data, warnings, template, ...(annex === undefined ? {} : { annex }) };
+  let clientLogo: Buffer | undefined;
+  if (data.clientLogo !== undefined) {
+    const clientLogoPath = resolve(base, data.clientLogo);
+    clientLogo = await readFile(clientLogoPath).catch((e: Error) => {
+      throw new ProposalError([`cannot read the client logo ${clientLogoPath}: ${e.message}`]);
+    });
+  }
+  return {
+    data, warnings, template,
+    ...(annex === undefined ? {} : { annex }),
+    ...(clientLogo === undefined ? {} : { clientLogo }),
+  };
 }
 
 /** The output stem: `ber01.proposal.json` → `ber01`, `offer.json` → `offer`.
@@ -111,6 +123,7 @@ export async function runProposalInspect(input: string, json: boolean, io: Io): 
     const { doc } = await assembleProposal({
       data: loaded.data, template: loaded.template,
       ...(loaded.annex === undefined ? {} : { annex: loaded.annex }),
+      ...(loaded.clientLogo === undefined ? {} : { clientLogo: loaded.clientLogo }),
     });
     const report = {
       file: input,
@@ -180,6 +193,7 @@ export async function runProposal(argv: string[], io: Io): Promise<number> {
     ({ doc, dropped } = await assembleProposal({
       data: loaded.data, template: loaded.template,
       ...(loaded.annex === undefined ? {} : { annex: loaded.annex }),
+      ...(loaded.clientLogo === undefined ? {} : { clientLogo: loaded.clientLogo }),
     }));
   } catch (e) {
     if (e instanceof ProposalError) {

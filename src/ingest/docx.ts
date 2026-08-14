@@ -839,7 +839,7 @@ const RASTER_SIGNATURES: Array<{ mime: string; sig: number[] }> = [
   { mime: 'image/bmp', sig: [0x42, 0x4d] },
 ];
 
-function sniffRaster(bytes: Buffer): string | null {
+export function sniffRaster(bytes: Buffer): string | null {
   for (const { mime, sig } of RASTER_SIGNATURES) {
     if (bytes.length >= sig.length && sig.every((b, i) => bytes[i] === b)) return mime;
   }

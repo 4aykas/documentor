@@ -82,6 +82,26 @@ describe('assembleProposal', () => {
     expect(errs.join('\n')).toMatch(/own paragraph|own line/);
   });
 
+  // A 2×1 red PNG, same technique as test/render/docx.test.ts's PNG_2x1 —
+  // real magic bytes so sniffRaster is genuinely exercised, not a fake string.
+  const PNG_2x1 = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAFElEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkS7cAAAAAElFTkSuQmCC',
+    'base64',
+  );
+
+  it('refuses {{@clientlogo}} with no clientLogo supplied, naming the directive', async () => {
+    const errs = await errorsOf(() => assembleProposal({ data: DATA, template: '# T\n\n{{@clientlogo}}\n' }));
+    expect(errs.join('\n')).toMatch(/clientlogo/);
+  });
+
+  it('turns clientLogo bytes into an image block with a data: URI, sniffed from the bytes', async () => {
+    const data: ProposalData = { ...DATA, clientLogo: './client-logo.png' };
+    const { doc } = await assembleProposal({ data, template: '# T\n\n{{@clientlogo}}\n', clientLogo: PNG_2x1 });
+    const image = doc.blocks.find((b) => b.t === 'image');
+    expect(image).toBeDefined();
+    expect(image).toMatchObject({ t: 'image', src: expect.stringMatching(/^data:image\/png;base64,/) });
+  });
+
   it('splices a {{@pagebreak}} directive where its line stood', async () => {
     const template = '# T\n\nBefore.\n\n{{@pagebreak}}\n\nAfter.\n';
     const { doc } = await assembleProposal({ data: DATA, template });

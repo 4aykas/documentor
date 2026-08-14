@@ -85,6 +85,16 @@ describe('documentor proposal', () => {
     expect(await runProposal([join(dir, 'example.proposal.json'), '--to', 'xlsx'], o)).toBe(2);
   });
 
+  it('exits 2 on an unreadable client logo, naming the path it tried', async () => {
+    const o = io();
+    const data = JSON.parse(readFileSync(join(dir, 'example.proposal.json'), 'utf8')) as Record<string, unknown>;
+    data['clientLogo'] = './no-such-logo.png';
+    await writeFile(join(dir, 'nologo.proposal.json'), JSON.stringify(data), 'utf8');
+    const code = await runProposal([join(dir, 'nologo.proposal.json')], o);
+    expect(code).toBe(2);
+    expect(o.errs.join('\n')).toMatch(/no-such-logo\.png/);
+  });
+
   it('prints the data file warnings without failing the build', async () => {
     const o = io();
     const data = JSON.parse(readFileSync(join(dir, 'example.proposal.json'), 'utf8')) as { team: { hoursPerWeek: number[] }[] };

@@ -20,6 +20,7 @@ export type ProposalData = {
   rev?: string;
   summary?: ProposalSummaryLine[];
   annex?: string;
+  clientLogo?: string;
 };
 
 /**

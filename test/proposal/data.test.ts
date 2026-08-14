@@ -101,4 +101,17 @@ describe('readProposalData', () => {
   it('refuses malformed JSON with a message that says so', () => {
     expect(() => readProposalData('{not json')).toThrow(ProposalError);
   });
+
+  it('accepts clientLogo, absent by default', () => {
+    const { data } = readProposalData(JSON.stringify(VALID));
+    expect(data.clientLogo).toBeUndefined();
+    expect('clientLogo' in data).toBe(false);
+    const withLogo = readProposalData(JSON.stringify({ ...VALID, clientLogo: './client-logo.png' })).data;
+    expect(withLogo.clientLogo).toBe('./client-logo.png');
+  });
+
+  it('refuses a non-string or empty clientLogo', () => {
+    expect(errorsOf((d) => { d['clientLogo'] = 5; }).join('\n')).toMatch(/clientLogo.*non-empty string/s);
+    expect(errorsOf((d) => { d['clientLogo'] = ''; }).join('\n')).toMatch(/clientLogo.*non-empty string/s);
+  });
 });

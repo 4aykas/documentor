@@ -15,6 +15,7 @@
 // which is the failure the "own paragraph" guard below exists to catch.
 
 import { ingestMarkdown } from '../ingest/md.js';
+import { sniffRaster } from '../ingest/docx.js';
 import { ingestXlsx } from '../ingest/xlsx.js';
 import type { Block, Doc } from '../ir/types.js';
 import { budgetTable, budgetTotalCents, heatmapOf, scheduleTable, summaryTable } from './blocks.js';
@@ -29,8 +30,15 @@ export const ANNEX_MAX_ROWS = 2000;
 const SENTINEL = (i: number): string => `@@documentor-directive-${i}@@`;
 const SENTINEL_RE = /^@@documentor-directive-(\d+)@@$/;
 
+/** A client logo on the title page sits beside TEBIN's own letterhead mark,
+ *  not in place of it — modest is the point. 110pt is close to what the
+ *  originals themselves print at (roughly 85–105pt measured off
+ *  orig-ber01-p1.png and orig-qts-p1.png), rounded to one number that reads
+ *  as deliberate rather than measured-to-the-pixel from one sample offer. */
+const CLIENT_LOGO_WIDTH_PT = 110;
+
 export async function assembleProposal(
-  args: { data: ProposalData; template: string; annex?: Buffer },
+  args: { data: ProposalData; template: string; annex?: Buffer; clientLogo?: Buffer },
 ): Promise<{ doc: Doc; dropped: string[] }> {
   const { data } = args;
   const items = flattenTemplate(parseTemplate(args.template), data);
@@ -124,8 +132,19 @@ export async function assembleProposal(
         dropped.push(...result.dropped.map((m) => `annex: ${m}`));
         return result.doc.blocks;
       }
+      case 'clientlogo': {
+        if (args.clientLogo === undefined) {
+          throw new ProposalError(['{{@clientlogo}} — no client logo bytes were supplied; the data file must name one ("clientLogo": "./client-logo.png"), or the template must wrap the block in {{?clientLogo}}…{{/?}}']);
+        }
+        const mime = sniffRaster(args.clientLogo);
+        if (mime === null) {
+          throw new ProposalError(['clientLogo: not a raster format this build reads (PNG/JPEG/GIF/BMP)']);
+        }
+        const src = `data:${mime};base64,${args.clientLogo.toString('base64')}`;
+        return [{ t: 'image', src, alt: "the client's logo", widthPt: CLIENT_LOGO_WIDTH_PT }];
+      }
       default:
-        throw new ProposalError([`unknown directive {{@${d.name}}} — this template language knows @summary, @budget, @schedule, @heatmap, @annex, @pagebreak and {{section:name}}`]);
+        throw new ProposalError([`unknown directive {{@${d.name}}} — this template language knows @summary, @budget, @schedule, @heatmap, @annex, @clientlogo, @pagebreak and {{section:name}}`]);
     }
   }
 }
