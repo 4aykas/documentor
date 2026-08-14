@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { CLASS_FOR_TOKEN, buildTheme, readTokens, recolourLogo, type Tokens } from '../../src/theme/generate.js';
+import { CLASS_FOR_TOKEN, buildTheme, readTokens, recolourCornerMark, recolourLogo, type Tokens } from '../../src/theme/generate.js';
 import { findInlinePaint, resolveTheme } from '../../src/theme/resolve.js';
 import { buildHtml } from '../../src/render/html.js';
 
@@ -57,6 +57,29 @@ describe('recolourLogo', () => {
   });
 });
 
+describe('recolourCornerMark', () => {
+  const published = readFileSync(join(BRAND, 'corner-mark.svg'), 'utf8');
+
+  it('replaces the fill attribute with a semantic class', () => {
+    const out = recolourCornerMark(published, TOKENS);
+    expect(out).toContain('class="c-brand"');
+    expect(out).not.toContain('fill=');
+  });
+
+  it('leaves nothing resolveTheme would refuse', () => {
+    expect(findInlinePaint(recolourCornerMark(published, TOKENS))).toBeNull();
+  });
+
+  it('names a colour it cannot attribute to a token, instead of guessing', () => {
+    const svg = '<svg><path fill="#00FF00" d="M0 0"/></svg>';
+    expect(() => recolourCornerMark(svg, TOKENS)).toThrow(/#00FF00/);
+  });
+
+  it('is deterministic', () => {
+    expect(recolourCornerMark(published, TOKENS)).toBe(recolourCornerMark(published, TOKENS));
+  });
+});
+
 describe('the generator and the stylesheet', () => {
   it('emits no logo class the stylesheet leaves unpainted', async () => {
     // The two halves of one contract: generate.ts decides which class a brand
@@ -107,6 +130,8 @@ describe('buildTheme', () => {
       tokens: readTokens(readFileSync(join(BRAND, 'tokens.dtcg.json'), 'utf8')),
       logoSvg: readFileSync(join(BRAND, 'logo-full.svg'), 'utf8'),
       logoPngBase64: readFileSync(join(BRAND, 'logo-full.png')).toString('base64'),
+      cornerMarkSvg: readFileSync(join(BRAND, 'corner-mark.svg'), 'utf8'),
+      cornerMarkPngBase64: readFileSync(join(BRAND, 'corner-mark.png')).toString('base64'),
       sourceId: 'tebin-classic',
       sourceVersion: '1.0.0',
     });

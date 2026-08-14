@@ -57,6 +57,16 @@ export type Theme = {
     embed: 'arimo';
   };
   logo: Logo | null;
+  /**
+   * The brand's corner glyph, drawn only on a cover page (`meta.cover ===
+   * true`) — bleeding off the page's physical top-right, and again at the
+   * cover panel's own corner. Shares Logo's shape (svg/heightPt/png) because
+   * it is drawn the same way a logo is: an inline SVG that paints by class
+   * for HTML/PDF, plus a raster for Word, where a class cannot paint an
+   * asset. Null when a theme has no such mark — a cover then draws no corner
+   * decoration rather than approximating one with CSS borders.
+   */
+  cornerMark: Logo | null;
   page: { size: PageSize; marginPt: number };
   type: {
     bodyPt: number;

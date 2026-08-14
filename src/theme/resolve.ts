@@ -112,6 +112,29 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
     };
   }
 
+  let cornerMark: Theme['cornerMark'] = null;
+  const rawCornerMark = t['cornerMark'];
+  if (rawCornerMark !== undefined && rawCornerMark !== null) {
+    const m = rawCornerMark as Record<string, unknown>;
+    if (typeof m['svg'] !== 'string' || !m['svg'].includes('<svg')) {
+      bad('cornerMark.svg', 'expected inline SVG markup');
+    }
+    // Same rule as logo.svg, for the same reason — see its comment above.
+    const paint = findInlinePaint(m['svg']);
+    if (paint) {
+      bad('cornerMark.svg', `inline paint is not allowed; found ${paint.where} (${JSON.stringify(paint.found)}) — paint by class instead`);
+    }
+    const rawPng = m['png'];
+    if (rawPng !== undefined && rawPng !== null && (typeof rawPng !== 'string' || !PNG_DATA_URI.test(rawPng))) {
+      bad('cornerMark.png', 'expected an inline "data:image/png;base64,…" URI, or null');
+    }
+    cornerMark = {
+      svg: m['svg'],
+      heightPt: num(m['heightPt'], 'cornerMark.heightPt', 24),
+      png: (rawPng as string | null | undefined) ?? null,
+    };
+  }
+
   const letterhead = Array.isArray(t['letterhead'])
     ? t['letterhead'].map((l, i) => {
         if (typeof l !== 'string') bad(`letterhead[${i}]`, 'expected a string');
@@ -144,6 +167,7 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
     })(),
     font: { document: String(font['document'] ?? 'Arial'), embed: 'arimo' },
     logo,
+    cornerMark,
     page: { size, marginPt },
     type: (() => {
       const h1Pt = num(type['h1Pt'], 'type.h1Pt', 18);

@@ -17,6 +17,8 @@ describe('themes/tebin/theme.json', () => {
         tokens: readTokens(readFileSync(join(BRAND, 'tokens.dtcg.json'), 'utf8')),
         logoSvg: readFileSync(join(BRAND, 'logo-full.svg'), 'utf8'),
         logoPngBase64: readFileSync(join(BRAND, 'logo-full.png')).toString('base64'),
+        cornerMarkSvg: readFileSync(join(BRAND, 'corner-mark.svg'), 'utf8'),
+        cornerMarkPngBase64: readFileSync(join(BRAND, 'corner-mark.png')).toString('base64'),
         sourceId: 'tebin-classic',
         sourceVersion: '1.0.0',
       }),

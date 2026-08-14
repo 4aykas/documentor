@@ -85,6 +85,47 @@ export function recolourLogo(svg: string, tokens: Tokens): string {
 }
 
 /**
+ * The corner mark asset (see brand/tebin/SOURCE.md) paints with a bare
+ * `fill="#RRGGBB"` attribute on each `<path>`, not through an embedded
+ * `<style>` class map the way the published logo does — it is a two-path
+ * glyph with nothing to gain from indirection. This does the same job
+ * `recolourLogo` does for the logo's `<style>` map, but for that simpler
+ * shape: every `fill="#…"` attribute is matched to a brand token and turned
+ * into `class="…"`, so the mark paints through the same host stylesheet
+ * rules a logo does (`.logo .c-brand` etc. — the corner mark reuses them,
+ * see render/html.ts) rather than carrying its own colour.
+ *
+ * A colour that matches no token throws, naming the colour — the same
+ * refusal `recolourLogo` makes, for the same reason: guessing here would
+ * reintroduce the drift the generated theme exists to prevent.
+ */
+export function recolourCornerMark(svg: string, tokens: Tokens): string {
+  const normalized = svg.replace(/\r\n/g, '\n');
+  const byColour = new Map<string, string>();
+  for (const [name, value] of Object.entries(tokens)) {
+    const cls = CLASS_FOR_TOKEN[name];
+    if (cls) byColour.set(value.toLowerCase(), cls);
+  }
+
+  let out = normalized.replace(/<\?xml[^>]*\?>\s*/g, '').trim();
+  out = out.replace(/\sfill="(#[0-9a-fA-F]{6})"/g, (whole, colour: string) => {
+    const semantic = byColour.get(colour.toLowerCase());
+    if (!semantic) {
+      throw new Error(
+        `corner mark colour ${colour} matches no brand token — add it to the token source or fix the asset; the generator will not guess a class for it`,
+      );
+    }
+    return ` class="${semantic}"`;
+  });
+
+  const leftover = findInlinePaint(out);
+  if (leftover) {
+    throw new Error(`recoloured corner mark still carries inline paint: ${leftover.where} (${leftover.found})`);
+  }
+  return out;
+}
+
+/**
  * The DTCG file groups tokens by type; a theme wants a flat lookup. Group and
  * name are joined with a dash for everything but colours, which are the common
  * case and keep their bare names: `brand`, `grey-lighter`, `font-document`.
@@ -130,6 +171,8 @@ export function buildTheme(args: {
   tokens: Tokens;
   logoSvg: string;
   logoPngBase64: string;
+  cornerMarkSvg: string;
+  cornerMarkPngBase64: string;
   sourceId: string;
   sourceVersion: string;
 }): unknown {
@@ -143,7 +186,7 @@ export function buildTheme(args: {
       version: args.sourceVersion,
       // Everything the brand does not decide, named here so a reader of this
       // file can tell authority from taste without going to look.
-      notFromBrand: ['page', 'type', 'letterhead', 'logo.heightPt', 'font.embed'],
+      notFromBrand: ['page', 'type', 'letterhead', 'logo.heightPt', 'cornerMark.heightPt', 'font.embed'],
     },
     colors: {
       // A fill colour, and large display type. Not a small-text colour: no
@@ -167,6 +210,15 @@ export function buildTheme(args: {
       svg: recolourLogo(args.logoSvg, tokens),
       heightPt: 14,
       png: `data:image/png;base64,${args.logoPngBase64}`,
+    },
+    // Drawn only on a cover page (meta.cover === true) — see html.ts/docx.ts.
+    // heightPt is taste, not a brand price: the asset's own viewBox
+    // (49.51 × 50.28pt) is near-square, so this is chosen to read clearly at
+    // the page corner without overwhelming the panel it also marks.
+    cornerMark: {
+      svg: recolourCornerMark(args.cornerMarkSvg, tokens),
+      heightPt: 24,
+      png: `data:image/png;base64,${args.cornerMarkPngBase64}`,
     },
     page: { size: 'A4', marginPt: 48 },
     // titlePt: re-measured 2026-08-13 against the actual constraint that
