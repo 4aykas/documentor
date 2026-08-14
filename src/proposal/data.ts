@@ -6,7 +6,7 @@ import { ProposalError, type ProposalAuthor, type ProposalData, type ProposalRol
 
 const TOP_KEYS = new Set([
   'template', 'kind', 'project', 'date', 'author', 'team', 'currency', 'sections',
-  'stage', 'number', 'docNumber', 'rev', 'summary', 'annex', 'clientLogo',
+  'stage', 'number', 'docNumber', 'rev', 'summary', 'annex', 'clientLogo', 'letterhead',
 ]);
 const AUTHOR_KEYS = new Set(['name', 'email', 'phone']);
 const ROLE_KEYS = new Set(['role', 'rate', 'hoursPerWeek']);
@@ -52,6 +52,15 @@ export function readProposalData(jsonText: string): { data: ProposalData; warnin
   const rev = str('rev', false);
   const annex = str('annex', false);
   const clientLogo = str('clientLogo', false);
+
+  let letterhead: boolean | undefined;
+  if (d['letterhead'] !== undefined) {
+    if (typeof d['letterhead'] !== 'boolean') {
+      errors.push(`letterhead: expected a boolean, got ${JSON.stringify(d['letterhead'])}`);
+    } else {
+      letterhead = d['letterhead'];
+    }
+  }
 
   let currency: 'EUR' = 'EUR';
   if (d['currency'] !== undefined) {
@@ -187,6 +196,7 @@ export function readProposalData(jsonText: string): { data: ProposalData; warnin
       ...(summary === undefined ? {} : { summary }),
       ...(annex === undefined ? {} : { annex }),
       ...(clientLogo === undefined ? {} : { clientLogo }),
+      ...(letterhead === undefined ? {} : { letterhead }),
     },
     warnings,
   };

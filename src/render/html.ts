@@ -143,24 +143,34 @@ function block(b: Block): string {
 }
 
 function firstPageHeader(doc: Doc, theme: Theme): string {
-  // The full letterhead, printed once in the body flow rather than in
-  // Chromium's header box — the header box has no access to this stylesheet.
-  const logo = theme.logo
-    ? `<div class="logo" style="height: ${theme.logo.heightPt}pt">${theme.logo.svg}</div>`
-    : '<div></div>';
-  const lines = theme.letterhead
-    .map((l, i) => `<div class="${i === 0 ? 'lh-name' : 'lh-line'}">${escapeHtml(l)}</div>`)
-    .join('');
-  // Which lines these are, in what order, and which get dropped: a decision
-  // shared with docx.ts, see letterhead.ts. What's left here is only the
-  // drawing — a <div> per line, marked on the first so the `.lh-doc-first`
-  // rule below can open the gap above it.
-  const docLines = letterheadDocLines(doc)
-    .map((v, i) => `<div class="lh-doc${i === 0 ? ' lh-doc-first' : ''}">${escapeHtml(v)}</div>`)
-    .join('');
-  return `<header class="sheet-head">${logo}<div class="letterhead">${lines}${docLines}</div></header>
+  // `meta.letterhead === false` suppresses the theme's chrome — logo,
+  // letterhead lines, this document's own entity/date lines and the brand
+  // tick rule — for a cover page that supplies its own layout as ordinary
+  // content instead. The title and subtitle below are never part of that:
+  // they are the document speaking, not the theme's, so they print either
+  // way. Absent is the same as `true` — the letterhead every document drew
+  // before this flag existed.
+  const chrome = doc.meta.letterhead === false ? '' : (() => {
+    // The full letterhead, printed once in the body flow rather than in
+    // Chromium's header box — the header box has no access to this stylesheet.
+    const logo = theme.logo
+      ? `<div class="logo" style="height: ${theme.logo.heightPt}pt">${theme.logo.svg}</div>`
+      : '<div></div>';
+    const lines = theme.letterhead
+      .map((l, i) => `<div class="${i === 0 ? 'lh-name' : 'lh-line'}">${escapeHtml(l)}</div>`)
+      .join('');
+    // Which lines these are, in what order, and which get dropped: a decision
+    // shared with docx.ts, see letterhead.ts. What's left here is only the
+    // drawing — a <div> per line, marked on the first so the `.lh-doc-first`
+    // rule below can open the gap above it.
+    const docLines = letterheadDocLines(doc)
+      .map((v, i) => `<div class="lh-doc${i === 0 ? ' lh-doc-first' : ''}">${escapeHtml(v)}</div>`)
+      .join('');
+    return `<header class="sheet-head">${logo}<div class="letterhead">${lines}${docLines}</div></header>
 <div class="tick-row"><span class="tick"></span><span class="hair"></span></div>
-<h1 class="doc-title">${escapeHtml(doc.meta.title)}</h1>${
+`;
+  })();
+  return `${chrome}<h1 class="doc-title">${escapeHtml(doc.meta.title)}</h1>${
     doc.meta.subtitle ? `<p class="doc-subtitle">${escapeHtml(doc.meta.subtitle)}</p>` : ''
   }`;
 }

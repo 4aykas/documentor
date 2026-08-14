@@ -168,6 +168,56 @@ describe('buildHtml', () => {
     expect(await build()).not.toContain('class="lh-doc');
     expect(await build()).toContain('<div class="letterhead"></div>');
   });
+
+  describe('meta.letterhead', () => {
+    const withEntity: Doc = {
+      meta: { title: 'Cover Title', subtitle: 'A cover subtitle', lang: 'en', entity: 'Acme Sp. z o.o.', date: '2026-08-12' },
+      blocks: [],
+    };
+    const logoTheme = resolveTheme({
+      id: 't', colors: { brandOnLight: '#DA291C' },
+      logo: { svg: '<svg><rect class="c-brand"/></svg>' },
+    });
+
+    it('is drawn — logo, letterhead lines, entity/date lines and tick rule — when meta omits the flag', async () => {
+      // Provably the existing behaviour, unchanged: absent means the same
+      // markup buildHtml produced before this flag existed.
+      const html = await buildHtml(withEntity, logoTheme);
+      expect(html).toContain('class="sheet-head"');
+      expect(html).toContain('class="logo"');
+      expect(html).toContain('class="letterhead"');
+      expect(html).toContain('class="tick-row"');
+      expect(html).toContain('Acme Sp. z o.o.');
+      expect(html).toContain('2026-08-12');
+      expect(html).toContain('<h1 class="doc-title">Cover Title</h1>');
+      expect(html).toContain('<p class="doc-subtitle">A cover subtitle</p>');
+    });
+
+    it('is drawn the same way when meta.letterhead is explicitly true', async () => {
+      const explicit: Doc = { meta: { ...withEntity.meta, letterhead: true }, blocks: [] };
+      const html = await buildHtml(explicit, logoTheme);
+      const absentFlag = await buildHtml(withEntity, logoTheme);
+      expect(html).toBe(absentFlag);
+    });
+
+    it('suppresses the logo, letterhead lines, entity/date lines and tick rule when false, but keeps the title and subtitle', async () => {
+      const noLetterhead: Doc = { meta: { ...withEntity.meta, letterhead: false }, blocks: [] };
+      const html = await buildHtml(noLetterhead, logoTheme);
+      expect(html).not.toContain('class="sheet-head"');
+      expect(html).not.toContain('class="logo"');
+      expect(html).not.toContain('class="letterhead"');
+      expect(html).not.toContain('class="tick-row"');
+      expect(html).not.toContain('Acme Sp. z o.o.');
+      expect(html).not.toContain('2026-08-12');
+      expect(html).toContain('<h1 class="doc-title">Cover Title</h1>');
+      expect(html).toContain('<p class="doc-subtitle">A cover subtitle</p>');
+    });
+
+    // The running header on pages 2+ is built by pdf.ts's own
+    // runningHeader(), an entirely separate headerTemplate string that
+    // firstPageHeader() never touches — pinned end-to-end (real PDF, real
+    // page 2) in test/render/pdf.test.ts's "meta.letterhead: false" case.
+  });
 });
 
 describe('link schemes', () => {

@@ -21,6 +21,11 @@ export type ProposalData = {
   summary?: ProposalSummaryLine[];
   annex?: string;
   clientLogo?: string;
+  // Absent means true — the theme's usual letterhead. `false` asks for a
+  // cover page with no theme chrome (see ir/types.ts's `Meta.letterhead`),
+  // which the template must then supply the equivalent of as ordinary
+  // content instead.
+  letterhead?: boolean;
 };
 
 /**

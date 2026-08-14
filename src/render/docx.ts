@@ -932,8 +932,16 @@ function imagePlaceholder(b: Extract<Block, { t: 'image' }>, theme: Theme): Para
  * whoever authored the theme, not supplied by the document, so silently
  * printing the letterhead with no mark would hide an authoring mistake behind
  * every document that theme touches. This throws instead.
+ *
+ * `meta.letterhead === false` (see html.ts's own copy of this rule) returns
+ * an empty Header instead: no logo, no letterhead lines, no entity/date
+ * lines, no tick rule. The title and subtitle are unaffected either way —
+ * they live in the body's own `head` paragraphs in `renderDocx` below, never
+ * in this Header, so there is nothing here to suppress them.
  */
 function firstPageHeader(doc: Doc, theme: Theme): Header {
+  if (doc.meta.letterhead === false) return new Header({ children: [] });
+
   const total = columnDxa(theme);
   const logoWidth = dxa(120);
   const png = theme.logo?.png;

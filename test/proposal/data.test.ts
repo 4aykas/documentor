@@ -114,4 +114,18 @@ describe('readProposalData', () => {
     expect(errorsOf((d) => { d['clientLogo'] = 5; }).join('\n')).toMatch(/clientLogo.*non-empty string/s);
     expect(errorsOf((d) => { d['clientLogo'] = ''; }).join('\n')).toMatch(/clientLogo.*non-empty string/s);
   });
+
+  it('accepts letterhead, absent by default', () => {
+    const { data } = readProposalData(JSON.stringify(VALID));
+    expect(data.letterhead).toBeUndefined();
+    expect('letterhead' in data).toBe(false);
+    const withFalse = readProposalData(JSON.stringify({ ...VALID, letterhead: false })).data;
+    expect(withFalse.letterhead).toBe(false);
+    const withTrue = readProposalData(JSON.stringify({ ...VALID, letterhead: true })).data;
+    expect(withTrue.letterhead).toBe(true);
+  });
+
+  it('refuses a non-boolean letterhead', () => {
+    expect(errorsOf((d) => { d['letterhead'] = 'no'; }).join('\n')).toMatch(/letterhead.*boolean/s);
+  });
 });

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { chromium, type Browser } from 'playwright-core';
 import { PDFDict, PDFDocument, PDFName } from 'pdf-lib';
+import type { Doc } from '../../src/ir/types.js';
 import { blockNonDataRequests, renderPdf } from '../../src/render/pdf.js';
 import { resolveTheme } from '../../src/theme/resolve.js';
 import { ingestMarkdown } from '../../src/ingest/md.js';
@@ -195,6 +196,35 @@ describe('renderPdf', () => {
     spy.mockRestore();
 
     expect(pagesOf().length).toBe(before);
+  });
+
+  it('draws the running header on page 2+ the same way whether meta.letterhead suppresses page one\'s chrome or not', async () => {
+    // meta.letterhead only reaches firstPageHeader() (see html.ts and
+    // docx.ts) — pdf.ts's own runningHeader() builds an entirely separate
+    // headerTemplate string it never touches. This proves that in a real
+    // multi-page PDF: a document long enough to reach page 2, rendered once
+    // with the flag absent and once with it false, must show the same
+    // title/page-count running header on page 2 either way.
+    const longBlocks: Doc['blocks'] = Array.from({ length: 40 }, () => ({
+      t: 'para' as const,
+      text: [{ t: 'text' as const, v: 'Paragraph text that flows and pushes content onto a later page.' }],
+    }));
+    const withoutFlag: Doc = { meta: { title: 'Running Header Title', lang: 'en' }, blocks: longBlocks };
+    const suppressed: Doc = { meta: { title: 'Running Header Title', lang: 'en', letterhead: false }, blocks: longBlocks };
+
+    const a = await renderPdf(withoutFlag, theme, { epochSeconds: EPOCH, browser });
+    const b = await renderPdf(suppressed, theme, { epochSeconds: EPOCH, browser });
+    const pagesA = await pdfText(a);
+    const pagesB = await pdfText(b);
+    expect(pagesA.length).toBeGreaterThan(1);
+    expect(pagesB.length).toBe(pagesA.length);
+
+    // Page 2's running header carries the title and an "N / M" counter in
+    // both renders, unaffected by the flag.
+    expect(pagesA[1]).toContain('Running Header Title');
+    expect(pagesB[1]).toContain('Running Header Title');
+    expect(pagesA[1]).toMatch(/2\s*\/\s*\d+/);
+    expect(pagesB[1]).toMatch(/2\s*\/\s*\d+/);
   });
 
   it('paginates a long document and numbers every page', async () => {

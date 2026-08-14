@@ -102,7 +102,11 @@ export async function assembleProposal(
     throw new ProposalError(missing.map((m) => `${m} did not stand alone as its own paragraph — put it on its own line with a blank line above and below`));
   }
 
-  return { doc: { meta: ingested.doc.meta, blocks }, dropped };
+  const meta = {
+    ...ingested.doc.meta,
+    ...(data.letterhead === undefined ? {} : { letterhead: data.letterhead }),
+  };
+  return { doc: { meta, blocks }, dropped };
 
   async function expand(d: Extract<FlatItem, { t: 'directive' }>): Promise<Block[]> {
     switch (d.name) {

@@ -80,3 +80,19 @@ describe('validateDoc', () => {
     expect(() => validateDoc(mk({ rows: [] }))).toThrow(/at least one row/);
   });
 });
+
+describe('meta.letterhead', () => {
+  it('accepts a document that omits it', () => {
+    expect(() => validateDoc(good)).not.toThrow();
+  });
+
+  it('accepts true and false', () => {
+    expect(() => validateDoc({ ...good, meta: { ...good.meta, letterhead: true } })).not.toThrow();
+    expect(() => validateDoc({ ...good, meta: { ...good.meta, letterhead: false } })).not.toThrow();
+  });
+
+  it('rejects a non-boolean value', () => {
+    expect(() => validateDoc({ ...good, meta: { ...good.meta, letterhead: 'yes' } }))
+      .toThrow(/meta\.letterhead/);
+  });
+});

@@ -45,6 +45,16 @@ export type Meta = {
   date?: string;
   entity?: string;
   lang: string;    // BCP 47; drives hyphenation and quotation marks
+  // Absent (or true) draws the theme's usual first-page letterhead: logo,
+  // letterhead lines, this document's own entity/date lines, and the brand
+  // tick rule. `false` suppresses all four — a cover page some of TEBIN's
+  // real documents use, where the client's own branding leads and TEBIN's
+  // entity details print lower down the page as ordinary body content
+  // instead. It does NOT suppress the title or subtitle: those are the
+  // document speaking, not the theme's chrome, and a document that could not
+  // print its own title would make this flag unusable for exactly the cover
+  // pages it exists for.
+  letterhead?: boolean;
 };
 
 export type Doc = { meta: Meta; blocks: Block[] };

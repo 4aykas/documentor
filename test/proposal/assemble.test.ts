@@ -28,6 +28,25 @@ describe('assembleProposal', () => {
     expect(types.filter((t) => t === 'table').length).toBeGreaterThanOrEqual(2); // summary + budget
   });
 
+  it('carries no meta.letterhead into the Doc when the data file omits it', async () => {
+    const { doc } = await assembleProposal({ data: DATA, template: TEMPLATE });
+    expect(doc.meta.letterhead).toBeUndefined();
+    expect('letterhead' in doc.meta).toBe(false);
+  });
+
+  it('passes data.letterhead: false through to meta.letterhead', async () => {
+    const data: ProposalData = { ...DATA, letterhead: false };
+    const { doc } = await assembleProposal({ data, template: TEMPLATE });
+    expect(doc.meta.letterhead).toBe(false);
+    expect(() => validateDoc(doc)).not.toThrow();
+  });
+
+  it('passes data.letterhead: true through to meta.letterhead', async () => {
+    const data: ProposalData = { ...DATA, letterhead: true };
+    const { doc } = await assembleProposal({ data, template: TEMPLATE });
+    expect(doc.meta.letterhead).toBe(true);
+  });
+
   it('splices each directive exactly where its line stood', async () => {
     const { doc } = await assembleProposal({ data: DATA, template: TEMPLATE });
     const i = doc.blocks.findIndex((b) => b.t === 'heading' && JSON.stringify(b.text).includes('SCHEDULE'));

@@ -136,6 +136,9 @@ export function validateDoc(doc: unknown): asserts doc is Doc {
   const m = meta as Record<string, unknown>;
   if (typeof m['title'] !== 'string' || m['title'] === '') fail('meta.title', 'expected a non-empty string');
   if (typeof m['lang'] !== 'string' || m['lang'] === '') fail('meta.lang', 'expected a non-empty string');
+  if ('letterhead' in m && m['letterhead'] !== undefined) {
+    if (typeof m['letterhead'] !== 'boolean') fail('meta.letterhead', `expected a boolean, got ${JSON.stringify(m['letterhead'])}`);
+  }
   if (!Array.isArray(d['blocks'])) fail('blocks', 'expected an array');
   d['blocks'].forEach((b, i) => checkBlock(b, `blocks[${i}]`));
 }

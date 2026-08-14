@@ -1024,6 +1024,54 @@ describe('the letterhead', () => {
   });
 });
 
+describe('meta.letterhead', () => {
+  const withEntity = (letterhead?: boolean): Doc => ({
+    meta: { title: 'Cover Title', subtitle: 'A cover subtitle', lang: 'en', entity: 'Acme Sp. z o.o.', date: '2026-08-12', ...(letterhead === undefined ? {} : { letterhead }) },
+    blocks: [{ t: 'para', text: [{ t: 'text', v: 'x' }] }],
+  });
+  const render2 = async (letterhead?: boolean) =>
+    docxPart(await renderDocx(withEntity(letterhead), await loadTheme('tebin'), { epochSeconds: EPOCH }), 'word/header2.xml');
+  const bodyOf = async (letterhead?: boolean) =>
+    docxPart(await renderDocx(withEntity(letterhead), await loadTheme('tebin'), { epochSeconds: EPOCH }), 'word/document.xml');
+
+  it('is drawn — mark, letterhead lines, entity/date lines and tick rule — when meta omits the flag', async () => {
+    // Provably the existing behaviour, unchanged.
+    const first = await render2(undefined);
+    expect(first).toContain('TEBIN.PRO Sp. z o.o.');
+    expect(first).toContain('NIP: 9552562516');
+    expect(first).toContain('Acme Sp. z o.o.');
+    expect(first).toContain('2026-08-12');
+    expect(first).toContain('<w:drawing>');
+    expect(await bodyOf(undefined)).toContain('Cover Title');
+  });
+
+  it('is drawn the same way when meta.letterhead is explicitly true', async () => {
+    const explicit = await render2(true);
+    const absentFlag = await render2(undefined);
+    expect(explicit).toBe(absentFlag);
+  });
+
+  it('suppresses the mark, letterhead lines, entity/date lines and tick rule when false, but keeps the title and subtitle in the body', async () => {
+    const first = await render2(false);
+    expect(first).not.toContain('TEBIN.PRO Sp. z o.o.');
+    expect(first).not.toContain('NIP: 9552562516');
+    expect(first).not.toContain('Acme Sp. z o.o.');
+    expect(first).not.toContain('2026-08-12');
+    expect(first).not.toContain('<w:drawing>');
+    const body2 = await bodyOf(false);
+    expect(body2).toContain('Cover Title');
+    expect(body2).toContain('A cover subtitle');
+  });
+
+  it('leaves the running header (pages 2+, word/header1.xml) alone either way', async () => {
+    const buf = await renderDocx(withEntity(false), await loadTheme('tebin'), { epochSeconds: EPOCH });
+    const running = await docxPart(buf, 'word/header1.xml');
+    expect(running).toContain('Cover Title');
+    expect(running).toContain('PAGE');
+    expect(running).toContain('NUMPAGES');
+  });
+});
+
 describe('heatmap', () => {
   const hm = (style: 'scale' | 'numbers' | 'marks') =>
     doc({ t: 'heatmap', style, rows: [
