@@ -63,7 +63,7 @@ function styles(theme: Theme) {
       // numbers would silently drift from the PDF/HTML rendering of the same
       // document. `before` mirrors the rule's top margin, `after` its bottom
       // margin; where the CSS sets only one side, the other stays 0 here too.
-      para('DocTitle', 'Doc Title', { size: halfPt(ty.h1Pt), bold: true, color: hex(c.ink) }, {
+      para('DocTitle', 'Doc Title', { size: halfPt(ty.titlePt), bold: true, color: hex(c.ink) }, {
         // html.ts: `.doc-title{ margin: 22pt 0 0; }`
         spacing: { before: dxa(22), after: 0 },
       }),

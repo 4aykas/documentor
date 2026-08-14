@@ -137,14 +137,21 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
     font: { document: String(font['document'] ?? 'Arial'), embed: 'arimo' },
     logo,
     page: { size, marginPt },
-    type: {
-      bodyPt: num(type['bodyPt'], 'type.bodyPt', 10),
-      leading: num(type['leading'], 'type.leading', 1.45),
-      h1Pt: num(type['h1Pt'], 'type.h1Pt', 18),
-      h2Pt: num(type['h2Pt'], 'type.h2Pt', 13),
-      h3Pt: num(type['h3Pt'], 'type.h3Pt', 11),
-      smallPt: num(type['smallPt'], 'type.smallPt', 8),
-    },
+    type: (() => {
+      const h1Pt = num(type['h1Pt'], 'type.h1Pt', 18);
+      return {
+        bodyPt: num(type['bodyPt'], 'type.bodyPt', 10),
+        leading: num(type['leading'], 'type.leading', 1.45),
+        // Defaults to the theme's own h1Pt, not a fixed number: a theme that
+        // says nothing about its title wants the title to read like an h1,
+        // whatever that theme's h1Pt is — not a size borrowed from plain's.
+        titlePt: num(type['titlePt'], 'type.titlePt', h1Pt),
+        h1Pt,
+        h2Pt: num(type['h2Pt'], 'type.h2Pt', 13),
+        h3Pt: num(type['h3Pt'], 'type.h3Pt', 11),
+        smallPt: num(type['smallPt'], 'type.smallPt', 8),
+      };
+    })(),
     letterhead,
   };
 }

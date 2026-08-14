@@ -54,6 +54,11 @@ export type Theme = {
   type: {
     bodyPt: number;
     leading: number;
+    /** The size of a document's title (meta.title), drawn on a cover/title
+     *  page. Defaults to h1Pt when a theme does not set one — see
+     *  resolveTheme — because most themes have no separate cover and want
+     *  the title to read exactly like an h1. */
+    titlePt: number;
     h1Pt: number;
     h2Pt: number;
     h3Pt: number;

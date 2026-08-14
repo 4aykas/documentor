@@ -9,6 +9,28 @@ describe('resolveTheme', () => {
     expect(t.colors.ink).toBe('#000000');
   });
 
+  it('defaults titlePt to the theme\'s own h1Pt when the theme sets neither', () => {
+    const t = resolveTheme({ id: 'x', colors: { ink: '#000000' } });
+    expect(t.type.titlePt).toBe(t.type.h1Pt);
+    expect(t.type.titlePt).toBe(18);
+  });
+
+  it('defaults titlePt to a custom h1Pt, not the built-in default', () => {
+    const t = resolveTheme({ id: 'x', type: { h1Pt: 24 } });
+    expect(t.type.titlePt).toBe(24);
+  });
+
+  it('keeps an explicit titlePt distinct from h1Pt', () => {
+    const t = resolveTheme({ id: 'x', type: { h1Pt: 18, titlePt: 46 } });
+    expect(t.type.titlePt).toBe(46);
+    expect(t.type.h1Pt).toBe(18);
+  });
+
+  it('rejects a titlePt that is not a positive number, like its siblings', () => {
+    expect(() => resolveTheme({ id: 'x', type: { titlePt: -1 } })).toThrow(/type\.titlePt/);
+    expect(() => resolveTheme({ id: 'x', type: { titlePt: 'huge' } })).toThrow(/type\.titlePt/);
+  });
+
   it('rejects a colour that is not a six-digit hex', () => {
     expect(() => resolveTheme({ id: 'x', colors: { ink: 'red' } })).toThrow(/colors\.ink/);
     expect(() => resolveTheme({ id: 'x', colors: { ink: '#abc' } })).toThrow(/colors\.ink/);

@@ -209,7 +209,7 @@ body{
 .tick-row{ display:flex; align-items:center; gap: 6pt; margin: 14pt 0 0; }
 .tick{ display:block; width: 28pt; height: 3pt; background: var(--brand); }
 .hair{ display:block; flex:1; height: 0.75pt; background: var(--rule); }
-.doc-title{ font-size: ${ty.h1Pt}pt; font-weight: 700; margin: 22pt 0 0; letter-spacing: -0.01em; }
+.doc-title{ font-size: ${ty.titlePt}pt; font-weight: 700; margin: 22pt 0 0; letter-spacing: -0.01em; }
 .doc-subtitle{ color: var(--muted); margin: 4pt 0 0; }
 h1,h2,h3{ break-after: avoid; page-break-after: avoid; }
 h2{ font-size: ${ty.h2Pt}pt; font-weight: 700; margin: 18pt 0 4pt; }

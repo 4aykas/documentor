@@ -79,6 +79,13 @@ describe('buildHtml', () => {
     expect(await build()).toContain('@page{ size: A4; margin: 16.93mm; }');
   });
 
+  it('draws .doc-title at the theme\'s titlePt, not h1Pt', async () => {
+    const titled = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C' }, type: { h1Pt: 18, titlePt: 46 } });
+    const html = await buildHtml(doc, titled);
+    expect(html).toContain('.doc-title{ font-size: 46pt;');
+    expect(html).not.toContain('.doc-title{ font-size: 18pt;');
+  });
+
   it('omits the logo block entirely when the theme has none', async () => {
     expect(await build()).not.toContain('class="logo"');
   });

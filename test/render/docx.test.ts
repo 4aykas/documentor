@@ -28,6 +28,15 @@ describe('renderDocx', () => {
     expect(styles.match(/w:styleId="Heading2"/g)?.length ?? 0).toBe(1);
   });
 
+  it('sizes the DocTitle style from the theme\'s titlePt, not h1Pt', async () => {
+    const titled = resolveTheme({ id: 't', type: { h1Pt: 18, titlePt: 46 } });
+    const styles = await docxPart(await renderDocx(doc({ t: 'para', text: [{ t: 'text', v: 'x' }] }), titled, { epochSeconds: EPOCH }), 'word/styles.xml');
+    const docTitle = styles.match(/<w:style[^>]*w:styleId="DocTitle"[\s\S]*?<\/w:style>/)?.[0] ?? '';
+    expect(docTitle).toContain(`w:sz w:val="${46 * 2}"`);
+    const docH1 = styles.match(/<w:style[^>]*w:styleId="DocH1"[\s\S]*?<\/w:style>/)?.[0] ?? '';
+    expect(docH1).toContain(`w:sz w:val="${18 * 2}"`);
+  });
+
   it('keeps a heading in Word’s outline', async () => {
     expect(await body(doc({ t: 'heading', level: 2, text: [{ t: 'text', v: 'H' }] }))).toContain('<w:outlineLvl w:val="1"/>');
   });

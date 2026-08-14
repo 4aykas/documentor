@@ -164,7 +164,14 @@ export function buildTheme(args: {
       png: `data:image/png;base64,${args.logoPngBase64}`,
     },
     page: { size: 'A4', marginPt: 48 },
-    type: { bodyPt: 10, leading: 1.45, h1Pt: 18, h2Pt: 13, h3Pt: 11, smallPt: 8 },
+    // titlePt: measured off orig-ber01-p1.png, a rasterised original offer at
+    // ~2.00px/pt (1190px wide for an A4 page's 595.28pt). Its title's cap
+    // height is 36px there, i.e. 18.0pt. documentor's own title at the old
+    // h1Pt (18pt), rendered through the same pipeline at the same scale
+    // (cover-1.png), has a 14px = 7.0pt cap height — a cap-height/font-size
+    // ratio of ~0.389 for this font and weight. Solving 18.0pt / 0.389 gives
+    // ~46.3pt, rounded to 46.
+    type: { bodyPt: 10, leading: 1.45, titlePt: 46, h1Pt: 18, h2Pt: 13, h3Pt: 11, smallPt: 8 },
     letterhead: LETTERHEAD,
   };
 }
