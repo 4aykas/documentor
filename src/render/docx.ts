@@ -8,12 +8,14 @@
 // in points until the moment it stops being.
 
 import {
-  AlignmentType, BorderStyle, Document, ExternalHyperlink, Header, ImageRun, LevelFormat, LineRuleType, Packer,
-  PageBreak, PageNumber, Paragraph, ShadingType, Table, TableCell, TableLayoutType, TableRow,
-  TextRun, WidthType, type ILevelsOptions, type IParagraphOptions, type ParagraphChild,
+  AlignmentType, BorderStyle, Document, ExternalHyperlink, Header, HorizontalPositionAlign,
+  HorizontalPositionRelativeFrom, ImageRun, LevelFormat, LineRuleType, Packer, PageBreak, PageNumber, Paragraph,
+  ShadingType, Table, TableCell, TableLayoutType, TableRow, TextRun, TextWrappingType, VerticalPositionAlign,
+  VerticalPositionRelativeFrom, WidthType, type ILevelsOptions, type IParagraphOptions, type ParagraphChild,
 } from 'docx';
 import type { Block, Doc, Inline } from '../ir/types.js';
 import { PAGE_PT, type Theme } from '../theme/types.js';
+import { partitionCoverBlocks, ruleIndexes, splitAtFirstPagebreak } from './cover-zones.js';
 import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
 import { normalizeDocx } from './normalize-docx.js';
@@ -933,6 +935,122 @@ function imagePlaceholder(b: Extract<Block, { t: 'image' }>, theme: Theme): Para
 }
 
 /**
+ * A cover panel: a single-cell, single-row table whose four sides carry the
+ * hairline border html.ts's `.cover-panel` draws with CSS — a table, not a
+ * paragraph border, because the panel holds several paragraphs (the title,
+ * the subtitle, and every block before the cover's first `rule`), and a
+ * paragraph's own `border` option (see the `rule` case in blocks() below)
+ * draws around one paragraph, not a group. docx.ts already builds bordered
+ * and borderless tables elsewhere in this file (see `table()` and
+ * `tickRow()`); this is the same technique turned to a new end.
+ */
+function panelTable(children: (Paragraph | Table)[], theme: Theme): Table {
+  const total = columnDxa(theme);
+  const border = { style: BorderStyle.SINGLE, size: eighthPt(0.75), color: hex(theme.colors.rule) };
+  return new Table({
+    layout: TableLayoutType.FIXED,
+    width: { size: total, type: WidthType.DXA },
+    columnWidths: [total],
+    borders: { top: border, bottom: border, left: border, right: border, insideHorizontal: NO_BORDER, insideVertical: NO_BORDER },
+    rows: [new TableRow({ children: [
+      new TableCell({
+        width: { size: total, type: WidthType.DXA },
+        // html.ts: `.cover-panel{ padding: 20pt 24pt; }`
+        margins: { top: dxa(20), bottom: dxa(20), left: dxa(24), right: dxa(24), marginUnitType: WidthType.DXA },
+        children,
+      }),
+    ] })],
+  });
+}
+
+/**
+ * The brand's corner glyph, anchored to the page's own top-right corner —
+ * not to the paragraph it is attached to, and not to the margin box. This is
+ * the one piece of this feature Word *can* place with genuine page-relative
+ * positioning: `w:anchor` (what docx's `floating` option emits) is a normal,
+ * well-supported part of the format — the same mechanism behind any Word
+ * document with a picture a paragraph can wrap around — and a
+ * `horizontalPosition`/`verticalPosition` both relative to `page` pins the
+ * picture to the physical page corner regardless of how much text precedes
+ * or follows it. `wrap: { type: NONE }` keeps it from pushing surrounding
+ * text out of the way, since nothing here wants the panel or the running
+ * text to reflow around a decoration in the corner.
+ *
+ * This is genuinely different from the foot's problem (see coverBody's
+ * comment): an anchored *picture* has an unambiguous, fixed position the
+ * format defines directly, while a page-bottom *paragraph* would need the
+ * legacy `w:framePr` text-frame mechanism — deprecated, scoped to a run of
+ * paragraphs in a way this library's `frame` option does not cleanly expose
+ * for a multi-block foot, and not something this renderer can verify
+ * behaves the same way across Word versions. One is a documented format
+ * feature reused as intended; the other would be a gamble on the exact kind
+ * of "fake it and hope" this feature's spec forbids.
+ *
+ * Returns `null` when the theme carries no corner mark, or that mark has no
+ * raster — the same "no raster, no mark" rule firstPageHeader's logo
+ * follows: an SVG cannot be trusted to embed in Word (see canEmbedInDocx's
+ * WebP comment for the general shape of that limitation), so only
+ * `cornerMark.png` is ever drawn here.
+ */
+function cornerMarkImage(theme: Theme): ImageRun | null {
+  const mark = theme.cornerMark;
+  if (!mark?.png) return null;
+  const bytes = Buffer.from(mark.png.slice(mark.png.indexOf(',') + 1), 'base64');
+  const size = pngSize(bytes);
+  if (size === null) throw new Error('theme.cornerMark.png is not a usable PNG (bad signature, too few bytes, or a zero dimension)');
+  const heightPt = mark.heightPt;
+  const widthPt = (heightPt * size.w) / size.h;
+  return new ImageRun({
+    data: bytes,
+    type: 'png',
+    transformation: { width: px96(widthPt), height: px96(heightPt) },
+    floating: {
+      horizontalPosition: { relative: HorizontalPositionRelativeFrom.PAGE, align: HorizontalPositionAlign.RIGHT },
+      verticalPosition: { relative: VerticalPositionRelativeFrom.PAGE, align: VerticalPositionAlign.TOP },
+      wrap: { type: TextWrappingType.NONE },
+      margins: { top: 0, bottom: 0, left: 0, right: 0 },
+    },
+  });
+}
+
+/**
+ * A cover page with at least one `rule` (see cover-zones.ts): the panel
+ * (bordered table, title and subtitle inside it alongside every block before
+ * the first rule), whatever flows between the first and last rule, and the
+ * foot (every block after the last rule).
+ *
+ * The foot is NOT pinned to the page's bottom edge the way html.ts's
+ * `.cover-frame` pins it. Word's own paragraph flow has no page-relative
+ * positioning primitive that fits arbitrary, variable-length content the
+ * way CSS flexbox does — the only two the format offers are the anchored
+ * picture cornerMarkImage() uses (one fixed-size object, not a growing block
+ * of paragraphs) and the legacy `w:framePr` text frame, which this renderer
+ * does not use — see cornerMarkImage's comment for why that one is a gamble
+ * this feature's spec asks not to take. So the foot's blocks are emitted in
+ * plain document flow, immediately after whatever flows between the rules —
+ * present and correct in reading order, but not at the page foot. This is
+ * recorded in README.md's refusal register, not just here.
+ */
+function coverBody(doc: Doc, theme: Theme, refOf: Map<Block, string>, pageBlocks: Block[], restBlocks: Block[], ruleIdxs: number[]): (Paragraph | Table)[] {
+  const { panel, flowing, foot } = partitionCoverBlocks(pageBlocks, ruleIdxs);
+  const mark = cornerMarkImage(theme);
+  const titlePara = new Paragraph({
+    style: 'DocTitleCover',
+    children: [...(mark ? [mark] : []), new TextRun({ text: doc.meta.title })],
+  });
+  const subtitlePara = doc.meta.subtitle
+    ? [new Paragraph({ style: 'DocSubtitle', children: [new TextRun({ text: doc.meta.subtitle })] })]
+    : [];
+  const panelContent: (Paragraph | Table)[] = [titlePara, ...subtitlePara, ...panel.flatMap((b) => blocks(b, theme, refOf))];
+  return [
+    panelTable(panelContent, theme),
+    ...flowing.flatMap((b) => blocks(b, theme, refOf)),
+    ...foot.flatMap((b) => blocks(b, theme, refOf)),
+    ...restBlocks.flatMap((b) => blocks(b, theme, refOf)),
+  ];
+}
+
+/**
  * The first page's letterhead. In the PDF this is drawn in the body flow,
  * because Chromium renders a header template in a separate context with none
  * of the page's CSS. Word has no such limitation, and a DOCX is a thing people
@@ -1052,11 +1170,23 @@ function runningHeader(doc: Doc, theme: Theme): Header {
 }
 
 export async function renderDocx(doc: Doc, theme: Theme, opts: { epochSeconds: number }): Promise<Buffer> {
-  const head: Paragraph[] = [
-    new Paragraph({ style: doc.meta.cover === true ? 'DocTitleCover' : 'DocTitle', children: [new TextRun({ text: doc.meta.title })] }),
-    ...(doc.meta.subtitle ? [new Paragraph({ style: 'DocSubtitle', children: [new TextRun({ text: doc.meta.subtitle })] })] : []),
-  ];
   const { refOf, config } = listNumbering(doc, theme);
+  const cover = doc.meta.cover === true;
+  const { pageBlocks, restBlocks } = cover ? splitAtFirstPagebreak(doc.blocks) : { pageBlocks: doc.blocks, restBlocks: [] };
+  const ruleIdxs = cover ? ruleIndexes(pageBlocks) : [];
+
+  // >=1 rule on a cover draws the panel/flowing/foot split (see coverBody);
+  // every other case — an ordinary document, or a cover with no rule to
+  // divide it — renders exactly as this feature's predecessor did, see this
+  // feature's "a cover with no rules must render exactly as it does today"
+  // rule.
+  const bodyChildren: (Paragraph | Table)[] = ruleIdxs.length > 0
+    ? coverBody(doc, theme, refOf, pageBlocks, restBlocks, ruleIdxs)
+    : [
+        new Paragraph({ style: cover ? 'DocTitleCover' : 'DocTitle', children: [new TextRun({ text: doc.meta.title })] }),
+        ...(doc.meta.subtitle ? [new Paragraph({ style: 'DocSubtitle', children: [new TextRun({ text: doc.meta.subtitle })] })] : []),
+        ...doc.blocks.flatMap((b) => blocks(b, theme, refOf)),
+      ];
 
   const packed = await Packer.toBuffer(new Document({
     styles: styles(theme),
@@ -1094,7 +1224,7 @@ export async function renderDocx(doc: Doc, theme: Theme, opts: { epochSeconds: n
         },
       },
       headers: { default: runningHeader(doc, theme), first: firstPageHeader(doc, theme) },
-      children: [...head, ...doc.blocks.flatMap((b) => blocks(b, theme, refOf))],
+      children: bodyChildren,
     }],
   }));
 

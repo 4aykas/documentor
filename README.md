@@ -85,6 +85,20 @@ deliberate rather than unfinished:
   would need a raster shipped alongside it that cannot be produced
   reproducibly, and WebP, which Word's own file format has no content type for.
   The PDF path embeds any raster.
+- **A cover page's foot zone is not pinned to the page bottom in Word.** On a
+  cover (`meta.cover: true`) with two or more `rule` blocks, PDF/HTML place
+  the panel at the top, hairline-bordered, and the blocks after the last rule
+  at the bottom of the page (see src/render/cover-zones.ts). Word carries the
+  panel (a bordered single-cell table) and the brand's corner mark (a real
+  anchored picture, pinned to the page corner the same way any Word document
+  with a floating image is) but not the foot's position: Word's paragraph
+  flow has no primitive for "this variable-length group of blocks sits at the
+  bottom of the page" the way CSS flexbox does — only a fixed-size anchored
+  object (which the corner mark already uses) or the deprecated `w:framePr`
+  text frame, which this renderer does not use because its behaviour across
+  Word versions cannot be verified here. The foot's blocks render in normal
+  reading order instead, right where the last rule left them — present and
+  correct, just not at the page foot.
 
 ## Proposals
 

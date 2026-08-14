@@ -60,6 +60,14 @@ Know these before promising anything to the user:
   GIF and BMP images all carry through.
 - **Word embeds PNG, JPEG, GIF and BMP.** An SVG or a WebP becomes a visible
   placeholder naming what it was; the PDF path embeds any raster.
+- **A cover page's foot is not pinned to the page bottom in Word.** On a
+  cover (`meta.cover: true`) with two or more `rule` blocks, PDF/HTML draw a
+  bordered panel at the top and place the blocks after the last rule at the
+  page's bottom edge. Word carries the panel (a bordered table) and the
+  brand's corner mark (a real anchored picture) but the foot's blocks render
+  in plain reading order instead — present, in the right order, just not
+  pinned to the page foot, because Word's paragraph flow has no primitive
+  for that which this renderer trusts across versions.
 
 ## The flow
 

@@ -1112,6 +1112,98 @@ describe('meta.cover', () => {
   });
 });
 
+describe('cover zones', () => {
+  const rule: Doc['blocks'][number] = { t: 'rule' };
+  const para = (v: string): Doc['blocks'][number] => ({ t: 'para', text: [{ t: 'text', v }] });
+  // PNG_2x1 (see the `images` suite above): small enough to embed as a real
+  // theme.cornerMark.png without a network fetch or a large fixture.
+  const markedTheme = resolveTheme({
+    id: 't', colors: { brandOnLight: '#DA291C' },
+    cornerMark: { svg: '<svg viewBox="0 0 10 10"><rect class="c-brand"/></svg>', png: PNG_2x1 },
+  });
+
+  it("an ordinary document's rule renders as a paragraph border, never a panel table — the regression this feature must not leak into", async () => {
+    const d = doc(para('before'), rule, para('after'));
+    const xml = await docxPart(await renderDocx(d, markedTheme, { epochSeconds: EPOCH }), 'word/document.xml');
+    expect(xml).not.toContain('<w:tbl>');
+    expect(xml).not.toContain('<w:drawing>');
+  });
+
+  it('a cover with no rule renders exactly as before this feature — no panel table, no anchored mark', async () => {
+    const d: Doc = { meta: { title: 'Cover', lang: 'en', cover: true }, blocks: [para('a'), para('b')] };
+    const xml = await docxPart(await renderDocx(d, markedTheme, { epochSeconds: EPOCH }), 'word/document.xml');
+    expect(xml).toContain('w:val="DocTitleCover"');
+    expect(xml).not.toContain('<w:tbl>');
+    expect(xml).not.toContain('<w:drawing>');
+  });
+
+  it('a cover with one rule wraps the title and the leading blocks in a bordered single-cell table', async () => {
+    const d: Doc = { meta: { title: 'Cover', lang: 'en', cover: true }, blocks: [para('lead'), rule, para('tail')] };
+    const xml = await docxPart(await renderDocx(d, markedTheme, { epochSeconds: EPOCH }), 'word/document.xml');
+    const table = xml.match(/<w:tbl>[\s\S]*?<\/w:tbl>/)?.[0];
+    expect(table, 'expected a <w:tbl> panel').toBeDefined();
+    expect(table).toContain('Cover');
+    expect(table).toContain('lead');
+    expect(table).not.toContain('tail');
+    // "tail" flows after the table, in plain paragraphs, not inside another table.
+    expect(xml.slice(xml.indexOf('</w:tbl>'))).toContain('tail');
+    // A panel exists, so the anchored corner mark is drawn — once, in the
+    // panel's own title paragraph (see cornerMarkImage/coverBody).
+    expect(xml.match(/<w:drawing>/g)?.length).toBe(1);
+    expect(xml).toContain('<wp:anchor');
+  });
+
+  it('a cover with two rules puts the foot in plain document flow — Word carries no page-bottom pin here', async () => {
+    const d: Doc = {
+      meta: { title: 'Cover', lang: 'en', cover: true },
+      blocks: [para('lead'), rule, para('mid'), rule, para('foot content')],
+    };
+    const xml = await docxPart(await renderDocx(d, markedTheme, { epochSeconds: EPOCH }), 'word/document.xml');
+    // Reading order: panel table, then "mid", then "foot content" — the foot
+    // is present and in the right place, just not pinned to the page bottom.
+    const tableEnd = xml.indexOf('</w:tbl>');
+    const midAt = xml.indexOf('mid');
+    const footAt = xml.indexOf('foot content');
+    expect(tableEnd).toBeGreaterThan(-1);
+    expect(midAt).toBeGreaterThan(tableEnd);
+    expect(footAt).toBeGreaterThan(midAt);
+    expect(xml).toContain('<w:drawing>');
+  });
+
+  it('draws no anchored mark at all when the theme carries no cornerMark, even with a panel', async () => {
+    const noMark = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C' } });
+    const d: Doc = { meta: { title: 'Cover', lang: 'en', cover: true }, blocks: [para('lead'), rule, rule, para('foot')] };
+    const xml = await docxPart(await renderDocx(d, noMark, { epochSeconds: EPOCH }), 'word/document.xml');
+    expect(xml).toContain('<w:tbl>');
+    expect(xml).not.toContain('<w:drawing>');
+  });
+
+  it("a multi-page cover's content after the first pagebreak renders unaffected, in plain flow after the foot", async () => {
+    const d: Doc = {
+      meta: { title: 'Cover', lang: 'en', cover: true },
+      blocks: [
+        para('lead'), rule, para('mid'), rule, para('foot content'),
+        { t: 'pagebreak' },
+        { t: 'heading', level: 2, text: [{ t: 'text', v: 'Section 2' }] },
+      ],
+    };
+    const xml = await docxPart(await renderDocx(d, markedTheme, { epochSeconds: EPOCH }), 'word/document.xml');
+    expect(xml).toContain('<w:br w:type="page"/>');
+    expect(xml).toContain('Section 2');
+    expect(xml.indexOf('Section 2')).toBeGreaterThan(xml.indexOf('foot content'));
+  });
+
+  it('produces byte-identical output on two runs of the same cover document', async () => {
+    const d: Doc = {
+      meta: { title: 'Cover', lang: 'en', cover: true },
+      blocks: [para('lead'), rule, para('mid'), rule, para('foot content')],
+    };
+    const a = await renderDocx(d, markedTheme, { epochSeconds: EPOCH });
+    const b = await renderDocx(d, markedTheme, { epochSeconds: EPOCH });
+    expect(a.equals(b)).toBe(true);
+  });
+});
+
 describe('heatmap', () => {
   const hm = (style: 'scale' | 'numbers' | 'marks') =>
     doc({ t: 'heatmap', style, rows: [
