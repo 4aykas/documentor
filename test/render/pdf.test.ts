@@ -198,19 +198,19 @@ describe('renderPdf', () => {
     expect(pagesOf().length).toBe(before);
   });
 
-  it('draws the running header on page 2+ the same way whether meta.letterhead suppresses page one\'s chrome or not', async () => {
-    // meta.letterhead only reaches firstPageHeader() (see html.ts and
+  it('draws the running header on page 2+ the same way whether meta.cover suppresses page one\'s chrome or not', async () => {
+    // meta.cover only reaches firstPageHeader() (see html.ts and
     // docx.ts) — pdf.ts's own runningHeader() builds an entirely separate
     // headerTemplate string it never touches. This proves that in a real
     // multi-page PDF: a document long enough to reach page 2, rendered once
-    // with the flag absent and once with it false, must show the same
+    // with the flag absent and once with it true, must show the same
     // title/page-count running header on page 2 either way.
     const longBlocks: Doc['blocks'] = Array.from({ length: 40 }, () => ({
       t: 'para' as const,
       text: [{ t: 'text' as const, v: 'Paragraph text that flows and pushes content onto a later page.' }],
     }));
     const withoutFlag: Doc = { meta: { title: 'Running Header Title', lang: 'en' }, blocks: longBlocks };
-    const suppressed: Doc = { meta: { title: 'Running Header Title', lang: 'en', letterhead: false }, blocks: longBlocks };
+    const suppressed: Doc = { meta: { title: 'Running Header Title', lang: 'en', cover: true }, blocks: longBlocks };
 
     const a = await renderPdf(withoutFlag, theme, { epochSeconds: EPOCH, browser });
     const b = await renderPdf(suppressed, theme, { epochSeconds: EPOCH, browser });

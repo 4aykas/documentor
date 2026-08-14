@@ -158,7 +158,8 @@ export function buildTheme(args: {
       rule: token(tokens, 'grey-lighter'),
       // The real offers this theme is built from set their cover title in
       // the same grey as the letterhead and subtitle, not solid ink — see
-      // render/html.ts's `.doc-title` comment.
+      // render/html.ts's `.doc-title--cover` comment. Only spent when
+      // `meta.cover === true`; an ordinary document still gets solid ink.
       title: token(tokens, 'grey'),
     },
     font: { document: token(tokens, 'font-document'), embed: 'arimo' },

@@ -79,21 +79,33 @@ describe('buildHtml', () => {
     expect(await build()).toContain('@page{ size: A4; margin: 16.93mm; }');
   });
 
-  it('draws .doc-title at the theme\'s titlePt, not h1Pt', async () => {
+  it('draws .doc-title (the ordinary title) at h1Pt, never titlePt', async () => {
     const titled = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C' }, type: { h1Pt: 18, titlePt: 46 } });
     const html = await buildHtml(doc, titled);
-    expect(html).toContain('.doc-title{ font-size: 46pt;');
-    expect(html).not.toContain('.doc-title{ font-size: 18pt;');
+    expect(html).toContain('.doc-title{ font-size: 18pt;');
+    expect(html).not.toContain('.doc-title{ font-size: 46pt;');
   });
 
-  it('draws .doc-title in the theme\'s resolved title colour', async () => {
+  it('draws .doc-title--cover (the cover title) at the theme\'s titlePt, not h1Pt', async () => {
+    const titled = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C' }, type: { h1Pt: 18, titlePt: 46 } });
+    const html = await buildHtml(doc, titled);
+    expect(html).toContain('.doc-title--cover{ font-size: 46pt;');
+  });
+
+  it('draws .doc-title (the ordinary title) in ink, never the theme\'s resolved title colour', async () => {
     const grey = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C', ink: '#1A1A1A', title: '#898D8D' } });
     const html = await buildHtml(doc, grey);
     expect(html).toContain('--title: #898D8D');
-    expect(html).toContain('.doc-title{ font-size: 18pt; font-weight: 700; margin: 22pt 0 0; letter-spacing: -0.01em; color: var(--title);');
+    expect(html).toContain('.doc-title{ font-size: 18pt; font-weight: 700; margin: 22pt 0 0; letter-spacing: -0.01em; color: var(--ink);');
   });
 
-  it('defaults .doc-title\'s colour to ink when the theme sets no title colour', async () => {
+  it('draws .doc-title--cover (the cover title) in the theme\'s resolved title colour', async () => {
+    const grey = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C', ink: '#1A1A1A', title: '#898D8D' } });
+    const html = await buildHtml(doc, grey);
+    expect(html).toContain('.doc-title--cover{ font-size: 18pt; color: var(--title);');
+  });
+
+  it('defaults --title\'s colour to ink when the theme sets no title colour', async () => {
     const untitled = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C', ink: '#2B2B2B' } });
     const html = await buildHtml(doc, untitled);
     expect(html).toContain('--title: #2B2B2B');
@@ -182,7 +194,7 @@ describe('buildHtml', () => {
     expect(await build()).toContain('<div class="letterhead"></div>');
   });
 
-  describe('meta.letterhead', () => {
+  describe('meta.cover', () => {
     const withEntity: Doc = {
       meta: { title: 'Cover Title', subtitle: 'A cover subtitle', lang: 'en', entity: 'Acme Sp. z o.o.', date: '2026-08-12' },
       blocks: [],
@@ -192,9 +204,11 @@ describe('buildHtml', () => {
       logo: { svg: '<svg><rect class="c-brand"/></svg>' },
     });
 
-    it('is drawn — logo, letterhead lines, entity/date lines and tick rule — when meta omits the flag', async () => {
+    it('is drawn — logo, letterhead lines, entity/date lines, tick rule, and an ordinary h1Pt/ink title — when meta omits the flag', async () => {
       // Provably the existing behaviour, unchanged: absent means the same
-      // markup buildHtml produced before this flag existed.
+      // markup buildHtml produced before this flag existed. This is the
+      // regression this whole feature exists to undo, so it is asserted
+      // directly rather than relying on a baseline image alone.
       const html = await buildHtml(withEntity, logoTheme);
       expect(html).toContain('class="sheet-head"');
       expect(html).toContain('class="logo"');
@@ -203,33 +217,59 @@ describe('buildHtml', () => {
       expect(html).toContain('Acme Sp. z o.o.');
       expect(html).toContain('2026-08-12');
       expect(html).toContain('<h1 class="doc-title">Cover Title</h1>');
+      // The stylesheet always defines `.doc-title--cover` (a theme owns the
+      // rule regardless of whether any document uses it) — the class must be
+      // absent from the <h1> itself, not merely absent from the whole page.
+      expect(html).not.toContain('<h1 class="doc-title doc-title--cover">');
       expect(html).toContain('<p class="doc-subtitle">A cover subtitle</p>');
     });
 
-    it('is drawn the same way when meta.letterhead is explicitly true', async () => {
-      const explicit: Doc = { meta: { ...withEntity.meta, letterhead: true }, blocks: [] };
+    it('is drawn the same way when meta.cover is explicitly false', async () => {
+      const explicit: Doc = { meta: { ...withEntity.meta, cover: false }, blocks: [] };
       const html = await buildHtml(explicit, logoTheme);
       const absentFlag = await buildHtml(withEntity, logoTheme);
       expect(html).toBe(absentFlag);
     });
 
-    it('suppresses the logo, letterhead lines, entity/date lines and tick rule when false, but keeps the title and subtitle', async () => {
-      const noLetterhead: Doc = { meta: { ...withEntity.meta, letterhead: false }, blocks: [] };
-      const html = await buildHtml(noLetterhead, logoTheme);
+    it('suppresses the logo, letterhead lines, entity/date lines and tick rule when true, and draws the title at the theme\'s cover size/colour', async () => {
+      const cover: Doc = { meta: { ...withEntity.meta, cover: true }, blocks: [] };
+      const html = await buildHtml(cover, logoTheme);
       expect(html).not.toContain('class="sheet-head"');
       expect(html).not.toContain('class="logo"');
       expect(html).not.toContain('class="letterhead"');
       expect(html).not.toContain('class="tick-row"');
       expect(html).not.toContain('Acme Sp. z o.o.');
       expect(html).not.toContain('2026-08-12');
-      expect(html).toContain('<h1 class="doc-title">Cover Title</h1>');
+      expect(html).toContain('<h1 class="doc-title doc-title--cover">Cover Title</h1>');
       expect(html).toContain('<p class="doc-subtitle">A cover subtitle</p>');
     });
 
     // The running header on pages 2+ is built by pdf.ts's own
     // runningHeader(), an entirely separate headerTemplate string that
     // firstPageHeader() never touches — pinned end-to-end (real PDF, real
-    // page 2) in test/render/pdf.test.ts's "meta.letterhead: false" case.
+    // page 2) in test/render/pdf.test.ts's "meta.cover: true" case.
+
+    // A theme whose cover values are deliberately far from its ordinary
+    // heading ones, so an ordinary document rendering at the cover's size or
+    // colour (the bug this feature exists to undo) cannot pass by accident.
+    const distinctiveTheme = resolveTheme({
+      id: 'distinctive',
+      colors: { brandOnLight: '#DA291C', ink: '#111111', title: '#999999' },
+      type: { h1Pt: 18, titlePt: 39 },
+    });
+
+    it('renders an ordinary document\'s title at h1Pt in ink, not titlePt in the cover colour', async () => {
+      const html = await buildHtml({ meta: { title: 'T', lang: 'en' }, blocks: [] }, distinctiveTheme);
+      expect(html).toMatch(/\.doc-title\{[^}]*font-size:\s*18pt[^}]*color:\s*var\(--ink\)/);
+      expect(html).not.toMatch(/\.doc-title\{[^}]*font-size:\s*39pt/);
+      expect(html).toContain('--ink: #111111;');
+    });
+
+    it('renders a cover document\'s title at titlePt in the cover colour', async () => {
+      const html = await buildHtml({ meta: { title: 'T', lang: 'en', cover: true }, blocks: [] }, distinctiveTheme);
+      expect(html).toMatch(/\.doc-title--cover\{[^}]*font-size:\s*39pt[^}]*color:\s*var\(--title\)/);
+      expect(html).toContain('--title: #999999;');
+    });
   });
 });
 

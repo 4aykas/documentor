@@ -28,27 +28,43 @@ describe('renderDocx', () => {
     expect(styles.match(/w:styleId="Heading2"/g)?.length ?? 0).toBe(1);
   });
 
-  it('sizes the DocTitle style from the theme\'s titlePt, not h1Pt', async () => {
+  it('sizes DocTitle from the theme\'s h1Pt, never titlePt — an ordinary document\'s title must not carry the theme\'s cover size', async () => {
     const titled = resolveTheme({ id: 't', type: { h1Pt: 18, titlePt: 46 } });
     const styles = await docxPart(await renderDocx(doc({ t: 'para', text: [{ t: 'text', v: 'x' }] }), titled, { epochSeconds: EPOCH }), 'word/styles.xml');
     const docTitle = styles.match(/<w:style[^>]*w:styleId="DocTitle"[\s\S]*?<\/w:style>/)?.[0] ?? '';
-    expect(docTitle).toContain(`w:sz w:val="${46 * 2}"`);
+    expect(docTitle).toContain(`w:sz w:val="${18 * 2}"`);
+    expect(docTitle).not.toContain(`w:sz w:val="${46 * 2}"`);
+  });
+
+  it('sizes DocTitleCover from the theme\'s titlePt, not h1Pt', async () => {
+    const titled = resolveTheme({ id: 't', type: { h1Pt: 18, titlePt: 46 } });
+    const styles = await docxPart(await renderDocx(doc({ t: 'para', text: [{ t: 'text', v: 'x' }] }), titled, { epochSeconds: EPOCH }), 'word/styles.xml');
+    const docTitleCover = styles.match(/<w:style[^>]*w:styleId="DocTitleCover"[\s\S]*?<\/w:style>/)?.[0] ?? '';
+    expect(docTitleCover).toContain(`w:sz w:val="${46 * 2}"`);
     const docH1 = styles.match(/<w:style[^>]*w:styleId="DocH1"[\s\S]*?<\/w:style>/)?.[0] ?? '';
     expect(docH1).toContain(`w:sz w:val="${18 * 2}"`);
   });
 
-  it('colours the DocTitle style from the theme\'s resolved title colour', async () => {
+  it('colours DocTitle from ink, never the theme\'s resolved title colour', async () => {
     const grey = resolveTheme({ id: 't', colors: { ink: '#1A1A1A', title: '#898D8D' } });
     const styles = await docxPart(await renderDocx(doc({ t: 'para', text: [{ t: 'text', v: 'x' }] }), grey, { epochSeconds: EPOCH }), 'word/styles.xml');
     const docTitle = styles.match(/<w:style[^>]*w:styleId="DocTitle"[\s\S]*?<\/w:style>/)?.[0] ?? '';
-    expect(docTitle).toContain('w:color w:val="898D8D"');
+    expect(docTitle).toContain('w:color w:val="1A1A1A"');
+    expect(docTitle).not.toContain('w:color w:val="898D8D"');
   });
 
-  it('defaults the DocTitle colour to ink when the theme sets no title colour', async () => {
+  it('colours DocTitleCover from the theme\'s resolved title colour', async () => {
+    const grey = resolveTheme({ id: 't', colors: { ink: '#1A1A1A', title: '#898D8D' } });
+    const styles = await docxPart(await renderDocx(doc({ t: 'para', text: [{ t: 'text', v: 'x' }] }), grey, { epochSeconds: EPOCH }), 'word/styles.xml');
+    const docTitleCover = styles.match(/<w:style[^>]*w:styleId="DocTitleCover"[\s\S]*?<\/w:style>/)?.[0] ?? '';
+    expect(docTitleCover).toContain('w:color w:val="898D8D"');
+  });
+
+  it('defaults the DocTitleCover colour to ink when the theme sets no title colour', async () => {
     const untitled = resolveTheme({ id: 't', colors: { ink: '#2B2B2B' } });
     const styles = await docxPart(await renderDocx(doc({ t: 'para', text: [{ t: 'text', v: 'x' }] }), untitled, { epochSeconds: EPOCH }), 'word/styles.xml');
-    const docTitle = styles.match(/<w:style[^>]*w:styleId="DocTitle"[\s\S]*?<\/w:style>/)?.[0] ?? '';
-    expect(docTitle).toContain('w:color w:val="2B2B2B"');
+    const docTitleCover = styles.match(/<w:style[^>]*w:styleId="DocTitleCover"[\s\S]*?<\/w:style>/)?.[0] ?? '';
+    expect(docTitleCover).toContain('w:color w:val="2B2B2B"');
   });
 
   it('keeps a heading in Word’s outline', async () => {
@@ -1038,47 +1054,57 @@ describe('the letterhead', () => {
   });
 });
 
-describe('meta.letterhead', () => {
-  const withEntity = (letterhead?: boolean): Doc => ({
-    meta: { title: 'Cover Title', subtitle: 'A cover subtitle', lang: 'en', entity: 'Acme Sp. z o.o.', date: '2026-08-12', ...(letterhead === undefined ? {} : { letterhead }) },
+describe('meta.cover', () => {
+  const withEntity = (cover?: boolean): Doc => ({
+    meta: { title: 'Cover Title', subtitle: 'A cover subtitle', lang: 'en', entity: 'Acme Sp. z o.o.', date: '2026-08-12', ...(cover === undefined ? {} : { cover }) },
     blocks: [{ t: 'para', text: [{ t: 'text', v: 'x' }] }],
   });
-  const render2 = async (letterhead?: boolean) =>
-    docxPart(await renderDocx(withEntity(letterhead), await loadTheme('tebin'), { epochSeconds: EPOCH }), 'word/header2.xml');
-  const bodyOf = async (letterhead?: boolean) =>
-    docxPart(await renderDocx(withEntity(letterhead), await loadTheme('tebin'), { epochSeconds: EPOCH }), 'word/document.xml');
+  const render2 = async (cover?: boolean) =>
+    docxPart(await renderDocx(withEntity(cover), await loadTheme('tebin'), { epochSeconds: EPOCH }), 'word/header2.xml');
+  const bodyOf = async (cover?: boolean) =>
+    docxPart(await renderDocx(withEntity(cover), await loadTheme('tebin'), { epochSeconds: EPOCH }), 'word/document.xml');
 
-  it('is drawn — mark, letterhead lines, entity/date lines and tick rule — when meta omits the flag', async () => {
-    // Provably the existing behaviour, unchanged.
+  it('is drawn — mark, letterhead lines, entity/date lines, tick rule, and an ordinary DocTitle — when meta omits the flag', async () => {
+    // Provably the existing behaviour, unchanged. This is the regression
+    // this whole feature exists to undo, so it is asserted directly rather
+    // than relying on a baseline image alone.
     const first = await render2(undefined);
     expect(first).toContain('TEBIN.PRO Sp. z o.o.');
     expect(first).toContain('NIP: 9552562516');
     expect(first).toContain('Acme Sp. z o.o.');
     expect(first).toContain('2026-08-12');
     expect(first).toContain('<w:drawing>');
-    expect(await bodyOf(undefined)).toContain('Cover Title');
+    const body1 = await bodyOf(undefined);
+    expect(body1).toContain('Cover Title');
+    expect(body1).toContain('w:val="DocTitle"');
+    expect(body1).not.toContain('w:val="DocTitleCover"');
   });
 
-  it('is drawn the same way when meta.letterhead is explicitly true', async () => {
-    const explicit = await render2(true);
+  it('is drawn the same way when meta.cover is explicitly false', async () => {
+    const explicit = await render2(false);
     const absentFlag = await render2(undefined);
     expect(explicit).toBe(absentFlag);
+    expect(await bodyOf(false)).toBe(await bodyOf(undefined));
   });
 
-  it('suppresses the mark, letterhead lines, entity/date lines and tick rule when false, but keeps the title and subtitle in the body', async () => {
-    const first = await render2(false);
+  it('suppresses the mark, letterhead lines, entity/date lines and tick rule when true, keeps the title and subtitle in the body, and switches the title to DocTitleCover', async () => {
+    const first = await render2(true);
     expect(first).not.toContain('TEBIN.PRO Sp. z o.o.');
     expect(first).not.toContain('NIP: 9552562516');
     expect(first).not.toContain('Acme Sp. z o.o.');
     expect(first).not.toContain('2026-08-12');
     expect(first).not.toContain('<w:drawing>');
-    const body2 = await bodyOf(false);
+    const body2 = await bodyOf(true);
     expect(body2).toContain('Cover Title');
     expect(body2).toContain('A cover subtitle');
+    expect(body2).toContain('w:val="DocTitleCover"');
+    // Not the ordinary DocTitle — DocTitleCover contains "DocTitle" as a
+    // substring, so a plain toContain check would pass either way.
+    expect(/w:val="DocTitle"(?!Cover)/.test(body2)).toBe(false);
   });
 
   it('leaves the running header (pages 2+, word/header1.xml) alone either way', async () => {
-    const buf = await renderDocx(withEntity(false), await loadTheme('tebin'), { epochSeconds: EPOCH });
+    const buf = await renderDocx(withEntity(true), await loadTheme('tebin'), { epochSeconds: EPOCH });
     const running = await docxPart(buf, 'word/header1.xml');
     expect(running).toContain('Cover Title');
     expect(running).toContain('PAGE');

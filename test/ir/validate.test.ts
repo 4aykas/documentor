@@ -81,18 +81,18 @@ describe('validateDoc', () => {
   });
 });
 
-describe('meta.letterhead', () => {
+describe('meta.cover', () => {
   it('accepts a document that omits it', () => {
     expect(() => validateDoc(good)).not.toThrow();
   });
 
   it('accepts true and false', () => {
-    expect(() => validateDoc({ ...good, meta: { ...good.meta, letterhead: true } })).not.toThrow();
-    expect(() => validateDoc({ ...good, meta: { ...good.meta, letterhead: false } })).not.toThrow();
+    expect(() => validateDoc({ ...good, meta: { ...good.meta, cover: true } })).not.toThrow();
+    expect(() => validateDoc({ ...good, meta: { ...good.meta, cover: false } })).not.toThrow();
   });
 
   it('rejects a non-boolean value', () => {
-    expect(() => validateDoc({ ...good, meta: { ...good.meta, letterhead: 'yes' } }))
-      .toThrow(/meta\.letterhead/);
+    expect(() => validateDoc({ ...good, meta: { ...good.meta, cover: 'yes' } }))
+      .toThrow(/meta\.cover/);
   });
 });

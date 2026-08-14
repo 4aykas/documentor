@@ -6,7 +6,7 @@ import { ProposalError, type ProposalAuthor, type ProposalData, type ProposalRol
 
 const TOP_KEYS = new Set([
   'template', 'kind', 'project', 'date', 'author', 'team', 'currency', 'sections',
-  'stage', 'number', 'docNumber', 'rev', 'summary', 'annex', 'clientLogo', 'letterhead',
+  'stage', 'number', 'docNumber', 'rev', 'summary', 'annex', 'clientLogo', 'cover',
 ]);
 const AUTHOR_KEYS = new Set(['name', 'email', 'phone']);
 const ROLE_KEYS = new Set(['role', 'rate', 'hoursPerWeek']);
@@ -53,12 +53,12 @@ export function readProposalData(jsonText: string): { data: ProposalData; warnin
   const annex = str('annex', false);
   const clientLogo = str('clientLogo', false);
 
-  let letterhead: boolean | undefined;
-  if (d['letterhead'] !== undefined) {
-    if (typeof d['letterhead'] !== 'boolean') {
-      errors.push(`letterhead: expected a boolean, got ${JSON.stringify(d['letterhead'])}`);
+  let cover: boolean | undefined;
+  if (d['cover'] !== undefined) {
+    if (typeof d['cover'] !== 'boolean') {
+      errors.push(`cover: expected a boolean, got ${JSON.stringify(d['cover'])}`);
     } else {
-      letterhead = d['letterhead'];
+      cover = d['cover'];
     }
   }
 
@@ -196,7 +196,7 @@ export function readProposalData(jsonText: string): { data: ProposalData; warnin
       ...(summary === undefined ? {} : { summary }),
       ...(annex === undefined ? {} : { annex }),
       ...(clientLogo === undefined ? {} : { clientLogo }),
-      ...(letterhead === undefined ? {} : { letterhead }),
+      ...(cover === undefined ? {} : { cover }),
     },
     warnings,
   };

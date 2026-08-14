@@ -28,23 +28,23 @@ describe('assembleProposal', () => {
     expect(types.filter((t) => t === 'table').length).toBeGreaterThanOrEqual(2); // summary + budget
   });
 
-  it('carries no meta.letterhead into the Doc when the data file omits it', async () => {
+  it('carries no meta.cover into the Doc when the data file omits it', async () => {
     const { doc } = await assembleProposal({ data: DATA, template: TEMPLATE });
-    expect(doc.meta.letterhead).toBeUndefined();
-    expect('letterhead' in doc.meta).toBe(false);
+    expect(doc.meta.cover).toBeUndefined();
+    expect('cover' in doc.meta).toBe(false);
   });
 
-  it('passes data.letterhead: false through to meta.letterhead', async () => {
-    const data: ProposalData = { ...DATA, letterhead: false };
+  it('passes data.cover: false through to meta.cover', async () => {
+    const data: ProposalData = { ...DATA, cover: false };
     const { doc } = await assembleProposal({ data, template: TEMPLATE });
-    expect(doc.meta.letterhead).toBe(false);
+    expect(doc.meta.cover).toBe(false);
     expect(() => validateDoc(doc)).not.toThrow();
   });
 
-  it('passes data.letterhead: true through to meta.letterhead', async () => {
-    const data: ProposalData = { ...DATA, letterhead: true };
+  it('passes data.cover: true through to meta.cover', async () => {
+    const data: ProposalData = { ...DATA, cover: true };
     const { doc } = await assembleProposal({ data, template: TEMPLATE });
-    expect(doc.meta.letterhead).toBe(true);
+    expect(doc.meta.cover).toBe(true);
   });
 
   it('splices each directive exactly where its line stood', async () => {

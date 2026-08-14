@@ -63,13 +63,22 @@ function styles(theme: Theme) {
       // numbers would silently drift from the PDF/HTML rendering of the same
       // document. `before` mirrors the rule's top margin, `after` its bottom
       // margin; where the CSS sets only one side, the other stays 0 here too.
-      // Colour is a theme value — c.title, not c.ink or c.muted — see
-      // html.ts's `.doc-title` comment: it defaults to the theme's own ink,
-      // and TEBIN's generated theme sets it to grey because all three real
+      // Size and colour are h1Pt/c.ink, exactly like any other heading — see
+      // html.ts's `.doc-title` comment: a theme applies to every document, so
+      // this style must not carry the theme's cover values, or a re-issued
+      // report or a memo would inherit a 39pt grey title it never asked for.
+      para('DocTitle', 'Doc Title', { size: halfPt(ty.h1Pt), bold: true, color: hex(c.ink) }, {
+        // html.ts: `.doc-title{ margin: 22pt 0 0; }`
+        spacing: { before: dxa(22), after: 0 },
+      }),
+      // Used instead of DocTitle only when `doc.meta.cover === true` (see
+      // renderDocx below) — the theme's cover size and colour, see html.ts's
+      // `.doc-title--cover` comment: it defaults to the theme's own ink, and
+      // TEBIN's generated theme sets it to grey because all three real
       // originals this theme was built from set their cover title in a
       // lighter grey.
-      para('DocTitle', 'Doc Title', { size: halfPt(ty.titlePt), bold: true, color: hex(c.title) }, {
-        // html.ts: `.doc-title{ margin: 22pt 0 0; }`
+      para('DocTitleCover', 'Doc Title Cover', { size: halfPt(ty.titlePt), bold: true, color: hex(c.title) }, {
+        // html.ts: `.doc-title{ margin: 22pt 0 0; }` (shared with DocTitle)
         spacing: { before: dxa(22), after: 0 },
       }),
       para('DocSubtitle', 'Doc Subtitle', { size: halfPt(ty.bodyPt), color: hex(c.muted) }, {
@@ -938,14 +947,16 @@ function imagePlaceholder(b: Extract<Block, { t: 'image' }>, theme: Theme): Para
  * printing the letterhead with no mark would hide an authoring mistake behind
  * every document that theme touches. This throws instead.
  *
- * `meta.letterhead === false` (see html.ts's own copy of this rule) returns
- * an empty Header instead: no logo, no letterhead lines, no entity/date
- * lines, no tick rule. The title and subtitle are unaffected either way —
- * they live in the body's own `head` paragraphs in `renderDocx` below, never
- * in this Header, so there is nothing here to suppress them.
+ * `meta.cover === true` (see html.ts's own copy of this rule) returns an
+ * empty Header instead: no logo, no letterhead lines, no entity/date lines,
+ * no tick rule. The title and subtitle are unaffected either way — they
+ * live in the body's own `head` paragraphs in `renderDocx` below, never in
+ * this Header, so there is nothing here to suppress them (though `renderDocx`
+ * does switch the title's own style between DocTitle and DocTitleCover on
+ * the same flag).
  */
 function firstPageHeader(doc: Doc, theme: Theme): Header {
-  if (doc.meta.letterhead === false) return new Header({ children: [] });
+  if (doc.meta.cover === true) return new Header({ children: [] });
 
   const total = columnDxa(theme);
   const logoWidth = dxa(120);
@@ -1042,7 +1053,7 @@ function runningHeader(doc: Doc, theme: Theme): Header {
 
 export async function renderDocx(doc: Doc, theme: Theme, opts: { epochSeconds: number }): Promise<Buffer> {
   const head: Paragraph[] = [
-    new Paragraph({ style: 'DocTitle', children: [new TextRun({ text: doc.meta.title })] }),
+    new Paragraph({ style: doc.meta.cover === true ? 'DocTitleCover' : 'DocTitle', children: [new TextRun({ text: doc.meta.title })] }),
     ...(doc.meta.subtitle ? [new Paragraph({ style: 'DocSubtitle', children: [new TextRun({ text: doc.meta.subtitle })] })] : []),
   ];
   const { refOf, config } = listNumbering(doc, theme);

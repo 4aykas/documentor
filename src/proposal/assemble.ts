@@ -104,7 +104,7 @@ export async function assembleProposal(
 
   const meta = {
     ...ingested.doc.meta,
-    ...(data.letterhead === undefined ? {} : { letterhead: data.letterhead }),
+    ...(data.cover === undefined ? {} : { cover: data.cover }),
   };
   return { doc: { meta, blocks }, dropped };
 

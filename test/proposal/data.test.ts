@@ -115,17 +115,17 @@ describe('readProposalData', () => {
     expect(errorsOf((d) => { d['clientLogo'] = ''; }).join('\n')).toMatch(/clientLogo.*non-empty string/s);
   });
 
-  it('accepts letterhead, absent by default', () => {
+  it('accepts cover, absent by default', () => {
     const { data } = readProposalData(JSON.stringify(VALID));
-    expect(data.letterhead).toBeUndefined();
-    expect('letterhead' in data).toBe(false);
-    const withFalse = readProposalData(JSON.stringify({ ...VALID, letterhead: false })).data;
-    expect(withFalse.letterhead).toBe(false);
-    const withTrue = readProposalData(JSON.stringify({ ...VALID, letterhead: true })).data;
-    expect(withTrue.letterhead).toBe(true);
+    expect(data.cover).toBeUndefined();
+    expect('cover' in data).toBe(false);
+    const withFalse = readProposalData(JSON.stringify({ ...VALID, cover: false })).data;
+    expect(withFalse.cover).toBe(false);
+    const withTrue = readProposalData(JSON.stringify({ ...VALID, cover: true })).data;
+    expect(withTrue.cover).toBe(true);
   });
 
-  it('refuses a non-boolean letterhead', () => {
-    expect(errorsOf((d) => { d['letterhead'] = 'no'; }).join('\n')).toMatch(/letterhead.*boolean/s);
+  it('refuses a non-boolean cover', () => {
+    expect(errorsOf((d) => { d['cover'] = 'no'; }).join('\n')).toMatch(/cover.*boolean/s);
   });
 });

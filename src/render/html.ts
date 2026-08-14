@@ -143,14 +143,17 @@ function block(b: Block): string {
 }
 
 function firstPageHeader(doc: Doc, theme: Theme): string {
-  // `meta.letterhead === false` suppresses the theme's chrome — logo,
-  // letterhead lines, this document's own entity/date lines and the brand
-  // tick rule — for a cover page that supplies its own layout as ordinary
-  // content instead. The title and subtitle below are never part of that:
-  // they are the document speaking, not the theme's, so they print either
-  // way. Absent is the same as `true` — the letterhead every document drew
-  // before this flag existed.
-  const chrome = doc.meta.letterhead === false ? '' : (() => {
+  // `meta.cover === true` suppresses the theme's chrome — logo, letterhead
+  // lines, this document's own entity/date lines and the brand tick rule —
+  // for a cover page that supplies its own layout as ordinary content
+  // instead, and draws the title at the theme's cover size and colour
+  // (`.doc-title--cover` below) instead of its ordinary heading ones. The
+  // title and subtitle text itself is never suppressed: it is the document
+  // speaking, not the theme's, so it prints either way. Absent (or false) is
+  // an ordinary document — the letterhead and the ordinary title every
+  // document drew before this flag existed.
+  const cover = doc.meta.cover === true;
+  const chrome = cover ? '' : (() => {
     // The full letterhead, printed once in the body flow rather than in
     // Chromium's header box — the header box has no access to this stylesheet.
     const logo = theme.logo
@@ -170,7 +173,7 @@ function firstPageHeader(doc: Doc, theme: Theme): string {
 <div class="tick-row"><span class="tick"></span><span class="hair"></span></div>
 `;
   })();
-  return `${chrome}<h1 class="doc-title">${escapeHtml(doc.meta.title)}</h1>${
+  return `${chrome}<h1 class="doc-title${cover ? ' doc-title--cover' : ''}">${escapeHtml(doc.meta.title)}</h1>${
     doc.meta.subtitle ? `<p class="doc-subtitle">${escapeHtml(doc.meta.subtitle)}</p>` : ''
   }`;
 }
@@ -220,13 +223,20 @@ body{
 .tick-row{ display:flex; align-items:center; gap: 6pt; margin: 14pt 0 0; }
 .tick{ display:block; width: 28pt; height: 3pt; background: var(--brand); }
 .hair{ display:block; flex:1; height: 0.75pt; background: var(--rule); }
+/* An ordinary document's title is drawn exactly like any other heading —
+   h1Pt, ink — regardless of what the theme's cover values are set to.
+   Only meta.cover === true (see firstPageHeader) adds the modifier below,
+   which is the one place ty.titlePt/--title are ever spent: a theme applies
+   to every document, so a theme-wide 39pt/grey title would leak into a
+   re-issued report or a memo that never asked for a cover page. */
+.doc-title{ font-size: ${ty.h1Pt}pt; font-weight: 700; margin: 22pt 0 0; letter-spacing: -0.01em; color: var(--ink); }
 /* Colour is a theme value (colors.title in theme/types.ts), not a fixed
    choice here: it defaults to the theme's own ink, so a theme that says
-   nothing about it renders the title in ordinary ink, like plain. TEBIN's
-   generated theme sets it to grey — see theme/generate.ts — because all
-   three real originals it was built from (Goehler, BER01, QTS) set their
-   cover title in a lighter grey, not solid black. */
-.doc-title{ font-size: ${ty.titlePt}pt; font-weight: 700; margin: 22pt 0 0; letter-spacing: -0.01em; color: var(--title); }
+   nothing about it renders the cover title in ordinary ink, like plain.
+   TEBIN's generated theme sets it to grey — see theme/generate.ts — because
+   all three real originals it was built from (Goehler, BER01, QTS) set
+   their cover title in a lighter grey, not solid black. */
+.doc-title--cover{ font-size: ${ty.titlePt}pt; color: var(--title); }
 .doc-subtitle{ color: var(--muted); margin: 4pt 0 0; }
 h1,h2,h3{ break-after: avoid; page-break-after: avoid; }
 h2{ font-size: ${ty.h2Pt}pt; font-weight: 700; margin: 18pt 0 4pt; }
