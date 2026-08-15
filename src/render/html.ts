@@ -9,7 +9,7 @@ import { arimoFaceCss } from './fonts.js';
 import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
 import { SCALE_STEPS, STATEMENT_TINT, stepOf, weekLabel } from './tint.js';
-import { columnWidthsDxa, dxa, fitsWidth } from './table-width.js';
+import { columnWidthsDxa, dxa, fitsWidth, isKeyValue } from './table-width.js';
 
 export function escapeHtml(s: string): string {
   return s
@@ -135,9 +135,17 @@ function block(b: Block, size: ColSizing): string {
       const group = widths
         .map((w) => `<col style="width: ${((w / total) * 100).toFixed(3)}%">`)
         .join('');
-      const head = b.head
-        .map((c, i) => `<th style="text-align: ${ALIGN_CSS[b.align[i] ?? 'l']}">${inline(c)}</th>`)
-        .join('');
+      // A head row with nothing in any cell is not a header, it is a blank
+      // line with a rule under it. Templates write one to satisfy Markdown's
+      // table syntax, which has no way to say "this table has no header" —
+      // the cover's metadata block is exactly that, and it printed an empty
+      // banded row above "Proposal No." for its whole life.
+      const headed = !isKeyValue(b);
+      const head = headed
+        ? `<thead><tr>${b.head
+            .map((c, i) => `<th style="text-align: ${ALIGN_CSS[b.align[i] ?? 'l']}">${inline(c)}</th>`)
+            .join('')}</tr></thead>`
+        : '';
       const rows = b.rows
         .map(
           (row) =>
@@ -146,7 +154,15 @@ function block(b: Block, size: ColSizing): string {
               .join('')}</tr>`,
         )
         .join('');
-      const markup = `<table class="sized"><colgroup>${group}</colgroup><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+      // A table with no header is not a grid of data, it is a list of
+      // labelled values — a cover's metadata block is the case that named
+      // it. Markdown cannot express "no header", so the only way to get
+      // one is to write an empty header row, which makes the intent
+      // unambiguous. Banded rules under three short pairs, running the full
+      // width of a page they use a third of, read as a table with empty
+      // columns; without them the pairs read as what they are.
+      const kind = headed ? 'sized' : 'sized keyvalue';
+      const markup = `<table class="${kind}"><colgroup>${group}</colgroup>${head}<tbody>${rows}</tbody></table>`;
       return wide ? `<div class="wide-table">${markup}</div>` : markup;
     }
     case 'heatmap': {
@@ -415,6 +431,10 @@ table.sized{ table-layout: fixed; }
    feeds the min-content width, so it makes columns narrower than the text
    really needs and chops ordinary headers mid-syllable. */
 table.sized td, table.sized th{ overflow-wrap: break-word; }
+/* See the comment where block() picks this class. The label column is muted
+   so the pair reads label-then-value rather than as two equal columns. */
+table.keyvalue td{ border-bottom: 0; padding-top: 2pt; padding-bottom: 2pt; }
+table.keyvalue td:first-child{ color: var(--muted); padding-left: 0; }
 table.heatmap{ table-layout: fixed; }
 table.heatmap td, table.heatmap th{ border-bottom: none; text-align: center; padding: 3pt 2pt; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 /* table-layout: fixed sizes every column from the FIRST row's cells alone.
@@ -425,7 +445,12 @@ table.heatmap thead th:first-child{ width: 28%; }
 table.heatmap td.hm-label{ text-align: left; }
 ${SCALE_STEPS.map((t, i) => `.hm-s${i + 1}{ background: color-mix(in srgb, var(--brand) ${Math.round(t * 100)}%, white); }`).join('\n')}
 .hm-marks{ color: var(--brand); letter-spacing: 1pt; } /* deliberate exemption from brandOnLight: a fill-shaped glyph, not small text; see heatmapBlocks() in docx.ts */
-.pagebreak{ break-after: page; page-break-after: always; }
+/* break-BEFORE, not after. With break-after, a marker that lands at the top
+   of a fresh page (because the content before it filled the previous one)
+   spends that whole page on nothing and the reader gets a blank sheet — seen
+   between a proposal's last section and its annex. Break-before starts the
+   page and lets what follows begin on it. */
+.pagebreak{ break-before: page; page-break-before: always; }
 a{ color: var(--ink); text-decoration: underline; text-decoration-color: var(--rule); }
 .link-refused-target{ color: var(--muted); font-size: ${(ty.bodyPt * 0.85).toFixed(1)}pt; margin-left: 3pt; }
 /* A cover with >=1 rule (see coverMain): body needs position:relative so the

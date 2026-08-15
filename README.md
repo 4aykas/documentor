@@ -85,11 +85,17 @@ deliberate rather than unfinished:
   left it to Chromium — and the same register wrapped to a second line in one
   and left a wide unused strip in the other.
 - **A table too wide for the portrait text column is printed on a landscape
-  sheet of its own**, and only that table: the page turns back for whatever
-  follows. "Too wide" means the columns cannot each have a readable minimum,
-  not merely that the text wraps. Word has no equivalent — it keeps such a
-  table portrait, with the same proportions — so a schedule with a column per
-  week is the one place the two documents genuinely differ.
+  sheet of its own**, in both formats, and only that table: the page turns
+  back for whatever follows. "Too wide" means the columns cannot each have a
+  readable minimum, not merely that the text wraps. In Word that means the
+  body is cut into sections, because orientation is a property of a section
+  and not of a block.
+- **A table with no header row is a list of labelled values, not a grid.**
+  Markdown cannot say "this table has no header", so a template writes an
+  empty header row — which makes the intent unambiguous. Such a table drops
+  its row rules, mutes the label column, and hugs the left instead of being
+  stretched across the page, so a label sits beside its value rather than at
+  the opposite end of an empty gap.
 - **Writing Word embeds a PNG, a JPEG, a GIF or a BMP** — the same four reading
   a `.docx` carries, so a `.docx` in gives you every picture back in the
   `.docx` out. A picture needs its natural proportions, and those come from

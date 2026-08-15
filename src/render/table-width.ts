@@ -28,7 +28,24 @@ function flatten(nodes: Inline[]): string {
 export function columnWidthsDxa(
   b: Extract<Block, { t: 'table' }>, cols: number, totalDxa: number, bodyPt: number,
 ): number[] {
-  return distribute(totalDxa, columnDemand(b, cols), minColumnDxa(bodyPt), MAX_COL_FRACTION);
+  const demand = columnDemand(b, cols);
+  // A key/value block hugs the left: every column gets exactly what it asked
+  // for and the slack goes to the last one, so a label sits beside its value
+  // instead of at the opposite end of a wide empty gap. A cover's metadata —
+  // "Proposal No." against its number — was being stretched to half the page
+  // each. This is only for a table with no header row, which is the one way
+  // Markdown can say "these are labelled values, not a grid"; a real table
+  // still fills its column, because that is what a grid is for.
+  if (isKeyValue(b)) {
+    const wanted = demand.map((d) => colDxa(Math.max(d, MIN_COL_CHARS), bodyPt));
+    const sum = wanted.reduce((a, w) => a + w, 0);
+    if (sum <= totalDxa) {
+      const out = [...wanted];
+      out[cols - 1] = out[cols - 1]! + (totalDxa - sum);
+      return out;
+    }
+  }
+  return distribute(totalDxa, demand, floorsDxa(demand, bodyPt), MAX_COL_FRACTION);
 }
 
 /**
@@ -40,8 +57,18 @@ export function columnWidthsDxa(
  * fit". A column can clear the floor and still wrap its text over four
  * lines — that is ugly, not illegible, and it is the author's call.
  */
+/**
+ * A table with nothing in any header cell. Markdown's table syntax has no
+ * way to say "this table has no header", so a template writes an empty one —
+ * which makes the intent unambiguous. Both renderers read it the same way:
+ * no header row, no row rules, the label column muted.
+ */
+export function isKeyValue(b: Extract<Block, { t: 'table' }>): boolean {
+  return !b.head.some((c) => flatten(c ?? []).trim() !== '');
+}
+
 export function fitsWidth(cols: number, totalDxa: number, bodyPt: number): boolean {
-  return cols * minColumnDxa(bodyPt) <= totalDxa;
+  return cols * colDxa(MIN_COL_CHARS, bodyPt) <= totalDxa;
 }
 
 /**
@@ -93,8 +120,30 @@ function percentile(sorted: number[], p: number): number {
 // integer, or a truncated label to still read as a column rather than a
 // crack between its neighbours.
 const MIN_COL_CHARS = 4;
-function minColumnDxa(bodyPt: number): number {
-  return dxa(12 + MIN_COL_CHARS * bodyPt * 0.5);
+
+// Above this, a column is long enough that it has to compete for width like
+// everything else. Below it, a column is cheap: giving it exactly what it asks
+// for costs the table almost nothing and saves it from breaking a five-
+// character value across two lines. Twelve characters is a date, a document
+// number, a short label — the things that read as broken when they wrap.
+const CHEAP_COL_CHARS = 12;
+
+// Characters to points, with the cell's own 6pt+6pt left/right margins added.
+// The glyph estimate is 0.55 of the point size rather than the 0.5 commonly
+// quoted for proportional faces: at 0.5 a column asking for five characters
+// was handed room for four and a half, and "1:100" came out as "1:10" over
+// "0" — which is what a reader notices first about a table.
+const colDxa = (chars: number, bodyPt: number): number => dxa(12 + chars * bodyPt * 0.55);
+
+/**
+ * Each column's own floor: never below MIN_COL_CHARS, never above what the
+ * column actually asked for, and never above CHEAP_COL_CHARS. A short column
+ * therefore cannot be squeezed below its content, and the pressure of a
+ * crowded table falls where it belongs — on the prose columns, which have
+ * somewhere to put it.
+ */
+function floorsDxa(demand: number[], bodyPt: number): number[] {
+  return demand.map((d) => colDxa(Math.max(MIN_COL_CHARS, Math.min(d, CHEAP_COL_CHARS)), bodyPt));
 }
 
 // One column's cap, as a fraction of the table. Without one, a single
@@ -127,10 +176,11 @@ const MAX_COL_FRACTION = 0.45;
  * split. This is the "table wider than the page" degenerate case — nothing
  * in this function makes the table fit the page, only proportional today.
  */
-function distribute(total: number, demand: number[], floor: number, ceilFraction: number): number[] {
+function distribute(total: number, demand: number[], floor: number[], ceilFraction: number): number[] {
   const n = demand.length;
   const ceiling = total * ceilFraction;
-  const useFloor = floor * n <= total;
+  const floorSum = floor.reduce((a, f) => a + f, 0);
+  const useFloor = floorSum <= total;
   // A ceiling only has somewhere to send the excess it trims if the *other*
   // columns, all capped at the same fraction, could still cover the rest of
   // `total` between them. With two columns and a 45% cap that's impossible
@@ -140,8 +190,9 @@ function distribute(total: number, demand: number[], floor: number, ceilFraction
   // widened, whenever `n` columns capped at it can't reach `total` between
   // them; a table that narrow is better served by pure demand-weighting.
   const useCeil = ceiling * n >= total;
-  const lo = new Array(n).fill(useFloor ? floor : 0);
-  const hi = new Array(n).fill(useCeil ? Math.max(ceiling, useFloor ? floor : 0) : Infinity);
+  const lo = useFloor ? [...floor] : new Array<number>(n).fill(0);
+  const hi = Array.from({ length: n }, (_, i) =>
+    useCeil ? Math.max(ceiling, useFloor ? floor[i]! : 0) : Infinity);
   const fixed: number[] = new Array(n).fill(NaN);
   const active = new Set(demand.map((_, i) => i));
   let remaining = total;

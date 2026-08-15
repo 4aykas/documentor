@@ -10,14 +10,15 @@
 import {
   AlignmentType, BorderStyle, Document, ExternalHyperlink, Header, HorizontalPositionAlign,
   HorizontalPositionRelativeFrom, ImageRun, LevelFormat, LineRuleType, Packer, PageBreak, PageNumber, Paragraph,
-  FrameAnchorType, FrameWrap, HeightRule, ShadingType, Table, TableCell, TableLayoutType, TableRow, TextRun,
+  FrameAnchorType, FrameWrap, HeightRule, PageOrientation, ShadingType, Table, TableCell, TableLayoutType, TableRow, TextRun,
   TextWrappingType, UnderlineType, VerticalPositionAlign,
-  VerticalPositionRelativeFrom, WidthType, type IFrameOptions, type ILevelsOptions, type IParagraphOptions, type ParagraphChild,
+  VerticalPositionRelativeFrom, WidthType, type IFrameOptions, type ILevelsOptions, type IParagraphOptions,
+  type ISectionPropertiesOptions, type ParagraphChild,
 } from 'docx';
 import type { Block, Doc, Inline } from '../ir/types.js';
 import { PAGE_PT, type Theme } from '../theme/types.js';
 import { PANEL_BORDER_PT, partitionCoverBlocks, ruleIndexes, splitAtFirstPagebreak } from './cover-zones.js';
-import { columnWidthsDxa } from './table-width.js';
+import { columnWidthsDxa, fitsWidth, isKeyValue } from './table-width.js';
 import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
 import { normalizeDocx } from './normalize-docx.js';
@@ -209,7 +210,7 @@ function listNumbering(doc: Doc, theme: Theme): { refOf: Map<Block, string>; con
  */
 function inline(
   nodes: Inline[],
-  fmt: { bold?: boolean; italics?: boolean; code?: boolean; link?: boolean; plainLink?: boolean } = {},
+  fmt: { bold?: boolean; italics?: boolean; code?: boolean; link?: boolean; plainLink?: boolean; muted?: boolean } = {},
   theme: Theme,
 ): ParagraphChild[] {
   const out: ParagraphChild[] = [];
@@ -242,6 +243,8 @@ function inline(
           // matching html.ts's separate `pre code` rule; these are two rules,
           // not one, in both files.
           ...(fmt.code ? { font: 'Consolas', size: halfPt(theme.type.bodyPt * 0.92) } : {}),
+          // html.ts: `table.keyvalue td:first-child{ color: var(--muted) }`.
+          ...(fmt.muted ? { color: hex(theme.colors.muted) } : {}),
         }));
         break;
       case 'strong': out.push(...inline(n.children, { ...fmt, bold: true }, theme)); break;
@@ -315,6 +318,11 @@ export function columnDxa(theme: Theme): number {
   return dxa(PAGE_PT[theme.page.size].w - theme.page.marginPt * 2);
 }
 
+/** The same text column with the sheet turned on its side. */
+export function landscapeColumnDxa(theme: Theme): number {
+  return dxa(PAGE_PT[theme.page.size].h - theme.page.marginPt * 2);
+}
+
 
 function table(b: Extract<Block, { t: 'table' }>, theme: Theme, opts: BlockOpts = {}): Table {
   const cols = Math.max(b.head.length, ...b.rows.map((r) => r.length));
@@ -327,18 +335,30 @@ function table(b: Extract<Block, { t: 'table' }>, theme: Theme, opts: BlockOpts 
   // already does with a PNG whose dimensions it cannot read rather than
   // scaling by NaN.
   if (cols < 1) throw new Error('table has no columns — nothing to draw a grid from');
-  const total = columnDxa(theme);
+  // A table that cannot give every column a readable minimum in the portrait
+  // text column is printed on a landscape sheet of its own, exactly as the
+  // PDF does it — see fitsWidth(). It is sized against that sheet, and it
+  // announces itself through `opts.wide` so renderDocx can put it in a
+  // section of its own with the page turned.
+  const wide = !fitsWidth(cols, columnDxa(theme), theme.type.bodyPt);
+  const total = wide ? landscapeColumnDxa(theme) : columnDxa(theme);
   // Content-proportional, not equal: see columnDemand() for what's measured
   // and why, and distribute() for how demand becomes DXA. A table whose
   // columns are all the same size in practice still lands on equal widths —
   // proportional-to-demand and equal-split agree exactly when the demand is
   // equal — so this only changes tables that plainly differ.
   const widths = columnWidthsDxa(b, cols, total, theme.type.bodyPt);
+  // See html.ts, where this class is picked: a table with no header is a list
+  // of labelled values, not a grid, and banded rules under three short pairs
+  // read as a table with empty columns.
+  const keyValue = isKeyValue(b);
   const cell = (content: Inline[] | undefined, i: number, head: boolean) =>
     new TableCell({
       width: { size: widths[i]!, type: WidthType.DXA },
       borders: {
-        bottom: { style: BorderStyle.SINGLE, size: eighthPt(head ? 1 : 0.5), color: hex(theme.colors.rule) },
+        bottom: keyValue
+          ? NO_BORDER
+          : { style: BorderStyle.SINGLE, size: eighthPt(head ? 1 : 0.5), color: hex(theme.colors.rule) },
         top: NO_BORDER, left: NO_BORDER, right: NO_BORDER,
       },
       // html.ts: `th,td{ padding: 4pt 6pt }`. Word's own default cell margins
@@ -346,14 +366,18 @@ function table(b: Extract<Block, { t: 'table' }>, theme: Theme, opts: BlockOpts 
       // top/bottom default to 0, and a table has no shading to make the gap
       // read as intentional the way the code block's does. Every cell sits
       // tight against the rule above it without this.
-      margins: { top: dxa(4), bottom: dxa(4), left: dxa(6), right: dxa(6), marginUnitType: WidthType.DXA },
+      // html.ts: `th,td{ padding: 4pt 6pt }`, and for a key/value block
+      // `td{ padding: 2pt 6pt }` with no left padding on the label.
+      margins: keyValue
+        ? { top: dxa(2), bottom: dxa(2), left: i === 0 ? 0 : dxa(6), right: dxa(6), marginUnitType: WidthType.DXA }
+        : { top: dxa(4), bottom: dxa(4), left: dxa(6), right: dxa(6), marginUnitType: WidthType.DXA },
       children: [new Paragraph({
         style: head ? 'DocTableHeader' : 'DocTableCell',
         alignment: ALIGN[b.align[i] ?? 'l'],
-        children: inline(content ?? [], opts, theme),
+        children: inline(content ?? [], { ...opts, ...(keyValue && i === 0 ? { muted: true } : {}) }, theme),
       })],
     });
-  return new Table({
+  const built = new Table({
     layout: TableLayoutType.FIXED,
     width: { size: total, type: WidthType.DXA },
     columnWidths: widths,
@@ -364,10 +388,18 @@ function table(b: Extract<Block, { t: 'table' }>, theme: Theme, opts: BlockOpts 
     // they belonged to. A whole table too tall for one page still has to
     // break, which is why this protects rows and not the table.
     rows: [
-      new TableRow({ tableHeader: true, cantSplit: true, children: widths.map((_, i) => cell(b.head[i], i, true)) }),
+      // A head row with nothing in any cell is not a header, it is a blank
+      // banded row with a rule under it. Markdown's table syntax has no way
+      // to say "no header", so a template writes an empty one — html.ts drops
+      // it for the same reason, and the two have to agree.
+      ...(keyValue
+        ? []
+        : [new TableRow({ tableHeader: true, cantSplit: true, children: widths.map((_, i) => cell(b.head[i], i, true)) })]),
       ...b.rows.map((row) => new TableRow({ cantSplit: true, children: widths.map((_, i) => cell(row[i], i, false)) })),
     ],
   });
+  if (wide) opts.wide?.add(built);
+  return built;
 }
 
 /**
@@ -856,7 +888,7 @@ function spacerParagraph(heightPt: number): Paragraph {
  * paragraphs it builds. Both members exist for a cover: its links are not
  * underlined, and its foot is pinned to the page's bottom edge.
  */
-type BlockOpts = { plainLink?: boolean; frame?: IFrameOptions };
+type BlockOpts = { plainLink?: boolean; muted?: boolean; frame?: IFrameOptions; wide?: Set<Table> };
 
 /** Spreads a paragraph's frame, or nothing at all when there is none. */
 const framed = (opts: BlockOpts): { frame?: IFrameOptions } => (opts.frame ? { frame: opts.frame } : {});
@@ -1046,7 +1078,7 @@ function cornerMarkImage(theme: Theme): ImageRun | null {
  * to hand out, so the band gets a fixed gap above and below instead
  * (STATEMENT_GAP_PT). Recorded in README.md, not only here.
  */
-function coverBody(doc: Doc, theme: Theme, refOf: Map<Block, string>, pageBlocks: Block[], restBlocks: Block[], ruleIdxs: number[]): (Paragraph | Table)[] {
+function coverBody(doc: Doc, theme: Theme, refOf: Map<Block, string>, pageBlocks: Block[], restBlocks: Block[], ruleIdxs: number[], wide: Set<Table>): (Paragraph | Table)[] {
   const { panel, flowing, foot } = partitionCoverBlocks(pageBlocks, ruleIdxs);
   const mark = cornerMarkImage(theme);
   // The mark hangs off a paragraph of its own, ahead of the panel, rather than
@@ -1073,15 +1105,15 @@ function coverBody(doc: Doc, theme: Theme, refOf: Map<Block, string>, pageBlocks
   // COVER_LINKS: a cover's links are contact details, not navigation — the
   // same call html.ts makes in CSS. It applies to all three zones, and to
   // nothing after the cover's own page break.
-  const panelContent: (Paragraph | Table)[] = [titlePara, ...subtitlePara, ...panel.flatMap((b) => blocks(b, theme, refOf, COVER_LINKS))];
+  const panelContent: (Paragraph | Table)[] = [titlePara, ...subtitlePara, ...panel.flatMap((b) => blocks(b, theme, refOf, { ...COVER_LINKS, wide }))];
   // Every foot paragraph carries the same frame, which is what makes Word
   // merge them into one block at the page's bottom margin. A foot block
   // that is not a paragraph — a table — cannot take a frame at all, so such
   // a foot falls back to ordinary flow with the gap html.ts opens above it.
-  const framedFoot = foot.flatMap((b) => blocks(b, theme, refOf, { ...COVER_LINKS, frame: coverFootFrame(theme) }));
+  const framedFoot = foot.flatMap((b) => blocks(b, theme, refOf, { ...COVER_LINKS, wide, frame: coverFootFrame(theme) }));
   const footChildren = framedFoot.every((c) => c instanceof Paragraph)
     ? framedFoot
-    : [spacerParagraph(COVER_FOOT_GAP_PT), ...foot.flatMap((b) => blocks(b, theme, refOf, COVER_LINKS))];
+    : [spacerParagraph(COVER_FOOT_GAP_PT), ...foot.flatMap((b) => blocks(b, theme, refOf, { ...COVER_LINKS, wide }))];
 
   return [
     ...markPara,
@@ -1092,10 +1124,63 @@ function coverBody(doc: Doc, theme: Theme, refOf: Map<Block, string>, pageBlocks
     // document's quote never reaches here and stays a DocQuote paragraph.
     ...flowing.flatMap((b) => (b.t === 'quote'
       ? [spacerParagraph(STATEMENT_GAP_PT), statementTable(b.paras, theme, COVER_LINKS), spacerParagraph(STATEMENT_GAP_PT)]
-      : blocks(b, theme, refOf, COVER_LINKS))),
+      : blocks(b, theme, refOf, { ...COVER_LINKS, wide }))),
     ...footChildren,
-    ...restBlocks.flatMap((b) => blocks(b, theme, refOf)),
+    ...restBlocks.flatMap((b) => blocks(b, theme, refOf, { wide })),
   ];
+}
+
+
+/**
+ * The document's body cut into sections, one per run of same-orientation
+ * content: a table too wide for the portrait text column gets a section of
+ * its own with the sheet turned, and the page turns back for whatever
+ * follows. This is Word's only way to change orientation mid-document —
+ * orientation is a property of a section, not of a block — which is why the
+ * split happens here rather than at the table.
+ *
+ * Every section after the first carries the running header and drops
+ * `titlePage`: the first-page header belongs to the first page of the
+ * document, not to the first page of each section, and without this a
+ * landscape sheet in the middle would print the letterhead again.
+ */
+function sectionsFor(
+  doc: Doc, theme: Theme, children: (Paragraph | Table)[], wide: Set<Table>,
+): { properties: ISectionPropertiesOptions; headers: { default: Header; first?: Header }; children: (Paragraph | Table)[] }[] {
+  const size = PAGE_PT[theme.page.size];
+  const margin = {
+    top: dxa(theme.page.marginPt), right: dxa(theme.page.marginPt),
+    bottom: dxa(theme.page.marginPt), left: dxa(theme.page.marginPt),
+  };
+  const page = (landscape: boolean) => ({
+    // The pair is always the portrait one; the library swaps them itself when
+    // the orientation is landscape. Passing them pre-swapped gets them swapped
+    // back — measured, and the result is a landscape flag on a portrait-shaped
+    // page, which Word believes over the flag.
+    size: {
+      width: dxa(size.w),
+      height: dxa(size.h),
+      orientation: landscape ? PageOrientation.LANDSCAPE : PageOrientation.PORTRAIT,
+    },
+    margin,
+  });
+
+  const runs: { landscape: boolean; items: (Paragraph | Table)[] }[] = [];
+  for (const child of children) {
+    const landscape = child instanceof Table && wide.has(child);
+    const last = runs[runs.length - 1];
+    if (last !== undefined && last.landscape === landscape) last.items.push(child);
+    else runs.push({ landscape, items: [child] });
+  }
+  if (runs.length === 0) runs.push({ landscape: false, items: [] });
+
+  return runs.map((run, i) => ({
+    properties: { ...(i === 0 ? { titlePage: true } : {}), page: page(run.landscape) },
+    headers: i === 0
+      ? { default: runningHeader(doc, theme), first: firstPageHeader(doc, theme) }
+      : { default: runningHeader(doc, theme) },
+    children: separateAdjacentTables(run.items),
+  }));
 }
 
 /**
@@ -1228,12 +1313,14 @@ export async function renderDocx(doc: Doc, theme: Theme, opts: { epochSeconds: n
   // divide it — renders exactly as this feature's predecessor did, see this
   // feature's "a cover with no rules must render exactly as it does today"
   // rule.
+  // Filled in by table(): which of the tables below needed a wider sheet.
+  const wideTables = new Set<Table>();
   const bodyChildren: (Paragraph | Table)[] = ruleIdxs.length > 0
-    ? coverBody(doc, theme, refOf, pageBlocks, restBlocks, ruleIdxs)
+    ? coverBody(doc, theme, refOf, pageBlocks, restBlocks, ruleIdxs, wideTables)
     : [
         new Paragraph({ style: cover ? 'DocTitleCover' : 'DocTitle', children: [new TextRun({ text: doc.meta.title })] }),
         ...(doc.meta.subtitle ? [new Paragraph({ style: 'DocSubtitle', children: [new TextRun({ text: doc.meta.subtitle })] })] : []),
-        ...doc.blocks.flatMap((b) => blocks(b, theme, refOf)),
+        ...doc.blocks.flatMap((b) => blocks(b, theme, refOf, { wide: wideTables })),
       ];
 
   const packed = await Packer.toBuffer(new Document({
@@ -1255,25 +1342,11 @@ export async function renderDocx(doc: Doc, theme: Theme, opts: { epochSeconds: n
     // every open, regardless of this setting — the flag was never doing the
     // work it was added for. See test/render/docx.test.ts, "does not ask
     // Word to update fields on open".
-    sections: [{
-      properties: {
-        titlePage: true,
-        page: {
-          // Without an explicit size, docx defaults to A4 regardless of the
-          // theme, while columnDxa() below already sizes tables from the
-          // theme's own PAGE_PT trim — a Letter theme would then be Letter as
-          // a PDF and A4 as a .docx, with tables sized for one page hanging
-          // past the margin of the other.
-          size: { width: dxa(PAGE_PT[theme.page.size].w), height: dxa(PAGE_PT[theme.page.size].h) },
-          margin: {
-            top: dxa(theme.page.marginPt), right: dxa(theme.page.marginPt),
-            bottom: dxa(theme.page.marginPt), left: dxa(theme.page.marginPt),
-          },
-        },
-      },
-      headers: { default: runningHeader(doc, theme), first: firstPageHeader(doc, theme) },
-      children: separateAdjacentTables(bodyChildren),
-    }],
+    // The sheet is named explicitly rather than left to the library's A4
+    // default: columnDxa() sizes tables from the theme's own PAGE_PT trim, so
+    // a Letter theme would otherwise be Letter as a PDF and A4 as a .docx,
+    // with tables sized for one page hanging past the margin of the other.
+    sections: sectionsFor(doc, theme, bodyChildren, wideTables),
   }));
 
   return normalizeDocx(Buffer.from(packed), opts.epochSeconds);

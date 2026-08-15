@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Doc } from '../../src/ir/types.js';
-import { columnDxa, renderDocx } from '../../src/render/docx.js';
+import { columnDxa, landscapeColumnDxa, renderDocx } from '../../src/render/docx.js';
 import { mixToWhite, STATEMENT_TINT } from '../../src/render/tint.js';
 import { loadTheme, resolveTheme } from '../../src/theme/resolve.js';
 import { docxEntries, docxPart } from '../helpers/docx-parts.js';
@@ -511,8 +511,44 @@ describe('renderDocx', () => {
     }));
     const widths = gridWidths(xml);
     expect(widths).toHaveLength(cols);
-    expect(widths.reduce((a, w) => a + w, 0)).toBe(columnDxa(theme));
+    // Forty columns do not fit the portrait text column, so the table is
+    // printed on a landscape sheet of its own and sized against that one —
+    // and forty do not fit there either, so the floors are dropped and the
+    // split degrades to pure demand-weighting. What must still hold is that
+    // the widths sum to the sheet exactly and no column vanishes.
+    expect(widths.reduce((a, w) => a + w, 0)).toBe(landscapeColumnDxa(theme));
     expect(widths.every((w) => w > 0)).toBe(true);
+  });
+
+  it('puts a table too wide for the portrait column in a landscape section of its own', async () => {
+    const cols = 18;
+    const wide: Doc['blocks'][number] = {
+      t: 'table',
+      head: Array.from({ length: cols }, (_, i) => [{ t: 'text' as const, v: `H${i}` }]),
+      rows: [Array.from({ length: cols }, (_, i) => [{ t: 'text' as const, v: `v${i}` }])],
+      align: Array.from({ length: cols }, () => 'l' as const),
+    };
+    const p = (v: string): Doc['blocks'][number] => ({ t: 'para', text: [{ t: 'text', v }] });
+    const xml = await body(doc(p('before'), wide, p('after')));
+    // Orientation is a property of a section, not of a block, so the only way
+    // to turn one table is to cut the body into three: portrait, landscape,
+    // portrait. Verified against Word itself over COM — it reports the middle
+    // section at 841.9 x 595.3pt.
+    const sizes = [...xml.matchAll(/<w:pgSz[^>]*w:orient="(\w+)"/g)].map((m) => m[1]);
+    expect(sizes).toEqual(['portrait', 'landscape', 'portrait']);
+    // The wider number is the width, which is the whole point: `w:orient`
+    // alone is informational, and Word believes the numbers over the flag.
+    // What renderDocx passes in is the portrait pair — the library swaps them
+    // itself, and passing them pre-swapped gets them swapped back.
+    expect(xml).toContain('<w:pgSz w:w="16838" w:h="11906" w:orient="landscape"/>');
+    // Only the first section carries the first-page header.
+    expect((xml.match(/<w:titlePg\/>/g) ?? []).length).toBe(1);
+  });
+
+  it('leaves a document with no wide table in one section', async () => {
+    const xml = await body(doc({ t: 'para', text: [{ t: 'text', v: 'just prose' }] }));
+    expect((xml.match(/<w:pgSz/g) ?? []).length).toBe(1);
+    expect(xml).toContain('w:orient="portrait"');
   });
 
   it('produces identical table widths on two runs', async () => {
