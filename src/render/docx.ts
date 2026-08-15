@@ -10,8 +10,9 @@
 import {
   AlignmentType, BorderStyle, Document, ExternalHyperlink, Header, HorizontalPositionAlign,
   HorizontalPositionRelativeFrom, ImageRun, LevelFormat, LineRuleType, Packer, PageBreak, PageNumber, Paragraph,
-  ShadingType, Table, TableCell, TableLayoutType, TableRow, TextRun, TextWrappingType, UnderlineType, VerticalPositionAlign,
-  VerticalPositionRelativeFrom, WidthType, type ILevelsOptions, type IParagraphOptions, type ParagraphChild,
+  FrameAnchorType, FrameWrap, HeightRule, ShadingType, Table, TableCell, TableLayoutType, TableRow, TextRun,
+  TextWrappingType, UnderlineType, VerticalPositionAlign,
+  VerticalPositionRelativeFrom, WidthType, type IFrameOptions, type ILevelsOptions, type IParagraphOptions, type ParagraphChild,
 } from 'docx';
 import type { Block, Doc, Inline } from '../ir/types.js';
 import { PAGE_PT, type Theme } from '../theme/types.js';
@@ -479,7 +480,7 @@ function roundToDxa(widths: number[], total: number): number[] {
   return out;
 }
 
-function table(b: Extract<Block, { t: 'table' }>, theme: Theme, opts: { plainLink?: boolean } = {}): Table {
+function table(b: Extract<Block, { t: 'table' }>, theme: Theme, opts: BlockOpts = {}): Table {
   const cols = Math.max(b.head.length, ...b.rows.map((r) => r.length));
   // A table with neither head nor rows makes `cols` 0, which lays out as an
   // empty <w:tblGrid/> and a row with no cells — structurally a table, visibly
@@ -604,16 +605,16 @@ function heatmapBlocks(b: Extract<Block, { t: 'heatmap' }>, theme: Theme): (Para
   return [table, spacer];
 }
 
-function blocks(b: Block, theme: Theme, listRefs: Map<Block, string>, opts: { plainLink?: boolean } = {}): (Paragraph | Table)[] {
+function blocks(b: Block, theme: Theme, listRefs: Map<Block, string>, opts: BlockOpts = {}): (Paragraph | Table)[] {
   switch (b.t) {
     case 'heading': {
       const style = (['DocH1', 'DocH2', 'DocH3'] as const)[b.level - 1]!;
       // outlineLevel is what puts a heading in Word's navigation pane; the
       // style alone does not, because the style id is ours and not Heading1.
-      return [new Paragraph({ style, outlineLevel: b.level - 1, children: inline(b.text, opts, theme) })];
+      return [new Paragraph({ style, outlineLevel: b.level - 1, children: inline(b.text, opts, theme), ...framed(opts) })];
     }
     case 'para':
-      return [new Paragraph({ style: 'DocBody', children: inline(b.text, opts, theme) })];
+      return [new Paragraph({ style: 'DocBody', children: inline(b.text, opts, theme), ...framed(opts) })];
     case 'list': {
       // The reference — and so the abstractNum/num pair — was assigned once
       // per fragment in listNumbering(), keyed by this exact block. It is
@@ -623,6 +624,7 @@ function blocks(b: Block, theme: Theme, listRefs: Map<Block, string>, opts: { pl
       const reference = listRefs.get(b);
       if (reference === undefined) throw new Error('list block missing its numbering reference — listNumbering() did not see this block');
       return b.items.map((it) => new Paragraph({
+        ...framed(opts),
         style: 'DocList',
         numbering: { reference, level: 0 },
         children: inline(it, opts, theme),
@@ -990,6 +992,17 @@ function hairlineParagraph(children: ParagraphChild[] = []): Paragraph {
   return new Paragraph({ children, spacing: { before: 0, after: 0, line: 1, lineRule: LineRuleType.EXACT } });
 }
 
+/** An empty paragraph of an exact height, for the gaps CSS opens with a
+ *  margin and Word has nowhere else to put — a table cannot carry one. The
+ *  run is sized to match for the same reason blocks()'s table spacer sizes
+ *  its own: so the paragraph mark's height is stated rather than inherited. */
+function spacerParagraph(heightPt: number): Paragraph {
+  return new Paragraph({
+    children: [new TextRun({ text: '', size: halfPt(heightPt) })],
+    spacing: { before: 0, after: 0, line: dxa(heightPt), lineRule: LineRuleType.EXACT },
+  });
+}
+
 /**
  * Word merges two tables that touch. With no paragraph between them the
  * reader treats them as a single table over a shared grid, and that is not
@@ -1003,8 +1016,62 @@ function hairlineParagraph(children: ParagraphChild[] = []): Paragraph {
  * anywhere two tables can land next to each other, they will, and nothing
  * about the block list makes that visible to the code emitting it.
  */
+/**
+ * Per-call options that travel down through blocks() to the runs and
+ * paragraphs it builds. Both members exist for a cover: its links are not
+ * underlined, and its foot is pinned to the page's bottom edge.
+ */
+type BlockOpts = { plainLink?: boolean; frame?: IFrameOptions };
+
+/** Spreads a paragraph's frame, or nothing at all when there is none. */
+const framed = (opts: BlockOpts): { frame?: IFrameOptions } => (opts.frame ? { frame: opts.frame } : {});
+
 /** See html.ts's `.cover-top a, .cover-foot a{ text-decoration: none }`. */
 const COVER_LINKS = { plainLink: true } as const;
+
+/**
+ * The cover foot's page-bottom pin: `w:framePr`, the legacy text-frame
+ * mechanism, with every paragraph of the foot carrying identical frame
+ * properties — which is what makes Word treat them as one frame rather than
+ * several.
+ *
+ * This was refused once, as a gamble on behaviour that could not be checked.
+ * It is checked now: driven over COM, Word 365 lays the foot on the page's
+ * bottom margin, and the risk is bounded in a way the original judgement
+ * could not assume. A reader that ignores `framePr` renders the paragraphs in
+ * ordinary flow — which is exactly what every reader did before this existed.
+ * The change can only improve the result, never worsen it, so the remaining
+ * uncertainty costs nothing.
+ *
+ * `HeightRule.AUTO` lets the frame grow to whatever the foot's own lines
+ * need, rather than pinning a height somebody would have to keep in step
+ * with the template.
+ */
+function coverFootFrame(theme: Theme): IFrameOptions {
+  return {
+    type: 'alignment',
+    alignment: { x: HorizontalPositionAlign.LEFT, y: VerticalPositionAlign.BOTTOM },
+    anchor: { horizontal: FrameAnchorType.MARGIN, vertical: FrameAnchorType.MARGIN },
+    width: columnDxa(theme),
+    height: 0,
+    rule: HeightRule.AUTO,
+    wrap: FrameWrap.NONE,
+  };
+}
+
+// The two gaps a cover opens with a CSS margin, carried across as fixed
+// heights because Word cannot compute either.
+//
+// html.ts gives the statement band `margin: auto 0` — the flowing zone's
+// whole slack, split above and below, which drops it into the optical middle
+// of the page. Word has no page-relative box for growing content (see
+// coverBody), so there is no slack to hand it. Without something here the
+// band's fill runs straight into the contact lines under it and the two read
+// as one object; the band's own vertical padding is the value that reads as
+// deliberate rather than arbitrary.
+const STATEMENT_GAP_PT = 18;
+/** html.ts: `.cover-foot{ margin-top: 24pt; }` — copied, not re-derived. */
+const COVER_FOOT_GAP_PT = 24;
 
 function separateAdjacentTables(children: (Paragraph | Table)[]): (Paragraph | Table)[] {
   const out: (Paragraph | Table)[] = [];
@@ -1030,7 +1097,7 @@ function separateAdjacentTables(children: (Paragraph | Table)[]): (Paragraph | T
  * (see coverBody) — Word has no page-relative box for growing content — and
  * it is recorded in README.md's refusal register alongside it.
  */
-function statementTable(paras: Inline[][], theme: Theme, opts: { plainLink?: boolean } = {}): Table {
+function statementTable(paras: Inline[][], theme: Theme, opts: BlockOpts = {}): Table {
   const total = columnDxa(theme);
   return new Table({
     layout: TableLayoutType.FIXED,
@@ -1070,15 +1137,11 @@ function statementTable(paras: Inline[][], theme: Theme, opts: { plainLink?: boo
  * text out of the way, since nothing here wants the panel or the running
  * text to reflow around a decoration in the corner.
  *
- * This is genuinely different from the foot's problem (see coverBody's
- * comment): an anchored *picture* has an unambiguous, fixed position the
- * format defines directly, while a page-bottom *paragraph* would need the
- * legacy `w:framePr` text-frame mechanism — deprecated, scoped to a run of
- * paragraphs in a way this library's `frame` option does not cleanly expose
- * for a multi-block foot, and not something this renderer can verify
- * behaves the same way across Word versions. One is a documented format
- * feature reused as intended; the other would be a gamble on the exact kind
- * of "fake it and hope" this feature's spec forbids.
+ * This is a different mechanism from the foot's (see coverFootFrame): an
+ * anchored *picture* has a position the format defines directly, while a
+ * page-bottom *group of paragraphs* needs the legacy `w:framePr` text frame.
+ * That one was refused for a while as unverifiable; it is verified now, and
+ * its downside is bounded — see coverFootFrame.
  *
  * Returns `null` when the theme carries no corner mark, or that mark has no
  * raster — the same "no raster, no mark" rule firstPageHeader's logo
@@ -1141,17 +1204,12 @@ function cornerMarkImage(theme: Theme): ImageRun | null {
  * the first rule), whatever flows between the first and last rule, and the
  * foot (every block after the last rule).
  *
- * The foot is NOT pinned to the page's bottom edge the way html.ts's
- * `.cover-frame` pins it. Word's own paragraph flow has no page-relative
- * positioning primitive that fits arbitrary, variable-length content the
- * way CSS flexbox does — the only two the format offers are the anchored
- * picture cornerMarkImage() uses (one fixed-size object, not a growing block
- * of paragraphs) and the legacy `w:framePr` text frame, which this renderer
- * does not use — see cornerMarkImage's comment for why that one is a gamble
- * this feature's spec asks not to take. So the foot's blocks are emitted in
- * plain document flow, immediately after whatever flows between the rules —
- * present and correct in reading order, but not at the page foot. This is
- * recorded in README.md's refusal register, not just here.
+ * The foot IS pinned to the page's bottom edge, through `w:framePr` — see
+ * coverFootFrame, which also records why that stopped being a gamble. What
+ * still cannot be reproduced is the statement band's centring: html.ts hands
+ * it the flowing zone's slack through an auto margin, and Word has no slack
+ * to hand out, so the band gets a fixed gap above and below instead
+ * (STATEMENT_GAP_PT). Recorded in README.md, not only here.
  */
 function coverBody(doc: Doc, theme: Theme, refOf: Map<Block, string>, pageBlocks: Block[], restBlocks: Block[], ruleIdxs: number[]): (Paragraph | Table)[] {
   const { panel, flowing, foot } = partitionCoverBlocks(pageBlocks, ruleIdxs);
@@ -1181,6 +1239,15 @@ function coverBody(doc: Doc, theme: Theme, refOf: Map<Block, string>, pageBlocks
   // same call html.ts makes in CSS. It applies to all three zones, and to
   // nothing after the cover's own page break.
   const panelContent: (Paragraph | Table)[] = [titlePara, ...subtitlePara, ...panel.flatMap((b) => blocks(b, theme, refOf, COVER_LINKS))];
+  // Every foot paragraph carries the same frame, which is what makes Word
+  // merge them into one block at the page's bottom margin. A foot block
+  // that is not a paragraph — a table — cannot take a frame at all, so such
+  // a foot falls back to ordinary flow with the gap html.ts opens above it.
+  const framedFoot = foot.flatMap((b) => blocks(b, theme, refOf, { ...COVER_LINKS, frame: coverFootFrame(theme) }));
+  const footChildren = framedFoot.every((c) => c instanceof Paragraph)
+    ? framedFoot
+    : [spacerParagraph(COVER_FOOT_GAP_PT), ...foot.flatMap((b) => blocks(b, theme, refOf, COVER_LINKS))];
+
   return [
     ...markPara,
     panelTable(panelContent, theme),
@@ -1188,8 +1255,10 @@ function coverBody(doc: Doc, theme: Theme, refOf: Map<Block, string>, pageBlocks
     // html.ts reads it; every other block in the zone renders as it always
     // does. Only a cover's flowing zone is read this way — an ordinary
     // document's quote never reaches here and stays a DocQuote paragraph.
-    ...flowing.flatMap((b) => (b.t === 'quote' ? [statementTable(b.paras, theme, COVER_LINKS)] : blocks(b, theme, refOf, COVER_LINKS))),
-    ...foot.flatMap((b) => blocks(b, theme, refOf, COVER_LINKS)),
+    ...flowing.flatMap((b) => (b.t === 'quote'
+      ? [spacerParagraph(STATEMENT_GAP_PT), statementTable(b.paras, theme, COVER_LINKS), spacerParagraph(STATEMENT_GAP_PT)]
+      : blocks(b, theme, refOf, COVER_LINKS))),
+    ...footChildren,
     ...restBlocks.flatMap((b) => blocks(b, theme, refOf)),
   ];
 }

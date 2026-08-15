@@ -1168,6 +1168,29 @@ describe('cover zones', () => {
     expect(xml.match(/<w:drawing>/g)?.length).toBe(1);
   });
 
+  it("pins the cover's foot to the page bottom, and opens a gap around the statement band", async () => {
+    const quote: Doc['blocks'][number] = { t: 'quote', paras: [[{ t: 'text', v: 'Band' }]] };
+    const d: Doc = {
+      meta: { title: 'Cover', lang: 'en', cover: true },
+      blocks: [para('lead'), rule, quote, rule, para('entity one'), para('entity two')],
+    };
+    const xml = await docxPart(await renderDocx(d, markedTheme, { epochSeconds: EPOCH }), 'word/document.xml');
+    // Every foot paragraph carries the same frame — identical properties are
+    // what make Word treat them as one frame rather than several.
+    const frames = xml.match(/<w:framePr[^>]*\/>/g) ?? [];
+    expect(frames).toHaveLength(2);
+    expect(new Set(frames).size, 'the foot paragraphs must share one frame').toBe(1);
+    expect(frames[0]).toContain('w:yAlign="bottom"');
+    expect(frames[0]).toContain('w:vAnchor="margin"');
+
+    // And the band gets a fixed gap where html.ts spends an auto margin.
+    expect(xml).toContain(`w:line="${18 * 20}"`);
+
+    // No frame anywhere on an ordinary document.
+    const plain = await docxPart(await renderDocx(doc(para('x')), markedTheme, { epochSeconds: EPOCH }), 'word/document.xml');
+    expect(plain).not.toContain('<w:framePr');
+  });
+
   it("a cover's links keep the Hyperlink style but drop its underline; elsewhere they keep it", async () => {
     const link: Doc['blocks'][number] = {
       t: 'para', text: [{ t: 'link', href: 'https://tebin.pro', children: [{ t: 'text', v: 'www.tebin.pro' }] }],
