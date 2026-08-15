@@ -102,6 +102,24 @@ export async function assembleProposal(
     throw new ProposalError(missing.map((m) => `${m} did not stand alone as its own paragraph — put it on its own line with a blank line above and below`));
   }
 
+  // The mirror of the `{{@annex}} with no bytes` error below, and it exists
+  // because the asymmetry cost a real document: a data file named a
+  // 267-row deliverables register, the template it was pointed at carried no
+  // {{@annex}}, and the build succeeded — the workbook was read off disk,
+  // parsed, and dropped without a word. Half an offer without its annex is
+  // not an offer, in whichever direction the two disagree. A template that
+  // genuinely does not want the annex says so by not naming one in the data.
+  const placed = new Set(directives.map((d) => d.name));
+  const unplaced = [
+    ...(args.annex !== undefined && !placed.has('annex')
+      ? ['an annex was supplied ("annex" in the data file) but this template never places it — add {{@annex}} to the template, or drop "annex" from the data']
+      : []),
+    ...(args.clientLogo !== undefined && !placed.has('clientlogo')
+      ? ['a client logo was supplied ("clientLogo" in the data file) but this template never places it — add {{@clientlogo}} to the template, or drop "clientLogo" from the data']
+      : []),
+  ];
+  if (unplaced.length > 0) throw new ProposalError(unplaced);
+
   const meta = {
     ...ingested.doc.meta,
     ...(data.cover === undefined ? {} : { cover: data.cover }),

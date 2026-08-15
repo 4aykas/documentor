@@ -76,6 +76,19 @@ describe('assembleProposal', () => {
     expect(errs.join('\n')).toMatch(/annex/);
   });
 
+  it('refuses an annex the template never places — the mirror of the error above', async () => {
+    // The asymmetry cost a real document: a data file named a 267-row
+    // deliverables register, the template carried no {{@annex}}, and the
+    // build succeeded — the workbook was read, parsed and dropped in
+    // silence. Half an offer without its annex is not an offer in either
+    // direction.
+    const annex = await makeXlsx([['No', 'Document'], ['1', 'DOC-1']], 'Deliverables');
+    const errs = await errorsOf(() =>
+      assembleProposal({ data: { ...DATA, annex: './deliverables.xlsx' }, template: '# T\n\nno directive here\n', annex }));
+    expect(errs.join('\n')).toMatch(/annex was supplied/);
+    expect(errs.join('\n')).toMatch(/never places it/);
+  });
+
   it('carries an annex register through the raised cap', async () => {
     const rows = [['No', 'Document'], ...Array.from({ length: 400 }, (_, i) => [String(i + 1), `DOC-${i + 1}`])];
     const annex = await makeXlsx(rows, 'Deliverables');
