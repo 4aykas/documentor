@@ -344,18 +344,17 @@ describe('cover zones', () => {
     expect(html).not.toContain('corner-mark-page');
   });
 
-  it('the mark hangs above the panel only — never past its right edge, which is where Chromium clips', async () => {
+  it('the mark is seated in the panel corner — it overhangs in neither direction', async () => {
     const doc: Doc = { meta: { title: 'Cover', lang: 'en', cover: true }, blocks: [para('lead'), rule, para('tail')] };
     const html = await buildHtml(doc, markedTheme);
-    // A rightwards translate put 35% of the glyph outside the content box. Two
-    // things went wrong there, and both are regressions worth a test: the
-    // overhang itself was clipped away, and the horizontal overflow made
-    // Chromium shrink the whole page to fit, so every measurement on the cover
-    // came out ~9% small.
-    expect(html).toContain('.corner-mark-panel{ position: absolute; top: 0; right: 0; transform: translateY(-35%); }');
-    // And the panel reserves the room the upward overhang needs, or the top of
-    // the glyph falls off the page instead.
-    expect(html).toMatch(/\.cover-panel\{[^}]*margin-top: 12pt/);
+    expect(html).toContain('.corner-mark-panel{ position: absolute; top: 0; right: 0; }');
+    // No transform, in either axis, and both halves of that matter.
+    // Rightwards put 35% of the glyph outside the content box, where Chromium
+    // clipped it away AND — because the overflow made the layout wider than
+    // the sheet — shrank the whole page to fit, so every measurement on the
+    // cover came out about 9% small. Upwards printed fine but left the mark
+    // floating above the frame instead of sitting on it.
+    expect(html).not.toMatch(/\.corner-mark-panel\{[^}]*transform/);
   });
 
   it('a quote in a cover flowing zone becomes the statement band; the same quote elsewhere stays a quote', async () => {

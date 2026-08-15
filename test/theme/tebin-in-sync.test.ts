@@ -5,24 +5,16 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { buildTheme, readTokens, themeJson } from '../../src/theme/generate.js';
+import { tebinThemeJson } from '../../src/theme/tebin.js';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
-const BRAND = join(ROOT, 'brand', 'tebin');
 
 describe('themes/tebin/theme.json', () => {
-  it('is exactly what the generator produces from the vendored snapshot', () => {
-    const regenerated = themeJson(
-      buildTheme({
-        tokens: readTokens(readFileSync(join(BRAND, 'tokens.dtcg.json'), 'utf8')),
-        logoSvg: readFileSync(join(BRAND, 'logo-full.svg'), 'utf8'),
-        logoPngBase64: readFileSync(join(BRAND, 'logo-full.png')).toString('base64'),
-        cornerMarkSvg: readFileSync(join(BRAND, 'corner-mark.svg'), 'utf8'),
-        cornerMarkPngBase64: readFileSync(join(BRAND, 'corner-mark.png')).toString('base64'),
-        sourceId: 'tebin-classic',
-        sourceVersion: '1.0.0',
-      }),
-    );
+  it('is exactly what the generator produces from the vendored snapshot', async () => {
+    // The recipe comes from the same function `npm run theme:tebin` calls.
+    // Spelling the inputs out again here would put the drift this test exists
+    // to catch inside the test itself — and did, once.
+    const regenerated = await tebinThemeJson(join(ROOT, 'brand', 'tebin'));
     const committed = readFileSync(join(ROOT, 'themes', 'tebin', 'theme.json'), 'utf8');
     expect(
       committed.replace(/\r\n/g, '\n'),

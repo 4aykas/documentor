@@ -131,7 +131,12 @@ describe('buildTheme', () => {
       logoSvg: readFileSync(join(BRAND, 'logo-full.svg'), 'utf8'),
       logoPngBase64: readFileSync(join(BRAND, 'logo-full.png')).toString('base64'),
       cornerMarkSvg: readFileSync(join(BRAND, 'corner-mark.svg'), 'utf8'),
-      cornerMarkPngBase64: readFileSync(join(BRAND, 'corner-mark.png')).toString('base64'),
+      // buildTheme only embeds this blob; nothing below asserts anything about
+      // its pixels, and the brand directory no longer vendors a corner-mark
+      // raster (see brand/tebin/SOURCE.md — the real one is rasterised from
+      // the vector). A 2×1 red PNG, the same fixture the CLI tests use.
+      cornerMarkPngBase64:
+        'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAFElEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkS7cAAAAAElFTkSuQmCC',
       sourceId: 'tebin-classic',
       sourceVersion: '1.0.0',
     });

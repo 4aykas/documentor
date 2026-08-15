@@ -372,15 +372,7 @@ body{ position: relative; }
    colors.rule is reused for the border rather than a new theme value —
    the same hairline colour already draws every rule and table edge on the
    page, and the panel is exactly that: a rule folded into a box. */
-/* margin-top is what makes the panel's corner mark drawable at all. The mark
-   below straddles the panel's top-right corner, which means 35% of it sits
-   ABOVE the panel — and a cover's panel is the first thing on the page, so
-   with the panel flush against the content box that 35% fell outside the
-   page and Chromium clipped it away. The printed mark was a thin hook where
-   the brand's is a solid block: bars measured 28% of the glyph instead of
-   the asset's 49%. This reserves the room the overhang needs (35% of 14.4pt
-   is 5.04pt) plus air, rather than shrinking the overhang to fit. */
-.cover-panel{ position: relative; border: 0.75pt solid var(--rule); padding: 20pt 24pt; margin-top: 12pt; }
+.cover-panel{ position: relative; border: 0.75pt solid var(--rule); padding: 20pt 24pt; }
 .cover-panel .doc-title--cover{ margin-top: 0; }
 /* min-height, not height: a cover whose panel + flowing content already
    exceeds one page overflows into a second page exactly as any other
@@ -423,13 +415,16 @@ body{ position: relative; }
 .cover-statement-zone > blockquote > p:first-child{ font-size: ${(ty.titlePt * 0.5).toFixed(1)}pt;
   line-height: 1.15; font-weight: 700; color: var(--brand); }
 .cover-statement-zone > blockquote > p:last-child{ margin-bottom: 0; }
-/* Straddling the panel's top border, flush with its right edge. The overhang
-   is vertical only: a cover's panel spans the full content width, so its
-   right border already sits on the boundary Chromium clips at, and the 35%
-   this used to translate rightwards was cut off there — the printed glyph
-   measured 9.0pt wide against the 14.2pt it should be. Up is the one
-   direction with room, and .cover-panel's margin-top reserves it. */
-.corner-mark-panel{ position: absolute; top: 0; right: 0; transform: translateY(-35%); }
+/* Seated in the panel's top-right corner: the glyph's own top and right edges
+   on the panel's own top and right borders, overlapping inwards. No overhang
+   in either direction. Outwards is not available — a cover's panel spans the
+   full content width, so its right border already sits on the boundary
+   Chromium clips a page's content at, and a rightwards translate was cut off
+   there (the printed glyph measured 9.0pt wide against the 14.2pt it should
+   be, and the overflow shrank the whole page with it). Upwards is available
+   but wrong: it leaves the mark floating above the frame instead of on it,
+   which is not how the brand's own covers place it. */
+.corner-mark-panel{ position: absolute; top: 0; right: 0; }
 /* Same paint-by-class rule as .logo (see its own comment above), extended to
    the two corner-mark placements rather than duplicated for them. */
 .corner-mark-panel svg{ height: 100%; width: auto; display: block; }

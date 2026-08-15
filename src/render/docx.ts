@@ -1055,8 +1055,16 @@ function cornerMarkImage(theme: Theme): ImageRun | null {
     type: 'png',
     transformation: { width: px96(widthPt), height: px96(heightPt) },
     floating: {
-      horizontalPosition: { relative: HorizontalPositionRelativeFrom.PAGE, align: HorizontalPositionAlign.RIGHT },
-      verticalPosition: { relative: VerticalPositionRelativeFrom.PAGE, align: VerticalPositionAlign.TOP },
+      // Anchored to the text margin, not the page: the top-right corner of
+      // the text area is exactly the panel's own top-right corner, because
+      // the panel table spans the full column width and is the first thing
+      // in the body. So this puts the glyph on the frame, the same seat
+      // html.ts's `.corner-mark-panel` gives it, rather than out at the
+      // page's physical corner where it sat beside the frame instead of on
+      // it. Two aligns rather than two offsets: the aligns are exact, while
+      // an offset would have to guess at the cell's own margins.
+      horizontalPosition: { relative: HorizontalPositionRelativeFrom.MARGIN, align: HorizontalPositionAlign.RIGHT },
+      verticalPosition: { relative: VerticalPositionRelativeFrom.MARGIN, align: VerticalPositionAlign.TOP },
       wrap: { type: TextWrappingType.NONE },
       margins: { top: 0, bottom: 0, left: 0, right: 0 },
     },
