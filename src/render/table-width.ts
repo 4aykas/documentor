@@ -45,7 +45,7 @@ export function columnWidthsDxa(
       return out;
     }
   }
-  return distribute(totalDxa, demand, floorsDxa(demand, bodyPt), MAX_COL_FRACTION);
+  return distribute(totalDxa, demand, floorsDxa(columnLongest(b, cols), bodyPt), MAX_COL_FRACTION);
 }
 
 /**
@@ -142,8 +142,23 @@ const colDxa = (chars: number, bodyPt: number): number => dxa(12 + chars * bodyP
  * crowded table falls where it belongs — on the prose columns, which have
  * somewhere to put it.
  */
-function floorsDxa(demand: number[], bodyPt: number): number[] {
-  return demand.map((d) => colDxa(Math.max(MIN_COL_CHARS, Math.min(d, CHEAP_COL_CHARS)), bodyPt));
+function floorsDxa(longest: number[], bodyPt: number): number[] {
+  return longest.map((d) => colDxa(Math.max(MIN_COL_CHARS, Math.min(d, CHEAP_COL_CHARS)), bodyPt));
+}
+
+/**
+ * The longest thing in each column, header included. The floor is measured
+ * from this rather than from the 75th percentile the demand uses, and the two
+ * answer different questions: demand asks "which column has more text than
+ * which", where one outlier must not set the width, while the floor asks
+ * "what must not break", where the outlier is exactly the case — a "Country"
+ * column whose percentile said seven characters was handed room for seven and
+ * printed "Germany" as "German" over "y". Capped at CHEAP_COL_CHARS, so a
+ * prose column does not claim a floor it has no right to.
+ */
+function columnLongest(b: Extract<Block, { t: 'table' }>, cols: number): number[] {
+  return Array.from({ length: cols }, (_, i) =>
+    Math.max(flatten(b.head[i] ?? []).length, ...b.rows.map((row) => flatten(row[i] ?? []).length), 0));
 }
 
 // One column's cap, as a fraction of the table. Without one, a single
@@ -191,8 +206,18 @@ function distribute(total: number, demand: number[], floor: number[], ceilFracti
   // them; a table that narrow is better served by pure demand-weighting.
   const useCeil = ceiling * n >= total;
   const lo = useFloor ? [...floor] : new Array<number>(n).fill(0);
-  const hi = Array.from({ length: n }, (_, i) =>
-    useCeil ? Math.max(ceiling, useFloor ? floor[i]! : 0) : Infinity);
+  // A column's ceiling is also capped by what is left once every OTHER column
+  // has its floor. Without that cap, clamping the one verbose column down to
+  // 45% could still leave less than the remaining floors need — the loop then
+  // fixed the last column standing at whatever was left, which was negative,
+  // and a real seven-column table printed a "Country" column one letter wide
+  // with its header spilling over its neighbour. A feasible answer existed
+  // (the floors alone fit); the ceiling was reaching past it.
+  const hi = Array.from({ length: n }, (_, i) => {
+    if (!useCeil) return Infinity;
+    const room = useFloor ? total - (floorSum - floor[i]!) : total;
+    return Math.max(Math.min(ceiling, room), useFloor ? floor[i]! : 0);
+  });
   const fixed: number[] = new Array(n).fill(NaN);
   const active = new Set(demand.map((_, i) => i));
   let remaining = total;

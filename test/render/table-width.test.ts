@@ -89,3 +89,38 @@ describe('column widths', () => {
     expect(html).not.toContain('<div class="wide-table">');
   });
 });
+
+describe('the ceiling cannot starve the floors', () => {
+  // Found on a real seven-column table: one long comment column was clamped
+  // to its 45% ceiling, which left the six other columns less than their
+  // floors needed. The loop then handed the last column standing whatever
+  // was left, which was NEGATIVE, and the printed page showed a "Country"
+  // column one letter wide with its header spilling over its neighbour.
+  const wideish: Extract<Block, { t: 'table' }> = {
+    t: 'table',
+    head: ['Client', 'Country', 'Rev. 2025', '2026 Budget', '2026 min', '2026 max', 'Comment'].map(cell),
+    rows: [
+      ['Haskoning MCF', 'The Netherlands', '2679', '2100', '1500', '2000',
+        "less than last year due to contraction of client's pipeline and due to spin-off of Atana (below)"].map(cell),
+      ['Tesla', 'Germany', '341', '450', '900', '1200', 'new EV battery cell project started'].map(cell),
+      ['IO', 'Germany', '337', '500', '100', '200',
+        'less than 2025 due to focus of client on defense projects and no success in industrial projects'].map(cell),
+    ],
+    align: Array.from({ length: 7 }, () => 'l' as const),
+  };
+
+  it('never produces a width at or below zero', () => {
+    const w = columnWidthsDxa(wideish, 7, totalDxa, theme.type.bodyPt);
+    expect(w).toHaveLength(7);
+    expect(w.every((x) => x > 0), `widths were ${w.join(', ')}`).toBe(true);
+    expect(w.reduce((a, x) => a + x, 0)).toBe(totalDxa);
+  });
+
+  it('leaves a short column room for its longest value, not its typical one', () => {
+    const w = columnWidthsDxa(wideish, 7, totalDxa, theme.type.bodyPt);
+    // "The Netherlands" is fifteen characters against a 75th percentile of
+    // seven, and the floor is measured from the longest — a column that
+    // prints "Germany" as "German" over "y" is the thing this prevents.
+    expect(w[1]! / 20).toBeGreaterThan(70);
+  });
+});
