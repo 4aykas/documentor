@@ -146,9 +146,9 @@ function block(b: Block): string {
 /**
  * The document title and subtitle at the theme's cover size/colour — the one
  * piece of markup a plain cover (no rules) and a zoned cover (>=1 rule) both
- * need, drawn either by firstPageHeader (plain) or inside the panel div
- * (zoned, see coverMain below). Kept as one function so the two paths cannot
- * quietly drift into two different-looking titles.
+ * need, drawn either directly by coverMain (plain) or inside the panel div
+ * it builds (zoned). Kept as one function so the two paths cannot quietly
+ * drift into two different-looking titles.
  */
 function coverTitleMarkup(doc: Doc): string {
   return `<h1 class="doc-title doc-title--cover">${escapeHtml(doc.meta.title)}</h1>${
@@ -198,6 +198,9 @@ function coverMain(doc: Doc, theme: Theme): string {
   }
 
   const { panel, flowing, foot } = partitionCoverBlocks(pageBlocks, ruleIdxs);
+  // 0.6 of the mark's full height, smaller than the page-corner placement
+  // below — another taste call, not a measured brand value: the panel is a
+  // smaller frame than the page and a full-size mark would crowd it.
   const panelMark = cornerMarkMarkup(theme, 'corner-mark-panel', (theme.cornerMark?.heightPt ?? 0) * 0.6);
   const panelHtml = `<div class="cover-panel">${panelMark}${coverTitleMarkup(doc)}${panel.map(block).join('\n')}</div>`;
   const flowingHtml = flowing.map(block).join('\n');
@@ -214,41 +217,32 @@ function coverMain(doc: Doc, theme: Theme): string {
 }
 
 function firstPageHeader(doc: Doc, theme: Theme): string {
-  // `meta.cover === true` suppresses the theme's chrome — logo, letterhead
-  // lines, this document's own entity/date lines and the brand tick rule —
-  // for a cover page that supplies its own layout as ordinary content
-  // instead, and draws the title at the theme's cover size and colour
-  // (`.doc-title--cover` below) instead of its ordinary heading ones. The
-  // title and subtitle text itself is never suppressed: it is the document
-  // speaking, not the theme's, so it prints either way. Absent (or false) is
-  // an ordinary document — the letterhead and the ordinary title every
-  // document drew before this flag existed.
-  const cover = doc.meta.cover === true;
-  const chrome = cover ? '' : (() => {
-    // The full letterhead, printed once in the body flow rather than in
-    // Chromium's header box — the header box has no access to this stylesheet.
-    const logo = theme.logo
-      ? `<div class="logo" style="height: ${theme.logo.heightPt}pt">${theme.logo.svg}</div>`
-      : '<div></div>';
-    const lines = theme.letterhead
-      .map((l, i) => `<div class="${i === 0 ? 'lh-name' : 'lh-line'}">${escapeHtml(l)}</div>`)
-      .join('');
-    // Which lines these are, in what order, and which get dropped: a decision
-    // shared with docx.ts, see letterhead.ts. What's left here is only the
-    // drawing — a <div> per line, marked on the first so the `.lh-doc-first`
-    // rule below can open the gap above it.
-    const docLines = letterheadDocLines(doc)
-      .map((v, i) => `<div class="lh-doc${i === 0 ? ' lh-doc-first' : ''}">${escapeHtml(v)}</div>`)
-      .join('');
-    return `<header class="sheet-head">${logo}<div class="letterhead">${lines}${docLines}</div></header>
+  // buildHtml only calls this for an ordinary document — a cover
+  // (`meta.cover === true`) skips it entirely and draws its own layout via
+  // coverMain instead, so what follows is unconditionally the theme's
+  // chrome: logo, letterhead lines, this document's own entity/date lines,
+  // the brand tick rule, and the ordinary heading-sized title.
+  // The full letterhead, printed once in the body flow rather than in
+  // Chromium's header box — the header box has no access to this stylesheet.
+  const logo = theme.logo
+    ? `<div class="logo" style="height: ${theme.logo.heightPt}pt">${theme.logo.svg}</div>`
+    : '<div></div>';
+  const lines = theme.letterhead
+    .map((l, i) => `<div class="${i === 0 ? 'lh-name' : 'lh-line'}">${escapeHtml(l)}</div>`)
+    .join('');
+  // Which lines these are, in what order, and which get dropped: a decision
+  // shared with docx.ts, see letterhead.ts. What's left here is only the
+  // drawing — a <div> per line, marked on the first so the `.lh-doc-first`
+  // rule below can open the gap above it.
+  const docLines = letterheadDocLines(doc)
+    .map((v, i) => `<div class="lh-doc${i === 0 ? ' lh-doc-first' : ''}">${escapeHtml(v)}</div>`)
+    .join('');
+  const chrome = `<header class="sheet-head">${logo}<div class="letterhead">${lines}${docLines}</div></header>
 <div class="tick-row"><span class="tick"></span><span class="hair"></span></div>
 `;
-  })();
-  return cover
-    ? `${chrome}${coverTitleMarkup(doc)}`
-    : `${chrome}<h1 class="doc-title">${escapeHtml(doc.meta.title)}</h1>${
-        doc.meta.subtitle ? `<p class="doc-subtitle">${escapeHtml(doc.meta.subtitle)}</p>` : ''
-      }`;
+  return `${chrome}<h1 class="doc-title">${escapeHtml(doc.meta.title)}</h1>${
+    doc.meta.subtitle ? `<p class="doc-subtitle">${escapeHtml(doc.meta.subtitle)}</p>` : ''
+  }`;
 }
 
 export async function buildHtml(doc: Doc, theme: Theme): Promise<string> {
@@ -298,10 +292,10 @@ body{
 .hair{ display:block; flex:1; height: 0.75pt; background: var(--rule); }
 /* An ordinary document's title is drawn exactly like any other heading —
    h1Pt, ink — regardless of what the theme's cover values are set to.
-   Only meta.cover === true (see firstPageHeader) adds the modifier below,
-   which is the one place ty.titlePt/--title are ever spent: a theme applies
-   to every document, so a theme-wide 39pt/grey title would leak into a
-   re-issued report or a memo that never asked for a cover page. */
+   Only meta.cover === true (see buildHtml, coverMain) adds the modifier
+   below, which is the one place ty.titlePt/--title are ever spent: a theme
+   applies to every document, so a theme-wide 39pt/grey title would leak into
+   a re-issued report or a memo that never asked for a cover page. */
 .doc-title{ font-size: ${ty.h1Pt}pt; font-weight: 700; margin: 22pt 0 0; letter-spacing: -0.01em; color: var(--ink); }
 /* Colour is a theme value (colors.title in theme/types.ts), not a fixed
    choice here: it defaults to the theme's own ink, so a theme that says
