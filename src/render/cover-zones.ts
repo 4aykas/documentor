@@ -13,6 +13,16 @@
 
 import type { Block } from '../ir/types.js';
 
+/**
+ * The hairline a cover's panel is drawn with. It lives here because three
+ * things have to agree on it and two of them are in different files: the CSS
+ * border, the Word table's border, and the offset that pulls the corner mark
+ * out over that border so no line shows around it. When they disagreed by
+ * one border-width, the frame's hairline stayed visible running past the
+ * glyph's outside — small, and the first thing a reader notices.
+ */
+export const PANEL_BORDER_PT = 0.75;
+
 /** Every index in `blocks` that holds a `rule`. */
 export function ruleIndexes(blocks: Block[]): number[] {
   const idxs: number[] = [];

@@ -4,7 +4,7 @@
 
 import type { Block, Doc, Inline } from '../ir/types.js';
 import { PAGE_PT, toMm, type Theme } from '../theme/types.js';
-import { partitionCoverBlocks, ruleIndexes, splitAtFirstPagebreak } from './cover-zones.js';
+import { PANEL_BORDER_PT, partitionCoverBlocks, ruleIndexes, splitAtFirstPagebreak } from './cover-zones.js';
 import { arimoFaceCss } from './fonts.js';
 import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
@@ -372,7 +372,13 @@ body{ position: relative; }
    colors.rule is reused for the border rather than a new theme value —
    the same hairline colour already draws every rule and table edge on the
    page, and the panel is exactly that: a rule folded into a box. */
-.cover-panel{ position: relative; border: 0.75pt solid var(--rule); padding: 20pt 24pt; }
+.cover-panel{ position: relative; border: ${PANEL_BORDER_PT}pt solid var(--rule); padding: 20pt 24pt; }
+/* A cover's links are contact details, not navigation: an email address and a
+   web address on a title page are there to be read off paper. The underline
+   is web furniture that survives into print for no reader's benefit, so the
+   cover drops it while every other page keeps it. The href is untouched —
+   the link still works in a PDF reader, it just is not decorated. */
+.cover-top a, .cover-foot a{ text-decoration: none; }
 .cover-panel .doc-title--cover{ margin-top: 0; }
 /* min-height, not height: a cover whose panel + flowing content already
    exceeds one page overflows into a second page exactly as any other
@@ -423,8 +429,16 @@ body{ position: relative; }
    there (the printed glyph measured 9.0pt wide against the 14.2pt it should
    be, and the overflow shrank the whole page with it). Upwards is available
    but wrong: it leaves the mark floating above the frame instead of on it,
-   which is not how the brand's own covers place it. */
-.corner-mark-panel{ position: absolute; top: 0; right: 0; }
+   which is not how the brand's own covers place it.
+
+   The offset is the panel's border width, negated. An absolutely positioned
+   child is placed against its ancestor's PADDING box, which is inside the
+   border — so at top:0/right:0 the glyph sat just clear of the border and the
+   hairline stayed visible running around its outside, which is exactly what a
+   reader notices. Pulling it out by the border's own width puts the glyph's
+   outer edges on the panel's outer edges, and the corner of the frame
+   disappears under it. */
+.corner-mark-panel{ position: absolute; top: -${PANEL_BORDER_PT}pt; right: -${PANEL_BORDER_PT}pt; }
 /* Same paint-by-class rule as .logo (see its own comment above), extended to
    the two corner-mark placements rather than duplicated for them. */
 .corner-mark-panel svg{ height: 100%; width: auto; display: block; }

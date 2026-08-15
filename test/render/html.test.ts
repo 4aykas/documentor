@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildHtml, escapeHtml } from '../../src/render/html.js';
 import { resolveTheme } from '../../src/theme/resolve.js';
+import { PANEL_BORDER_PT } from '../../src/render/cover-zones.js';
 import type { Block, Doc } from '../../src/ir/types.js';
 
 const theme = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C' } });
@@ -344,17 +345,37 @@ describe('cover zones', () => {
     expect(html).not.toContain('corner-mark-page');
   });
 
-  it('the mark is seated in the panel corner — it overhangs in neither direction', async () => {
+  it('the mark is pulled out by exactly the panel border, so no hairline shows around it', async () => {
     const doc: Doc = { meta: { title: 'Cover', lang: 'en', cover: true }, blocks: [para('lead'), rule, para('tail')] };
     const html = await buildHtml(doc, markedTheme);
-    expect(html).toContain('.corner-mark-panel{ position: absolute; top: 0; right: 0; }');
-    // No transform, in either axis, and both halves of that matter.
-    // Rightwards put 35% of the glyph outside the content box, where Chromium
-    // clipped it away AND — because the overflow made the layout wider than
-    // the sheet — shrank the whole page to fit, so every measurement on the
-    // cover came out about 9% small. Upwards printed fine but left the mark
-    // floating above the frame instead of sitting on it.
+    // An absolutely positioned child is placed against the padding box, which
+    // is inside the border — so at top:0/right:0 the glyph sat clear of the
+    // hairline and the frame's corner stayed visible running around it.
+    expect(html).toContain(`.corner-mark-panel{ position: absolute; top: -${PANEL_BORDER_PT}pt; right: -${PANEL_BORDER_PT}pt; }`);
+    // The offset and the border it cancels have to be the same number.
+    expect(html).toContain(`.cover-panel{ position: relative; border: ${PANEL_BORDER_PT}pt solid var(--rule);`);
+    // And no transform, in either axis. Rightwards put 35% of the glyph
+    // outside the content box, where Chromium clipped it away AND — because
+    // the overflow made the layout wider than the sheet — shrank the whole
+    // page to fit, so every measurement on the cover came out about 9% small.
+    // Upwards printed fine but left the mark floating above the frame.
     expect(html).not.toMatch(/\.corner-mark-panel\{[^}]*transform/);
+  });
+
+  it("a cover's links carry no underline; every other page's still do", async () => {
+    const link: Block = { t: 'para', text: [{ t: 'link', href: 'https://tebin.pro', children: [{ t: 'text', v: 'www.tebin.pro' }] }] };
+    const cover: Doc = {
+      meta: { title: 'Cover', lang: 'en', cover: true },
+      blocks: [para('lead'), rule, para('mid'), rule, link],
+    };
+    const html = await buildHtml(cover, markedTheme);
+    // On a cover these are contact details read off paper, not navigation.
+    expect(html).toContain('.cover-top a, .cover-foot a{ text-decoration: none; }');
+    // The href itself is untouched — the link still works, it is just not
+    // decorated.
+    expect(html).toContain('<a href="https://tebin.pro">www.tebin.pro</a>');
+    // And the document-wide rule is still there for every other page.
+    expect(html).toContain('a{ color: var(--ink); text-decoration: underline;');
   });
 
   it('a quote in a cover flowing zone becomes the statement band; the same quote elsewhere stays a quote', async () => {

@@ -10,12 +10,12 @@
 import {
   AlignmentType, BorderStyle, Document, ExternalHyperlink, Header, HorizontalPositionAlign,
   HorizontalPositionRelativeFrom, ImageRun, LevelFormat, LineRuleType, Packer, PageBreak, PageNumber, Paragraph,
-  ShadingType, Table, TableCell, TableLayoutType, TableRow, TextRun, TextWrappingType, VerticalPositionAlign,
+  ShadingType, Table, TableCell, TableLayoutType, TableRow, TextRun, TextWrappingType, UnderlineType, VerticalPositionAlign,
   VerticalPositionRelativeFrom, WidthType, type ILevelsOptions, type IParagraphOptions, type ParagraphChild,
 } from 'docx';
 import type { Block, Doc, Inline } from '../ir/types.js';
 import { PAGE_PT, type Theme } from '../theme/types.js';
-import { partitionCoverBlocks, ruleIndexes, splitAtFirstPagebreak } from './cover-zones.js';
+import { PANEL_BORDER_PT, partitionCoverBlocks, ruleIndexes, splitAtFirstPagebreak } from './cover-zones.js';
 import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
 import { normalizeDocx } from './normalize-docx.js';
@@ -24,6 +24,9 @@ import { mixToWhite, SCALE_STEPS, STATEMENT_TINT, stepOf, weekLabel } from './ti
 const halfPt = (pt: number): number => Math.round(pt * 2);
 const dxa = (pt: number): number => Math.round(pt * 20);
 const eighthPt = (pt: number): number => Math.round(pt * 8);
+// English Metric Units, the unit a floating object's offset is measured in:
+// 914400 to the inch, so 12700 to the point.
+const emu = (pt: number): number => Math.round(pt * 12700);
 /** Word takes a colour as six hex digits with no leading hash. */
 const hex = (colour: string): string => colour.replace('#', '').toUpperCase();
 
@@ -204,7 +207,7 @@ function listNumbering(doc: Doc, theme: Theme): { refOf: Map<Block, string>; con
  */
 function inline(
   nodes: Inline[],
-  fmt: { bold?: boolean; italics?: boolean; code?: boolean; link?: boolean } = {},
+  fmt: { bold?: boolean; italics?: boolean; code?: boolean; link?: boolean; plainLink?: boolean } = {},
   theme: Theme,
 ): ParagraphChild[] {
   const out: ParagraphChild[] = [];
@@ -219,7 +222,16 @@ function inline(
           // Carried down rather than applied at the ExternalHyperlink, because
           // a link's appearance is a property of its runs and a link's text
           // can need more than one of them — see the `link` case below.
-          ...(fmt.link ? { style: 'Hyperlink', color: hex(theme.colors.ink) } : {}),
+          // `plainLink` keeps the Hyperlink style (so the run is still a
+          // link) and cancels the one thing it is borrowed for. A cover's
+          // links are contact details a reader copies off paper, not
+          // navigation, and html.ts drops the underline there too.
+          ...(fmt.link
+            ? {
+                style: 'Hyperlink', color: hex(theme.colors.ink),
+                ...(fmt.plainLink ? { underline: { type: UnderlineType.NONE } } : {}),
+              }
+            : {}),
           // html.ts: `code{ … font-size: 0.92 × bodyPt; }`. Changing the font
           // and not the size is what makes a monospaced word read as larger
           // than the prose around it — Consolas sets a taller x-height at the
@@ -467,7 +479,7 @@ function roundToDxa(widths: number[], total: number): number[] {
   return out;
 }
 
-function table(b: Extract<Block, { t: 'table' }>, theme: Theme): Table {
+function table(b: Extract<Block, { t: 'table' }>, theme: Theme, opts: { plainLink?: boolean } = {}): Table {
   const cols = Math.max(b.head.length, ...b.rows.map((r) => r.length));
   // A table with neither head nor rows makes `cols` 0, which lays out as an
   // empty <w:tblGrid/> and a row with no cells — structurally a table, visibly
@@ -502,7 +514,7 @@ function table(b: Extract<Block, { t: 'table' }>, theme: Theme): Table {
       children: [new Paragraph({
         style: head ? 'DocTableHeader' : 'DocTableCell',
         alignment: ALIGN[b.align[i] ?? 'l'],
-        children: inline(content ?? [], {}, theme),
+        children: inline(content ?? [], opts, theme),
       })],
     });
   return new Table({
@@ -592,16 +604,16 @@ function heatmapBlocks(b: Extract<Block, { t: 'heatmap' }>, theme: Theme): (Para
   return [table, spacer];
 }
 
-function blocks(b: Block, theme: Theme, listRefs: Map<Block, string>): (Paragraph | Table)[] {
+function blocks(b: Block, theme: Theme, listRefs: Map<Block, string>, opts: { plainLink?: boolean } = {}): (Paragraph | Table)[] {
   switch (b.t) {
     case 'heading': {
       const style = (['DocH1', 'DocH2', 'DocH3'] as const)[b.level - 1]!;
       // outlineLevel is what puts a heading in Word's navigation pane; the
       // style alone does not, because the style id is ours and not Heading1.
-      return [new Paragraph({ style, outlineLevel: b.level - 1, children: inline(b.text, {}, theme) })];
+      return [new Paragraph({ style, outlineLevel: b.level - 1, children: inline(b.text, opts, theme) })];
     }
     case 'para':
-      return [new Paragraph({ style: 'DocBody', children: inline(b.text, {}, theme) })];
+      return [new Paragraph({ style: 'DocBody', children: inline(b.text, opts, theme) })];
     case 'list': {
       // The reference — and so the abstractNum/num pair — was assigned once
       // per fragment in listNumbering(), keyed by this exact block. It is
@@ -613,7 +625,7 @@ function blocks(b: Block, theme: Theme, listRefs: Map<Block, string>): (Paragrap
       return b.items.map((it) => new Paragraph({
         style: 'DocList',
         numbering: { reference, level: 0 },
-        children: inline(it, {}, theme),
+        children: inline(it, opts, theme),
       }));
     }
     // html.ts: `table{ margin: 0 0 12pt }`. `<w:tbl>` has no spacing property
@@ -640,7 +652,7 @@ function blocks(b: Block, theme: Theme, listRefs: Map<Block, string>): (Paragrap
     // same amount, so the two add back up to what html.ts asks for:
     // TABLE_GAP_LINE_PT (the line) + TABLE_GAP_AFTER_PT (`after`) === 12.
     // Re-measured the same way with this paragraph: ~12.0pt.
-    case 'table': return [table(b, theme), new Paragraph({
+    case 'table': return [table(b, theme, opts), new Paragraph({
       // The run carries no text — it exists only to make the paragraph
       // mark's own size explicit rather than inherited from `Normal`, in
       // case some reader takes the run's font size into account for the
@@ -685,7 +697,7 @@ function blocks(b: Block, theme: Theme, listRefs: Map<Block, string>): (Paragrap
       }));
     }
     case 'quote':
-      return b.paras.map((p) => new Paragraph({ style: 'DocQuote', children: inline(p, {}, theme) }));
+      return b.paras.map((p) => new Paragraph({ style: 'DocQuote', children: inline(p, opts, theme) }));
     case 'rule':
       return [new Paragraph({
         children: [],
@@ -954,7 +966,7 @@ function imagePlaceholder(b: Extract<Block, { t: 'image' }>, theme: Theme): Para
  */
 function panelTable(children: (Paragraph | Table)[], theme: Theme): Table {
   const total = columnDxa(theme);
-  const border = { style: BorderStyle.SINGLE, size: eighthPt(0.75), color: hex(theme.colors.rule) };
+  const border = { style: BorderStyle.SINGLE, size: eighthPt(PANEL_BORDER_PT), color: hex(theme.colors.rule) };
   return new Table({
     layout: TableLayoutType.FIXED,
     width: { size: total, type: WidthType.DXA },
@@ -991,6 +1003,9 @@ function hairlineParagraph(children: ParagraphChild[] = []): Paragraph {
  * anywhere two tables can land next to each other, they will, and nothing
  * about the block list makes that visible to the code emitting it.
  */
+/** See html.ts's `.cover-top a, .cover-foot a{ text-decoration: none }`. */
+const COVER_LINKS = { plainLink: true } as const;
+
 function separateAdjacentTables(children: (Paragraph | Table)[]): (Paragraph | Table)[] {
   const out: (Paragraph | Table)[] = [];
   for (const [i, child] of children.entries()) {
@@ -1015,7 +1030,7 @@ function separateAdjacentTables(children: (Paragraph | Table)[]): (Paragraph | T
  * (see coverBody) — Word has no page-relative box for growing content — and
  * it is recorded in README.md's refusal register alongside it.
  */
-function statementTable(paras: Inline[][], theme: Theme): Table {
+function statementTable(paras: Inline[][], theme: Theme, opts: { plainLink?: boolean } = {}): Table {
   const total = columnDxa(theme);
   return new Table({
     layout: TableLayoutType.FIXED,
@@ -1035,7 +1050,7 @@ function statementTable(paras: Inline[][], theme: Theme): Table {
         margins: { top: dxa(18), bottom: dxa(18), left: dxa(22), right: dxa(22), marginUnitType: WidthType.DXA },
         children: paras.map((p, i) => new Paragraph({
           style: i === 0 ? 'CoverStatement' : 'DocBody',
-          children: inline(p, {}, theme),
+          children: inline(p, opts, theme),
         })),
       }),
     ] })],
@@ -1092,7 +1107,27 @@ function cornerMarkImage(theme: Theme): ImageRun | null {
       // page's physical corner where it sat beside the frame instead of on
       // it. Two aligns rather than two offsets: the aligns are exact, while
       // an offset would have to guess at the cell's own margins.
-      horizontalPosition: { relative: HorizontalPositionRelativeFrom.MARGIN, align: HorizontalPositionAlign.RIGHT },
+      // Horizontally this is an offset, not an align, and the difference is
+      // one border width. A Word table's border is drawn OUTSIDE the cell's
+      // declared width, so the panel's right hairline sits a border past the
+      // right margin — and aligning the glyph to the margin left that
+      // hairline showing along its outer edge, measured at 7px in a 8px/pt
+      // raster. The offset puts the glyph's right edge on the border's outer
+      // edge instead, so the corner of the frame disappears under it. The
+      // vertical align needs no such correction: a table's top border is
+      // drawn from the margin downwards, so TOP already lands on it.
+      //
+      // Half a border width more than the border itself, because where Word
+      // puts that hairline is not something this code can compute: measured
+      // at 8px/pt it began a quarter-point past the margin rather than on it.
+      // Landing exactly on a computed edge would leave the outcome to two
+      // roundings, and one pixel of grey along the glyph's edge is precisely
+      // what a reader sees. Overshooting costs nothing — the surplus falls in
+      // the page margin, which Word, unlike Chromium, is willing to draw in.
+      horizontalPosition: {
+        relative: HorizontalPositionRelativeFrom.MARGIN,
+        offset: emu(columnDxa(theme) / 20 - widthPt + PANEL_BORDER_PT * 1.5),
+      },
       verticalPosition: { relative: VerticalPositionRelativeFrom.MARGIN, align: VerticalPositionAlign.TOP },
       wrap: { type: TextWrappingType.NONE },
       margins: { top: 0, bottom: 0, left: 0, right: 0 },
@@ -1142,7 +1177,10 @@ function coverBody(doc: Doc, theme: Theme, refOf: Map<Block, string>, pageBlocks
   const subtitlePara = doc.meta.subtitle
     ? [new Paragraph({ style: 'DocSubtitle', children: [new TextRun({ text: doc.meta.subtitle })] })]
     : [];
-  const panelContent: (Paragraph | Table)[] = [titlePara, ...subtitlePara, ...panel.flatMap((b) => blocks(b, theme, refOf))];
+  // COVER_LINKS: a cover's links are contact details, not navigation — the
+  // same call html.ts makes in CSS. It applies to all three zones, and to
+  // nothing after the cover's own page break.
+  const panelContent: (Paragraph | Table)[] = [titlePara, ...subtitlePara, ...panel.flatMap((b) => blocks(b, theme, refOf, COVER_LINKS))];
   return [
     ...markPara,
     panelTable(panelContent, theme),
@@ -1150,8 +1188,8 @@ function coverBody(doc: Doc, theme: Theme, refOf: Map<Block, string>, pageBlocks
     // html.ts reads it; every other block in the zone renders as it always
     // does. Only a cover's flowing zone is read this way — an ordinary
     // document's quote never reaches here and stays a DocQuote paragraph.
-    ...flowing.flatMap((b) => (b.t === 'quote' ? [statementTable(b.paras, theme)] : blocks(b, theme, refOf))),
-    ...foot.flatMap((b) => blocks(b, theme, refOf)),
+    ...flowing.flatMap((b) => (b.t === 'quote' ? [statementTable(b.paras, theme, COVER_LINKS)] : blocks(b, theme, refOf, COVER_LINKS))),
+    ...foot.flatMap((b) => blocks(b, theme, refOf, COVER_LINKS)),
     ...restBlocks.flatMap((b) => blocks(b, theme, refOf)),
   ];
 }

@@ -1168,6 +1168,27 @@ describe('cover zones', () => {
     expect(xml.match(/<w:drawing>/g)?.length).toBe(1);
   });
 
+  it("a cover's links keep the Hyperlink style but drop its underline; elsewhere they keep it", async () => {
+    const link: Doc['blocks'][number] = {
+      t: 'para', text: [{ t: 'link', href: 'https://tebin.pro', children: [{ t: 'text', v: 'www.tebin.pro' }] }],
+    };
+    const d: Doc = {
+      meta: { title: 'Cover', lang: 'en', cover: true },
+      blocks: [para('lead'), rule, para('mid'), rule, link],
+    };
+    const xml = await docxPart(await renderDocx(d, markedTheme, { epochSeconds: EPOCH }), 'word/document.xml');
+    // Still a link, still the built-in character style — only the decoration
+    // the style is borrowed for is cancelled. html.ts does the same in CSS.
+    expect(xml).toContain('<w:hyperlink');
+    expect(xml).toContain('w:val="Hyperlink"');
+    expect(xml).toContain('<w:u w:val="none"/>');
+
+    // The same link in an ordinary document keeps the underline.
+    const plain = await docxPart(await renderDocx(doc(link), markedTheme, { epochSeconds: EPOCH }), 'word/document.xml');
+    expect(plain).toContain('w:val="Hyperlink"');
+    expect(plain).not.toContain('<w:u w:val="none"/>');
+  });
+
   it('separates two tables that would otherwise touch, because Word merges them into one', async () => {
     // The metadata table follows the panel directly. Merged, the seam becomes
     // an inside horizontal border — which every table here sets to none — so
