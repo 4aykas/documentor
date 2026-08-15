@@ -8,7 +8,7 @@ import { partitionCoverBlocks, ruleIndexes, splitAtFirstPagebreak } from './cove
 import { arimoFaceCss } from './fonts.js';
 import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
-import { SCALE_STEPS, stepOf, weekLabel } from './tint.js';
+import { SCALE_STEPS, STATEMENT_TINT, stepOf, weekLabel } from './tint.js';
 
 export function escapeHtml(s: string): string {
   return s
@@ -159,8 +159,9 @@ function coverTitleMarkup(doc: Doc): string {
 /**
  * The brand's corner glyph, inline, sized to `heightPt` and painted through
  * the same `.logo`-style class rules the wordmark uses (see the CSS below) —
- * `cls` picks which positioning rule places it (page corner vs. panel
- * corner). Empty when the theme carries no mark, so a theme that names none
+ * `cls` picks which positioning rule places it. There is one such placement
+ * left, the panel's corner: see coverMain on why the page-corner one is
+ * refused here. Empty when the theme carries no mark, so a theme that names none
  * draws nothing rather than an invented approximation — see this feature's
  * "do not draw an approximation with CSS borders" rule.
  */
@@ -203,9 +204,27 @@ function coverMain(doc: Doc, theme: Theme): string {
   // smaller frame than the page and a full-size mark would crowd it.
   const panelMark = cornerMarkMarkup(theme, 'corner-mark-panel', (theme.cornerMark?.heightPt ?? 0) * 0.6);
   const panelHtml = `<div class="cover-panel">${panelMark}${coverTitleMarkup(doc)}${panel.map(block).join('\n')}</div>`;
-  const flowingHtml = flowing.map(block).join('\n');
-  const pageMark = cornerMarkMarkup(theme, 'corner-mark-page', theme.cornerMark?.heightPt ?? 0);
-  const top = `<div class="cover-top">${panelHtml}${flowingHtml}</div>`;
+  // A `quote` between the rules is the cover's statement band (see the
+  // `.cover-statement` CSS). The modifier is what turns the zone into a flex
+  // column, and it is applied only when there is a band to centre: a cover
+  // with no quote keeps plain block flow, and with it the margin collapsing
+  // that flow implies, so nothing about such a page moves.
+  const hasStatement = flowing.some((b) => b.t === 'quote');
+  const mod = hasStatement ? ' cover-statement-zone' : '';
+  const flowingHtml = `<div class="cover-flow${mod}">${flowing.map(block).join('\n')}</div>`;
+  // No second, page-corner mark here. It was drawn for a while, offset past
+  // the print margin so it would bleed off the trimmed edge the way the real
+  // originals look — and it printed as nothing at all, every time. Chromium
+  // clips a page's content to the content box; the print margin is where the
+  // header template lives (see pdf.ts's runningHeader), and page content
+  // cannot paint into it. There is no offset that makes this work: at the
+  // margin's edge the glyph merely touches the text block, and past it the
+  // glyph is gone. So the PDF draws the one mark it can draw honestly, on the
+  // panel, and refuses the bleed rather than approximating it somewhere it
+  // does not belong. Recorded in README.md's refusal register. Word is not
+  // subject to this — an anchored picture there is positioned against the
+  // page itself, so docx.ts keeps its page-corner mark (see cornerMarkImage).
+  const top = `<div class="cover-top${mod}">${panelHtml}${flowingHtml}</div>`;
   // Only >=2 rules produce a foot (see partitionCoverBlocks); with exactly
   // one, `foot` is empty and there is nothing to pin to the bottom, so the
   // page-height flex frame — which exists only to push the foot down — is
@@ -213,7 +232,7 @@ function coverMain(doc: Doc, theme: Theme): string {
   const body = foot.length > 0
     ? `<div class="cover-frame">${top}<div class="cover-foot">${foot.map(block).join('\n')}</div></div>`
     : top;
-  return `${pageMark}${body}${restBlocks.map(block).join('\n')}`;
+  return `${body}${restBlocks.map(block).join('\n')}`;
 }
 
 function firstPageHeader(doc: Doc, theme: Theme): string {
@@ -353,7 +372,15 @@ body{ position: relative; }
    colors.rule is reused for the border rather than a new theme value —
    the same hairline colour already draws every rule and table edge on the
    page, and the panel is exactly that: a rule folded into a box. */
-.cover-panel{ position: relative; border: 0.75pt solid var(--rule); padding: 20pt 24pt; }
+/* margin-top is what makes the panel's corner mark drawable at all. The mark
+   below straddles the panel's top-right corner, which means 35% of it sits
+   ABOVE the panel — and a cover's panel is the first thing on the page, so
+   with the panel flush against the content box that 35% fell outside the
+   page and Chromium clipped it away. The printed mark was a thin hook where
+   the brand's is a solid block: bars measured 28% of the glyph instead of
+   the asset's 49%. This reserves the room the overhang needs (35% of 14.4pt
+   is 5.04pt) plus air, rather than shrinking the overhang to fit. */
+.cover-panel{ position: relative; border: 0.75pt solid var(--rule); padding: 20pt 24pt; margin-top: 12pt; }
 .cover-panel .doc-title--cover{ margin-top: 0; }
 /* min-height, not height: a cover whose panel + flowing content already
    exceeds one page overflows into a second page exactly as any other
@@ -365,22 +392,50 @@ body{ position: relative; }
    degrades to ordinary top-to-bottom flow. */
 .cover-frame{ display: flex; flex-direction: column; justify-content: space-between; min-height: ${(trim.h - page.marginPt * 2).toFixed(2)}pt; }
 .cover-foot{ margin-top: 24pt; }
-/* The brand's corner glyph (see theme.cornerMark) at the page's physical
-   top-right, offset past the print margin so part of it bleeds off the
-   trimmed edge rather than merely touching it — the same look the three
-   real originals this feature was built from carry. The extra offset is
-   35% of the mark's own height, a taste call, not a measured brand value:
-   the brand book prices the glyph's colour and shape, not how far off the
-   page it hangs. */
-.corner-mark-page{ position: absolute; top: -${(page.marginPt + (theme.cornerMark?.heightPt ?? 0) * 0.35).toFixed(2)}pt; right: -${(page.marginPt + (theme.cornerMark?.heightPt ?? 0) * 0.35).toFixed(2)}pt; }
-/* The second placement: straddling the panel's own top-right corner. */
-.corner-mark-panel{ position: absolute; top: 0; right: 0; transform: translate(35%, -35%); }
+/* The statement band, and the flex column that positions it. Both are applied
+   only to a cover whose flowing zone carries a quote (see coverMain), so a
+   cover without one is untouched by every rule in this group.
+
+   What it solves: the three real originals leave the middle of the cover
+   empty, and a page that is a panel at the top, four lines under it and an
+   address at the foot reads as unfinished rather than as composed. The band
+   is the middle — but its text is the template's, verbatim, like every other
+   sentence a proposal prints. This adds a place to put a sentence, not a
+   sentence.
+
+   An auto margin on both sides is the whole positioning trick: a flex item's auto margins
+   absorb the free space of the column, half above and half below, which drops
+   the band into the optical middle and pushes the lines after it (the
+   author's contact block) down to sit just above the foot. Three groups, each
+   where it belongs, with no fixed heights to go wrong when a project name
+   runs to two lines. */
+.cover-top.cover-statement-zone, .cover-flow.cover-statement-zone{ display: flex; flex-direction: column; flex: 1; }
+/* Brand as a fill and brand as large display type: the two things
+   colors.brandOnLight is allowed to paint. The fill is that same brand mixed
+   toward white by STATEMENT_TINT — computed, not a second colour somebody has
+   to declare — so a theme with any brand colour gets a readable band without
+   the "no colour clears AA on both surfaces" problem colors.brandOnDark
+   exists to refuse. */
+.cover-statement-zone > blockquote{ margin: auto 0; padding: 18pt 22pt; color: var(--ink);
+  background: color-mix(in srgb, var(--brand) ${Math.round(STATEMENT_TINT * 100)}%, white);
+  border-left: 4pt solid var(--brand); }
+.cover-statement-zone > blockquote > p{ margin-bottom: ${(ty.bodyPt * 0.5).toFixed(1)}pt; }
+.cover-statement-zone > blockquote > p:first-child{ font-size: ${(ty.titlePt * 0.5).toFixed(1)}pt;
+  line-height: 1.15; font-weight: 700; color: var(--brand); }
+.cover-statement-zone > blockquote > p:last-child{ margin-bottom: 0; }
+/* Straddling the panel's top border, flush with its right edge. The overhang
+   is vertical only: a cover's panel spans the full content width, so its
+   right border already sits on the boundary Chromium clips at, and the 35%
+   this used to translate rightwards was cut off there — the printed glyph
+   measured 9.0pt wide against the 14.2pt it should be. Up is the one
+   direction with room, and .cover-panel's margin-top reserves it. */
+.corner-mark-panel{ position: absolute; top: 0; right: 0; transform: translateY(-35%); }
 /* Same paint-by-class rule as .logo (see its own comment above), extended to
    the two corner-mark placements rather than duplicated for them. */
-.corner-mark-page svg, .corner-mark-panel svg{ height: 100%; width: auto; display: block; }
-.corner-mark-page .c-brand, .corner-mark-panel .c-brand{ fill: var(--brand); }
-.corner-mark-page .c-muted, .corner-mark-panel .c-muted{ fill: var(--muted); }
-.corner-mark-page .c-ink, .corner-mark-panel .c-ink{ fill: var(--ink); }`;
+.corner-mark-panel svg{ height: 100%; width: auto; display: block; }
+.corner-mark-panel .c-brand{ fill: var(--brand); }
+.corner-mark-panel .c-muted{ fill: var(--muted); }
+.corner-mark-panel .c-ink{ fill: var(--ink); }`;
 
   const cover = doc.meta.cover === true;
   const headerHtml = cover ? '' : firstPageHeader(doc, theme);

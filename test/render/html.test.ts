@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildHtml, escapeHtml } from '../../src/render/html.js';
 import { resolveTheme } from '../../src/theme/resolve.js';
-import type { Doc } from '../../src/ir/types.js';
+import type { Block, Doc } from '../../src/ir/types.js';
 
 const theme = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C' } });
 const doc: Doc = {
@@ -318,13 +318,15 @@ describe('cover zones', () => {
     expect(html).not.toContain('class="cover-frame"');
     expect(html).not.toContain('class="cover-foot"');
     // The title and the leading block sit inside the panel div.
-    const panel = html.match(/<div class="cover-panel">([\s\S]*?)<\/div>\s*<p>tail/)?.[1] ?? '';
+    const panel = html.match(/<div class="cover-panel">([\s\S]*?)<\/div>\s*<div class="cover-flow">/)?.[1] ?? '';
     expect(panel).toContain('Cover');
     expect(panel).toContain('lead');
     expect(html).toContain('<p>tail</p>');
-    // A panel exists, so both corner-mark placements are drawn.
-    expect(html).toContain('class="corner-mark-page"');
+    // A panel exists, so the panel's corner mark is drawn — and only that one.
+    // The page-corner placement is refused (see coverMain): a PDF page has no
+    // bleed, so a mark offset past the print margin printed as nothing at all.
     expect(html).toContain('class="corner-mark-panel"');
+    expect(html).not.toContain('corner-mark-page');
   });
 
   it('a cover with two rules draws a panel, flowing content, and a foot pinned to the bottom via .cover-frame', async () => {
@@ -338,8 +340,53 @@ describe('cover zones', () => {
     expect(html).toContain('class="cover-foot"');
     const foot = html.match(/<div class="cover-foot">([\s\S]*?)<\/div>\s*<\/div>/)?.[1] ?? '';
     expect(foot).toContain('foot content');
-    expect(html).toContain('class="corner-mark-page"');
     expect(html).toContain('class="corner-mark-panel"');
+    expect(html).not.toContain('corner-mark-page');
+  });
+
+  it('the mark hangs above the panel only — never past its right edge, which is where Chromium clips', async () => {
+    const doc: Doc = { meta: { title: 'Cover', lang: 'en', cover: true }, blocks: [para('lead'), rule, para('tail')] };
+    const html = await buildHtml(doc, markedTheme);
+    // A rightwards translate put 35% of the glyph outside the content box. Two
+    // things went wrong there, and both are regressions worth a test: the
+    // overhang itself was clipped away, and the horizontal overflow made
+    // Chromium shrink the whole page to fit, so every measurement on the cover
+    // came out ~9% small.
+    expect(html).toContain('.corner-mark-panel{ position: absolute; top: 0; right: 0; transform: translateY(-35%); }');
+    // And the panel reserves the room the upward overhang needs, or the top of
+    // the glyph falls off the page instead.
+    expect(html).toMatch(/\.cover-panel\{[^}]*margin-top: 12pt/);
+  });
+
+  it('a quote in a cover flowing zone becomes the statement band; the same quote elsewhere stays a quote', async () => {
+    const quote: Block = { t: 'quote', paras: [[{ t: 'text', v: 'Big line' }], [{ t: 'text', v: 'small line' }]] };
+    const cover: Doc = {
+      meta: { title: 'Cover', lang: 'en', cover: true },
+      blocks: [para('lead'), rule, quote, para('after'), rule, para('foot content')],
+    };
+    const html = await buildHtml(cover, markedTheme);
+    expect(html).toContain('<div class="cover-flow cover-statement-zone">');
+    expect(html).toContain('<div class="cover-top cover-statement-zone">');
+    expect(html).toContain('<blockquote><p>Big line</p><p>small line</p></blockquote>');
+    // The band's fill is the brand mixed toward white by the shared constant,
+    // not a second colour anybody had to declare.
+    expect(html).toContain('background: color-mix(in srgb, var(--brand) 8%, white)');
+
+    // Same document, no quote: the zone keeps plain block flow, so nothing
+    // about a cover that has no statement moves.
+    const plain: Doc = {
+      meta: { title: 'Cover', lang: 'en', cover: true },
+      blocks: [para('lead'), rule, para('after'), rule, para('foot content')],
+    };
+    const plainHtml = await buildHtml(plain, markedTheme);
+    expect(plainHtml).toContain('<div class="cover-flow">');
+    expect(plainHtml).not.toContain('cover-statement-zone">');
+
+    // And an ordinary document's quote is untouched by any of it.
+    const ordinary: Doc = { meta: { title: 'T', lang: 'en' }, blocks: [quote] };
+    const ordinaryHtml = mainOf(await buildHtml(ordinary, markedTheme));
+    expect(ordinaryHtml).toContain('<blockquote><p>Big line</p><p>small line</p></blockquote>');
+    expect(ordinaryHtml).not.toContain('cover-statement-zone');
   });
 
   it('draws no corner mark at all when the theme carries none, even with a panel', async () => {

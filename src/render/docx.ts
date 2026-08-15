@@ -19,7 +19,7 @@ import { partitionCoverBlocks, ruleIndexes, splitAtFirstPagebreak } from './cove
 import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
 import { normalizeDocx } from './normalize-docx.js';
-import { mixToWhite, SCALE_STEPS, stepOf, weekLabel } from './tint.js';
+import { mixToWhite, SCALE_STEPS, STATEMENT_TINT, stepOf, weekLabel } from './tint.js';
 
 const halfPt = (pt: number): number => Math.round(pt * 2);
 const dxa = (pt: number): number => Math.round(pt * 20);
@@ -82,6 +82,14 @@ function styles(theme: Theme) {
       para('DocTitleCover', 'Doc Title Cover', { size: halfPt(ty.titlePt), bold: true, color: hex(c.title) }, {
         // html.ts: `.doc-title{ margin: 22pt 0 0; }` (shared with DocTitle)
         spacing: { before: dxa(22), after: 0 },
+      }),
+      // The first paragraph of a cover's statement band (see statementTable).
+      // html.ts: `.cover-statement-zone > blockquote > p:first-child{
+      // font-size: 0.5×titlePt; font-weight: 700; color: var(--brand); }` —
+      // large display type, which is what brandOnLight is allowed to paint.
+      para('CoverStatement', 'Cover Statement', { size: halfPt(ty.titlePt * 0.5), bold: true, color: hex(c.brandOnLight) }, {
+        // html.ts: the band's own paragraphs carry `margin-bottom: 0.5×bodyPt`.
+        spacing: { before: 0, after: dxa(ty.bodyPt * 0.5) },
       }),
       para('DocSubtitle', 'Doc Subtitle', { size: halfPt(ty.bodyPt), color: hex(c.muted) }, {
         // html.ts: `.doc-subtitle{ margin: 4pt 0 0; }`
@@ -964,6 +972,48 @@ function panelTable(children: (Paragraph | Table)[], theme: Theme): Table {
 }
 
 /**
+ * A cover's statement band: html.ts's `.cover-statement-zone > blockquote`,
+ * built the way panelTable above builds the panel — a single-cell table,
+ * because the band holds several paragraphs and a paragraph's own shading
+ * would stop at each one's text rather than run the width of the page.
+ *
+ * The fill is the theme's brand mixed toward white by the same
+ * STATEMENT_TINT the stylesheet spends, through the same mixToWhite the
+ * heatmap's cells use — see tint.ts for why that arithmetic lives in one
+ * place. What Word does NOT get is html.ts's `margin: auto 0`: the band sits
+ * in ordinary paragraph flow, in reading order, not centred in the page's
+ * slack. That is the same limitation, for the same reason, as the cover foot
+ * (see coverBody) — Word has no page-relative box for growing content — and
+ * it is recorded in README.md's refusal register alongside it.
+ */
+function statementTable(paras: Inline[][], theme: Theme): Table {
+  const total = columnDxa(theme);
+  return new Table({
+    layout: TableLayoutType.FIXED,
+    width: { size: total, type: WidthType.DXA },
+    columnWidths: [total],
+    borders: {
+      top: NO_BORDER, bottom: NO_BORDER, right: NO_BORDER,
+      insideHorizontal: NO_BORDER, insideVertical: NO_BORDER,
+      // html.ts: `border-left: 4pt solid var(--brand);`
+      left: { style: BorderStyle.SINGLE, size: eighthPt(4), color: hex(theme.colors.brandOnLight) },
+    },
+    rows: [new TableRow({ children: [
+      new TableCell({
+        width: { size: total, type: WidthType.DXA },
+        shading: { type: ShadingType.CLEAR, color: 'auto', fill: hex(mixToWhite(theme.colors.brandOnLight, STATEMENT_TINT)) },
+        // html.ts: `padding: 18pt 22pt;`
+        margins: { top: dxa(18), bottom: dxa(18), left: dxa(22), right: dxa(22), marginUnitType: WidthType.DXA },
+        children: paras.map((p, i) => new Paragraph({
+          style: i === 0 ? 'CoverStatement' : 'DocBody',
+          children: inline(p, {}, theme),
+        })),
+      }),
+    ] })],
+  });
+}
+
+/**
  * The brand's corner glyph, anchored to the page's own top-right corner —
  * not to the paragraph it is attached to, and not to the margin box. This is
  * the one piece of this feature Word *can* place with genuine page-relative
@@ -1044,7 +1094,11 @@ function coverBody(doc: Doc, theme: Theme, refOf: Map<Block, string>, pageBlocks
   const panelContent: (Paragraph | Table)[] = [titlePara, ...subtitlePara, ...panel.flatMap((b) => blocks(b, theme, refOf))];
   return [
     panelTable(panelContent, theme),
-    ...flowing.flatMap((b) => blocks(b, theme, refOf)),
+    // A `quote` between the rules is the cover's statement band, exactly as
+    // html.ts reads it; every other block in the zone renders as it always
+    // does. Only a cover's flowing zone is read this way — an ordinary
+    // document's quote never reaches here and stays a DocQuote paragraph.
+    ...flowing.flatMap((b) => (b.t === 'quote' ? [statementTable(b.paras, theme)] : blocks(b, theme, refOf))),
     ...foot.flatMap((b) => blocks(b, theme, refOf)),
     ...restBlocks.flatMap((b) => blocks(b, theme, refOf)),
   ];

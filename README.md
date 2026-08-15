@@ -132,6 +132,28 @@ what produces all three zones. See the Word limit below for the one place
 this degrades: Word cannot pin the foot to the page bottom the way PDF/HTML
 do.
 
+**A blockquote between those rules becomes the cover's statement band** — a
+tinted brand panel with the first line set as large display type, dropped
+into the middle of the page by giving it the zone's slack, half above and
+half below. It exists because the middle of a cover is otherwise empty, and
+a page that is a panel, four lines and an address reads as unfinished. Its
+text is still the template's own, verbatim: this is a place to put a
+sentence, not a sentence documentor writes. Elsewhere in a document — and on
+a cover with no rules — a blockquote stays a blockquote. Word draws the same
+band, in ordinary paragraph flow rather than centred, for the same reason it
+cannot pin the foot.
+
+Two more things this refuses rather than fakes. **The corner mark does not
+bleed off the PDF's page corner.** The real offers show the brand glyph in
+the very corner of the sheet; Chromium clips a page's content to the content
+box, and the print margin is where the running header lives, so page content
+cannot paint there. An offset large enough to look like a bleed put the glyph
+entirely outside the page — and, because the overflow made the layout wider
+than the sheet, made Chromium shrink the whole cover about 9% to fit. The PDF
+now draws one mark, straddling the panel's top border, at its true
+proportions. Word is not subject to this: an anchored picture there is
+positioned against the page itself, so the DOCX keeps its page-corner mark.
+
 `documentor inspect <data.json>` reports what would be assembled — the
 title, the team, the computed budget total, every validation error — and
 writes nothing.

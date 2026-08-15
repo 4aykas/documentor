@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Doc } from '../../src/ir/types.js';
 import { columnDxa, renderDocx } from '../../src/render/docx.js';
-import { mixToWhite } from '../../src/render/tint.js';
+import { mixToWhite, STATEMENT_TINT } from '../../src/render/tint.js';
 import { loadTheme, resolveTheme } from '../../src/theme/resolve.js';
 import { docxEntries, docxPart } from '../helpers/docx-parts.js';
 
@@ -1151,6 +1151,34 @@ describe('cover zones', () => {
     // panel's own title paragraph (see cornerMarkImage/coverBody).
     expect(xml.match(/<w:drawing>/g)?.length).toBe(1);
     expect(xml).toContain('<wp:anchor');
+  });
+
+  it('a quote in a cover flowing zone becomes a shaded statement table; the same quote elsewhere stays a DocQuote', async () => {
+    const quote: Doc['blocks'][number] = {
+      t: 'quote',
+      paras: [[{ t: 'text', v: 'Big line' }], [{ t: 'text', v: 'small line' }]],
+    };
+    const d: Doc = {
+      meta: { title: 'Cover', lang: 'en', cover: true },
+      blocks: [para('lead'), rule, quote, rule, para('foot content')],
+    };
+    const xml = await docxPart(await renderDocx(d, markedTheme, { epochSeconds: EPOCH }), 'word/document.xml');
+    const tables = xml.match(/<w:tbl>[\s\S]*?<\/w:tbl>/g) ?? [];
+    // Two single-cell tables now: the panel, then the statement band.
+    expect(tables).toHaveLength(2);
+    const band = tables[1]!;
+    expect(band).toContain('Big line');
+    expect(band).toContain('small line');
+    expect(band).toContain('w:val="CoverStatement"');
+    // The fill is brandOnLight mixed 8% toward white — the same arithmetic and
+    // the same constant html.ts spends, so the two renderers cannot drift.
+    expect(band).toContain(`w:fill="${mixToWhite('#DA291C', STATEMENT_TINT).replace('#', '')}"`);
+
+    // An ordinary document's quote is untouched: no table, still DocQuote.
+    const ordinary = doc(quote);
+    const plain = await docxPart(await renderDocx(ordinary, markedTheme, { epochSeconds: EPOCH }), 'word/document.xml');
+    expect(plain).not.toContain('<w:tbl>');
+    expect(plain).toContain('w:val="DocQuote"');
   });
 
   it('a cover with two rules puts the foot in plain document flow — Word carries no page-bottom pin here', async () => {

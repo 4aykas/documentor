@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ingestMarkdown } from '../../src/ingest/md.js';
+import type { Block, Doc } from '../../src/ir/types.js';
 import { renderPdf } from '../../src/render/pdf.js';
 import { loadTheme } from '../../src/theme/resolve.js';
 import { rasterPages } from '../helpers/raster.js';
@@ -58,6 +59,48 @@ describe('kitchen sink baseline (local pixels only)', () => {
       expect(existsSync(golden), `no baseline for ${name} — review test/baseline/__actual__/${name} and copy it into __baseline__ if it is correct`).toBe(true);
       expect(png.equals(await readFile(golden)), `${name} differs from its baseline; compare it with test/baseline/__actual__/${name}`).toBe(true);
     }
+  });
+});
+
+/**
+ * A cover page had no picture in this file for its whole life, and two faults
+ * lived in it undetected through 618 passing tests: the panel's corner mark
+ * was clipped to a thin hook (bars measured 28% of the glyph against the
+ * asset's 49%), and the overhang that clipped it also overflowed the content
+ * box horizontally, which made Chromium shrink the entire page to fit — every
+ * measurement on the cover came out about 9% small. Neither is expressible as
+ * a markup assertion: the markup was correct both times. This is the
+ * instrument that sees them.
+ *
+ * The document is built as IR rather than ingested from a fixture file so the
+ * three things under test — the panel, the statement band between the rules,
+ * and the foot after the last one — are visible here, in the test, instead of
+ * being a property of a Markdown file somebody has to open to understand.
+ */
+describe('a TEBIN cover page (local pixels only)', () => {
+  it('page one matches its committed image', async () => {
+    const p = (v: string): Block => ({ t: 'para', text: [{ t: 'text', v }] });
+    const doc: Doc = {
+      meta: { title: 'COMMERCIAL PROPOSAL', lang: 'en', cover: true },
+      blocks: [
+        p('ENGINEERING SERVICE'),
+        p('PROJECT — Baseline Fixture'),
+        { t: 'rule' },
+        p('Reference 0000-00-00A'),
+        { t: 'quote', paras: [[{ t: 'text', v: 'Baseline Fixture' }], [{ t: 'text', v: 'The statement band, centred in the cover’s middle.' }]] },
+        p('A. Author'),
+        { t: 'rule' },
+        p('TEBIN.PRO sp. z o.o.'),
+      ],
+    };
+    const theme = await loadTheme('tebin');
+    resetPdfjsWorkerGlobal();
+    const pages = await rasterPages(await renderPdf(doc, theme, { epochSeconds: EPOCH, browser }));
+    await mkdir(ACTUAL, { recursive: true });
+    await writeFile(join(ACTUAL, 'tebin-cover-01.png'), pages[0]!);
+    const golden = join(BASELINE, 'tebin-cover-01.png');
+    expect(existsSync(golden), 'no baseline yet — review test/baseline/__actual__/tebin-cover-01.png and copy it into __baseline__ if it is correct').toBe(true);
+    expect(pages[0]!.equals(await readFile(golden))).toBe(true);
   });
 });
 

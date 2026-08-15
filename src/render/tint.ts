@@ -27,4 +27,13 @@ export function mixToWhite(hex: string, t: number): string {
   return `#${ch(16)}${ch(8)}${ch(0)}`.toUpperCase();
 }
 
+/** The tint behind a cover's statement band (see html.ts's `.cover-statement`
+ *  and docx.ts's statementTable). It lives here, beside the heatmap's own
+ *  fractions, for the one reason this module exists: two renderers computing
+ *  the same fill two different ways is drift the agreement suite has to
+ *  catch, and one constant makes it impossible. Paler than the palest heatmap
+ *  step on purpose — the band carries body text, which the heatmap's cells do
+ *  not. */
+export const STATEMENT_TINT = 0.08;
+
 export const weekLabel = (i: number): string => `W${String(i + 1).padStart(2, '0')}`;
