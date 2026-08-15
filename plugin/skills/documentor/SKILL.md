@@ -205,6 +205,10 @@ The command assembles, it does not write: every sentence comes from the data
 file or the template. A missing piece is a build error naming what is
 missing — relay it and ask, never fill the gap yourself.
 
+On a cover template (`meta.cover: true`), `rule` blocks lay out the page: the
+first closes a bordered panel, the last opens a foot, two or more give you
+both — see the Word limit above for where the foot stops pinning.
+
 ## What this skill is not
 
 A second execution path. It never re-implements ingesting, rendering,

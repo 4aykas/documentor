@@ -89,9 +89,10 @@ deliberate rather than unfinished:
   cover (`meta.cover: true`) with two or more `rule` blocks, PDF/HTML place
   the panel at the top, hairline-bordered, and the blocks after the last rule
   at the bottom of the page (see src/render/cover-zones.ts). Word carries the
-  panel (a bordered single-cell table) and the brand's corner mark (a real
-  anchored picture, pinned to the page corner the same way any Word document
-  with a floating image is) but not the foot's position: Word's paragraph
+  panel (a bordered single-cell table) and the brand's corner mark once, on
+  the panel (a real anchored picture, pinned the same way any Word document
+  with a floating image is) — HTML/PDF draw it twice, at the page corner and
+  again on the panel — but not the foot's position: Word's paragraph
   flow has no primitive for "this variable-length group of blocks sits at the
   bottom of the page" the way CSS flexbox does — only a fixed-size anchored
   object (which the corner mark already uses) or the deprecated `w:framePr`
@@ -119,6 +120,17 @@ this one path, because a reference register is searched, not read.
 `templates/offer.example.md` is a generic example; a real template carries a
 company's own commercial terms and belongs outside a public repository, the
 way this repository keeps its own brand book out of git.
+
+**On a cover page (`meta.cover: true`), a template's `rule` blocks lay out
+the page.** The first `rule` closes a bordered panel holding the title and
+everything above it; the last `rule` opens a foot holding everything below
+it — one at the top, one at the bottom, and whatever falls between flows as
+ordinary content. No `rule` at all leaves the cover as plain flow, title then
+blocks, unchanged from before this existed. Exactly one `rule` gives you a
+panel and nothing to pin against, so only the panel appears. Two or more is
+what produces all three zones. See the Word limit below for the one place
+this degrades: Word cannot pin the foot to the page bottom the way PDF/HTML
+do.
 
 `documentor inspect <data.json>` reports what would be assembled — the
 title, the team, the computed budget total, every validation error — and
