@@ -971,6 +971,35 @@ function panelTable(children: (Paragraph | Table)[], theme: Theme): Table {
   });
 }
 
+/** A paragraph with no content and no height worth measuring: one twentieth
+ *  of a point, no spacing above or below. Used wherever the format needs a
+ *  paragraph to exist without the page showing one. */
+function hairlineParagraph(children: ParagraphChild[] = []): Paragraph {
+  return new Paragraph({ children, spacing: { before: 0, after: 0, line: 1, lineRule: LineRuleType.EXACT } });
+}
+
+/**
+ * Word merges two tables that touch. With no paragraph between them the
+ * reader treats them as a single table over a shared grid, and that is not
+ * cosmetic: the seam becomes an *inside* horizontal border, which every table
+ * built here sets to none. A cover's panel lost its bottom edge entirely the
+ * moment the metadata table followed it — the frame printed open at the
+ * bottom, in Word only, while the PDF drew all four sides. Word also reported
+ * the two as one 6x2 table, which is how it was finally caught.
+ *
+ * Applied to the whole body rather than at the one place it was noticed:
+ * anywhere two tables can land next to each other, they will, and nothing
+ * about the block list makes that visible to the code emitting it.
+ */
+function separateAdjacentTables(children: (Paragraph | Table)[]): (Paragraph | Table)[] {
+  const out: (Paragraph | Table)[] = [];
+  for (const [i, child] of children.entries()) {
+    if (i > 0 && children[i - 1] instanceof Table && child instanceof Table) out.push(hairlineParagraph());
+    out.push(child);
+  }
+  return out;
+}
+
 /**
  * A cover's statement band: html.ts's `.cover-statement-zone > blockquote`,
  * built the way panelTable above builds the panel — a single-cell table,
@@ -1092,15 +1121,30 @@ function cornerMarkImage(theme: Theme): ImageRun | null {
 function coverBody(doc: Doc, theme: Theme, refOf: Map<Block, string>, pageBlocks: Block[], restBlocks: Block[], ruleIdxs: number[]): (Paragraph | Table)[] {
   const { panel, flowing, foot } = partitionCoverBlocks(pageBlocks, ruleIdxs);
   const mark = cornerMarkImage(theme);
+  // The mark hangs off a paragraph of its own, ahead of the panel, rather than
+  // off the panel's title paragraph inside it. An anchor inside a table cell
+  // is bound to that cell: `relativeFrom="margin"` then means the CELL's
+  // margin, so Word seated the glyph 24pt in and 20pt down from the panel's
+  // corner — exactly the cell margins panelTable sets — floating inside the
+  // frame instead of sitting on it. `layoutInCell="0"` is the attribute that
+  // is supposed to opt out, and Word ignores it here (it still reports the
+  // shape as laid out in the cell, and still draws it there), so the fix is
+  // to not be in the cell. The carrier paragraph is one point tall with no
+  // spacing and holds nothing else; the image floats with no wrapping, so it
+  // neither moves the panel nor is moved by it.
+  const markPara = mark
+    ? [hairlineParagraph([mark])]
+    : [];
   const titlePara = new Paragraph({
     style: 'DocTitleCover',
-    children: [...(mark ? [mark] : []), new TextRun({ text: doc.meta.title })],
+    children: [new TextRun({ text: doc.meta.title })],
   });
   const subtitlePara = doc.meta.subtitle
     ? [new Paragraph({ style: 'DocSubtitle', children: [new TextRun({ text: doc.meta.subtitle })] })]
     : [];
   const panelContent: (Paragraph | Table)[] = [titlePara, ...subtitlePara, ...panel.flatMap((b) => blocks(b, theme, refOf))];
   return [
+    ...markPara,
     panelTable(panelContent, theme),
     // A `quote` between the rules is the cover's statement band, exactly as
     // html.ts reads it; every other block in the zone renders as it always
@@ -1286,7 +1330,7 @@ export async function renderDocx(doc: Doc, theme: Theme, opts: { epochSeconds: n
         },
       },
       headers: { default: runningHeader(doc, theme), first: firstPageHeader(doc, theme) },
-      children: bodyChildren,
+      children: separateAdjacentTables(bodyChildren),
     }],
   }));
 

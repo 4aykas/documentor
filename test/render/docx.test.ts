@@ -1153,6 +1153,44 @@ describe('cover zones', () => {
     expect(xml).toContain('<wp:anchor');
   });
 
+  it('the mark is anchored outside the panel table, or Word seats it against the cell instead of the frame', async () => {
+    const d: Doc = { meta: { title: 'Cover', lang: 'en', cover: true }, blocks: [para('lead'), rule, para('tail')] };
+    const xml = await docxPart(await renderDocx(d, markedTheme, { epochSeconds: EPOCH }), 'word/document.xml');
+    // An anchor inside a table cell is bound to that cell, so `relativeFrom
+    // ="margin"` means the cell's margin: Word drew the glyph 24pt in and
+    // 20pt down from the panel's corner, floating inside the frame. It
+    // ignores `layoutInCell="0"`, so the only fix is to anchor elsewhere.
+    const table = xml.match(/<w:tbl>[\s\S]*?<\/w:tbl>/)?.[0] ?? '';
+    expect(table).toContain('Cover');
+    expect(table, 'the mark must not be inside the panel table').not.toContain('<w:drawing>');
+    expect(xml.indexOf('<w:drawing>')).toBeLessThan(xml.indexOf('<w:tbl>'));
+    expect(xml).toContain('<wp:anchor');
+    expect(xml.match(/<w:drawing>/g)?.length).toBe(1);
+  });
+
+  it('separates two tables that would otherwise touch, because Word merges them into one', async () => {
+    // The metadata table follows the panel directly. Merged, the seam becomes
+    // an inside horizontal border — which every table here sets to none — so
+    // the panel printed with no bottom edge in Word while the PDF drew four.
+    const table: Doc['blocks'][number] = {
+      t: 'table', head: [[{ t: 'text', v: 'k' }], [{ t: 'text', v: 'v' }]],
+      rows: [[[{ t: 'text', v: 'a' }], [{ t: 'text', v: 'b' }]]], align: ['l', 'l'],
+    };
+    const d: Doc = {
+      meta: { title: 'Cover', lang: 'en', cover: true },
+      blocks: [para('lead'), rule, table, rule, para('foot content')],
+    };
+    const xml = await docxPart(await renderDocx(d, markedTheme, { epochSeconds: EPOCH }), 'word/document.xml');
+    expect(xml).not.toContain('</w:tbl><w:tbl>');
+
+    // And the same guard on an ordinary document, where two tables can also
+    // land next to each other with no heading between them.
+    const plainDoc = doc(table, table);
+    const plainXml = await docxPart(await renderDocx(plainDoc, markedTheme, { epochSeconds: EPOCH }), 'word/document.xml');
+    expect(plainXml).not.toContain('</w:tbl><w:tbl>');
+    expect(plainXml.match(/<w:tbl>/g)?.length).toBe(2);
+  });
+
   it('a quote in a cover flowing zone becomes a shaded statement table; the same quote elsewhere stays a DocQuote', async () => {
     const quote: Doc['blocks'][number] = {
       t: 'quote',

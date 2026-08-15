@@ -149,10 +149,17 @@ the very corner of the sheet; Chromium clips a page's content to the content
 box, and the print margin is where the running header lives, so page content
 cannot paint there. An offset large enough to look like a bleed put the glyph
 entirely outside the page — and, because the overflow made the layout wider
-than the sheet, made Chromium shrink the whole cover about 9% to fit. The PDF
-now draws one mark, straddling the panel's top border, at its true
-proportions. Word is not subject to this: an anchored picture there is
-positioned against the page itself, so the DOCX keeps its page-corner mark.
+than the sheet, made Chromium shrink the whole cover about 9% to fit. The
+mark is seated in the panel's own top-right corner instead, overlapping
+inwards — which is where the real offers put the second of their two marks
+anyway — and Word seats it in the same corner, so the two renderers agree.
+
+**And the mark reaches Word as a raster derived from its vector, not as a
+second vendored file.** Word cannot be relied on to draw an SVG, so it needs
+a PNG; a PNG vendored beside the SVG drifted from it, silently, and printed a
+glyph whose vertical bar stopped short of the corner. `npm run theme:tebin`
+now rasterises `corner-mark.svg` through the same Chromium that prints the
+PDFs. Do not re-vendor a raster.
 
 `documentor inspect <data.json>` reports what would be assembled — the
 title, the team, the computed budget total, every validation error — and
