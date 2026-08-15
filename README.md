@@ -77,6 +77,19 @@ deliberate rather than unfinished:
   Nothing else is silently dropped either: comments, tracked changes,
   footnotes, text boxes and the old letterhead are all named in the run's
   report.
+- **A table's columns are sized from their content, by one solver both
+  renderers call** (src/render/table-width.ts). Widths are proportional to
+  what each column actually carries, with a floor so a one-character column
+  is still a column and a ceiling so one verbose column cannot swallow the
+  table. The two used to answer this separately — Word computed it, the PDF
+  left it to Chromium — and the same register wrapped to a second line in one
+  and left a wide unused strip in the other.
+- **A table too wide for the portrait text column is printed on a landscape
+  sheet of its own**, and only that table: the page turns back for whatever
+  follows. "Too wide" means the columns cannot each have a readable minimum,
+  not merely that the text wraps. Word has no equivalent — it keeps such a
+  table portrait, with the same proportions — so a schedule with a column per
+  week is the one place the two documents genuinely differ.
 - **Writing Word embeds a PNG, a JPEG, a GIF or a BMP** — the same four reading
   a `.docx` carries, so a `.docx` in gives you every picture back in the
   `.docx` out. A picture needs its natural proportions, and those come from

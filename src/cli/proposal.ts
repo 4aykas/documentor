@@ -31,9 +31,15 @@ const USAGE_LINE = `  documentor proposal <data.json> [--to ${[...FORMATS].join(
  *  is module-private, and sharing it would thread a Browser parameter through
  *  an export for no caller but this. The `never` default keeps the two in
  *  step: a format added to FORMATS breaks both files until both render it. */
-async function renderTo(format: Format, doc: Doc, theme: Theme, epochSeconds: number, browser?: Browser): Promise<Buffer> {
+async function renderTo(format: Format, doc: Doc, theme: Theme, epochSeconds: number, onWarn: (m: string) => void, browser?: Browser): Promise<Buffer> {
   switch (format) {
-    case 'pdf': return renderPdf(doc, theme, { epochSeconds, ...(browser === undefined ? {} : { browser }) });
+    case 'pdf': return renderPdf(doc, theme, {
+      epochSeconds,
+      // A page Chromium had to scale down to fit is legible but not the
+      // size anybody chose, and nothing else in the run would say so.
+      onWarn,
+      ...(browser === undefined ? {} : { browser }),
+    });
     case 'docx': return renderDocx(doc, theme, { epochSeconds });
     case 'md': return Buffer.from(renderMarkdown(doc), 'utf8');
     default: {
@@ -242,7 +248,7 @@ export async function runProposal(argv: string[], io: Io): Promise<number> {
         refused = true;
         continue;
       }
-      const bytes = await renderTo(format, doc, theme, epochSeconds, browser);
+      const bytes = await renderTo(format, doc, theme, epochSeconds, (m) => io.err(`documentor: warning — ${m}`), browser);
       await writeFile(target, bytes);
       io.log(`${target}  (${bytes.length.toLocaleString('en-US')} bytes)`);
     }

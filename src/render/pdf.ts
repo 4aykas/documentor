@@ -1,7 +1,7 @@
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
 import { PDFDocument } from 'pdf-lib';
 import type { Doc } from '../ir/types.js';
-import { toMm, type Theme } from '../theme/types.js';
+import { PAGE_PT, toMm, type Theme } from '../theme/types.js';
 import { buildHtml, escapeHtml } from './html.js';
 import { arimoFaceCss } from './fonts.js';
 
@@ -191,10 +191,63 @@ async function stitchCleanFirstPage(withHeader: Buffer, withoutHeader: Buffer, e
  * its context, so a guard applied to that page is unobservable — and an
  * unobservable guard is an untestable one.
  */
+/**
+ * Content wider than the page is the one layout fault Chromium answers by
+ * silently rescaling: printing has no horizontal scrollbar to offer, so it
+ * shrinks the WHOLE document to fit the widest thing in it. Every measurement
+ * on every page then comes out small, uniformly — which reads as "slightly
+ * off" rather than as broken, and is invisible to any assertion about the
+ * markup, because the markup is correct. It has cost this project twice: a
+ * corner mark translated past the content box, and a schedule table with one
+ * column per week.
+ *
+ * Tables can no longer cause it (see table-width.ts — they are laid out
+ * fixed, and a table too wide for the page gets a landscape one). This is the
+ * backstop for everything else: an unbreakable string, a wide image, a future
+ * block type. It reports rather than refuses — the document is legible, just
+ * not at the size anybody chose — and names the offender so the report is
+ * actionable rather than a shrug.
+ */
+async function reportOverflow(page: Page, theme: Theme, onWarn?: (message: string) => void): Promise<void> {
+  if (onWarn === undefined) return;
+  // Measured at the sheet's own width under print media, not at whatever
+  // viewport the page happens to carry. page.pdf() lays out at the paper
+  // size regardless of the viewport, so a screen-width measurement answers
+  // a question nobody asked — a 400-character word fits a 1280px viewport
+  // and still overflows A4.
+  await page.emulateMedia({ media: 'print' });
+  await page.setViewportSize({
+    width: Math.round((PAGE_PT[theme.page.size].w * 4) / 3),
+    height: Math.round((PAGE_PT[theme.page.size].h * 4) / 3),
+  });
+  const found = await page.evaluate(`(function(){
+    var b = document.body;
+    if (b.scrollWidth <= b.clientWidth) return '';
+    var worst = null;
+    var all = document.querySelectorAll('*');
+    for (var i = 0; i < all.length; i++) {
+      var w = all[i].getBoundingClientRect().width;
+      if (w > b.clientWidth + 1 && (worst === null || w > worst.w)) {
+        worst = { w: w, tag: all[i].tagName.toLowerCase(), cls: all[i].className };
+      }
+    }
+    return JSON.stringify({ over: b.scrollWidth, page: b.clientWidth, worst: worst });
+  })()`) as string;
+  if (found === '') return;
+  const { over, page: pageW, worst } = JSON.parse(found) as
+    { over: number; page: number; worst: { w: number; tag: string; cls: string } | null };
+  const scale = Math.round((pageW / over) * 100);
+  const what = worst === null ? 'something' : `a <${worst.tag}${worst.cls ? ` class="${worst.cls}"` : ''}>`;
+  onWarn(
+    `content is wider than the page (${Math.round(over)}px against ${Math.round(pageW)}px), so Chromium scaled every ` +
+    `page to about ${scale}% to fit it — the widest thing on the page is ${what}`,
+  );
+}
+
 export async function renderPdf(
   doc: Doc,
   theme: Theme,
-  opts: { epochSeconds: number; browser?: Browser; context?: BrowserContext },
+  opts: { epochSeconds: number; browser?: Browser; context?: BrowserContext; onWarn?: (message: string) => void },
 ): Promise<Buffer> {
   const html = await buildHtml(doc, theme);
   const browser = opts.context !== undefined ? undefined : opts.browser ?? (await chromium.launch());
@@ -220,6 +273,7 @@ export async function renderPdf(
       // (it's a Node CLI), so `document` is not a type it knows about.
       // Playwright evaluates a string in the page's own context regardless.
       await page.evaluate('document.fonts.ready');
+      await reportOverflow(page, theme, opts.onWarn);
       // The top margin is the theme's own — no extra band reserved for the
       // running header, and none is needed. Chromium draws the header
       // template from a fixed offset near the page's *physical* top edge,
@@ -258,7 +312,7 @@ export async function renderPdf(
       const withHeader = await page.pdf({
         format: theme.page.size === 'A4' ? 'A4' : 'Letter',
         printBackground: true,
-        preferCSSPageSize: false,
+        preferCSSPageSize: true,
         displayHeaderFooter: true,
         headerTemplate: await runningHeader(doc, theme),
         footerTemplate: '<span></span>',
@@ -267,7 +321,7 @@ export async function renderPdf(
       const withoutHeader = await page.pdf({
         format: theme.page.size === 'A4' ? 'A4' : 'Letter',
         printBackground: true,
-        preferCSSPageSize: false,
+        preferCSSPageSize: true,
         displayHeaderFooter: true,
         headerTemplate: '<span></span>',
         footerTemplate: '<span></span>',

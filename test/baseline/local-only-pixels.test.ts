@@ -51,10 +51,15 @@ describe('kitchen sink baseline (local pixels only)', () => {
     resetPdfjsWorkerGlobal();
     const pages = await rasterPages(await renderPdf(doc, theme, { epochSeconds: EPOCH, browser }));
 
+    // Every page is written before any page is compared. The two used to be
+    // one loop, and the first mismatch threw — so the later pages were never
+    // written at all, and re-approving a change meant running the test once
+    // per page. What you review has to be the whole document.
     await mkdir(ACTUAL, { recursive: true });
+    const names = pages.map((_, i) => `page-${String(i + 1).padStart(2, '0')}.png`);
+    for (const [i, png] of pages.entries()) await writeFile(join(ACTUAL, names[i]!), png);
     for (const [i, png] of pages.entries()) {
-      const name = `page-${String(i + 1).padStart(2, '0')}.png`;
-      await writeFile(join(ACTUAL, name), png);
+      const name = names[i]!;
       const golden = join(BASELINE, name);
       expect(existsSync(golden), `no baseline for ${name} — review test/baseline/__actual__/${name} and copy it into __baseline__ if it is correct`).toBe(true);
       expect(png.equals(await readFile(golden)), `${name} differs from its baseline; compare it with test/baseline/__actual__/${name}`).toBe(true);

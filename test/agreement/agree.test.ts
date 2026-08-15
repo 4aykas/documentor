@@ -202,7 +202,11 @@ describe('Word says what the others say', () => {
     const expected = tablesFromIr(doc);
     const actual = tablesFromDocx(xml);
 
-    expect(expected.length, 'the fixture is expected to carry exactly one table').toBe(1);
+    // Two: the five-column price table, and the eighteen-column one that
+    // exercises the wide-table policy (portrait in Word, a landscape sheet
+    // of its own in the PDF — the cells are the same either way, which is
+    // what this test is about).
+    expect(expected.length, 'the fixture is expected to carry two tables').toBe(2);
     expect(actual.length, 'Word wrote a different number of tables than the IR describes').toBe(expected.length);
 
     for (const [t, table] of expected.entries()) {

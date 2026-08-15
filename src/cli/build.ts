@@ -64,10 +64,16 @@ export function checkFormats(to: readonly string[]): Format[] | { error: string 
 // batching existed, since a single build launching once was never the cost
 // this exists to cut.
 async function renderTo(
-  format: Format, doc: Doc, theme: Theme, epochSeconds: number, browser?: Browser,
+  format: Format, doc: Doc, theme: Theme, epochSeconds: number, onWarn: (m: string) => void, browser?: Browser,
 ): Promise<Buffer> {
   switch (format) {
-    case 'pdf': return renderPdf(doc, theme, { epochSeconds, ...(browser === undefined ? {} : { browser }) });
+    case 'pdf': return renderPdf(doc, theme, {
+      epochSeconds,
+      // A page Chromium had to scale down to fit is legible but not the
+      // size anybody chose, and nothing else in the run would say so.
+      onWarn,
+      ...(browser === undefined ? {} : { browser }),
+    });
     case 'docx': return renderDocx(doc, theme, { epochSeconds });
     case 'md': return Buffer.from(renderMarkdown(doc), 'utf8');
     default: {
@@ -315,7 +321,7 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
       refused = true; // refused — see the exit code contract in src/bin/documentor.ts
       continue; // one colliding format must not stop the others from being written
     }
-    const bytes = await renderTo(format, doc, theme, epochSeconds);
+    const bytes = await renderTo(format, doc, theme, epochSeconds, (m) => io.err(`documentor: warning — ${m}`));
     await writeFile(target, bytes);
     io.log(`${target}  (${bytes.length.toLocaleString('en-US')} bytes)`);
   }
@@ -463,6 +469,7 @@ type FileConfig = {
  */
 async function processFile(
   input: string, cfg: FileConfig, outArg: string | undefined, browser: Browser | undefined,
+  onWarn: (m: string) => void,
 ): Promise<FileResult> {
   try {
     const ext = extname(input).toLowerCase();
@@ -497,7 +504,7 @@ async function processFile(
         refusedReason = `refusing to overwrite the input file ${input}`;
         continue; // one colliding format must not stop the others from being written
       }
-      const bytes = await renderTo(format, doc, cfg.theme, epochSeconds, browser);
+      const bytes = await renderTo(format, doc, cfg.theme, epochSeconds, onWarn, browser);
       await writeFile(target, bytes);
       written.push(target);
     }
@@ -778,7 +785,7 @@ async function runBuildBatch(
         io.err(`documentor: ${file} — refused: ${reason}`);
         continue;
       }
-      const result = await processFile(file, cfg, args.out, browser);
+      const result = await processFile(file, cfg, args.out, browser, (m) => io.err(`documentor: warning — ${file}: ${m}`));
       results.push(result);
       if (result.kind === 'failed') io.err(`documentor: ${file} — failed: ${result.reason}`);
       else if (result.kind === 'refused') io.err(`documentor: ${file} — refused: ${result.reason}`);

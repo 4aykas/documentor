@@ -21,6 +21,29 @@ const render = (md: string) =>
   renderPdf(ingestMarkdown(md).doc, theme, { epochSeconds: EPOCH, browser });
 
 describe('renderPdf', () => {
+  it('reports content wider than the page, because Chromium answers it by silently rescaling', async () => {
+    // Printing has no horizontal scrollbar to offer, so Chromium shrinks the
+    // WHOLE document to fit the widest thing in it. Every measurement on every
+    // page then comes out small, uniformly — which reads as "slightly off"
+    // rather than broken, and no assertion about the markup can see it,
+    // because the markup is correct. It has cost this project twice.
+    const warnings: string[] = [];
+    // One unbreakable 400-character word: nothing in the stylesheet may break
+    // it, so it runs past the text column no matter how the page is sized.
+    const doc = ingestMarkdown(`# T\n\n${'A'.repeat(400)}\n`).doc;
+    await renderPdf(doc, theme, { epochSeconds: EPOCH, browser, onWarn: (m) => warnings.push(m) });
+    expect(warnings.join('\n')).toMatch(/wider than the page/);
+    expect(warnings.join('\n')).toMatch(/scaled every page/);
+  });
+
+  it('says nothing when the content fits', async () => {
+    const warnings: string[] = [];
+    await renderPdf(ingestMarkdown('# T\n\nordinary prose\n').doc, theme, {
+      epochSeconds: EPOCH, browser, onWarn: (m) => warnings.push(m),
+    });
+    expect(warnings).toEqual([]);
+  });
+
   it('produces identical bytes on two runs', async () => {
     // Determinism used to be a post-processing pass' job (substituting the two
     // date fields Chromium's own output carries). It is now a property of the

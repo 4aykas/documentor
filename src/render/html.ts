@@ -9,6 +9,7 @@ import { arimoFaceCss } from './fonts.js';
 import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
 import { SCALE_STEPS, STATEMENT_TINT, stepOf, weekLabel } from './tint.js';
+import { columnWidthsDxa, dxa, fitsWidth } from './table-width.js';
 
 export function escapeHtml(s: string): string {
   return s
@@ -81,7 +82,25 @@ function imageMarkup(src: string, alt: string, widthPt?: number): string {
   }</div></figure>`;
 }
 
-function block(b: Block): string {
+/** What a table needs to size its columns: the text column's full width and
+ *  the theme's body size. Threaded through block() rather than read from a
+ *  module-level theme so nothing here depends on render order. */
+type ColSizing = { totalDxa: number; landscapeDxa: number; bodyPt: number };
+
+/** The text column's width in DXA and the theme's body size — the two
+ *  numbers table-width.ts needs, read off the theme in one place. */
+function colSizing(theme: Theme): ColSizing {
+  const page = PAGE_PT[theme.page.size];
+  return {
+    totalDxa: dxa(page.w - theme.page.marginPt * 2),
+    // The same text column with the sheet turned on its side, which is
+    // where a table too wide for the portrait one goes.
+    landscapeDxa: dxa(page.h - theme.page.marginPt * 2),
+    bodyPt: theme.type.bodyPt,
+  };
+}
+
+function block(b: Block, size: ColSizing): string {
   switch (b.t) {
     case 'heading':
       return `<h${b.level}>${inline(b.text)}</h${b.level}>`;
@@ -97,6 +116,25 @@ function block(b: Block): string {
       return `<${tag} class="d${b.depth}"${start}>${items}</${tag}>`;
     }
     case 'table': {
+      const cols = Math.max(b.head.length, ...b.rows.map((r) => r.length));
+      // The same widths Word uses, from the same solver — see table-width.ts.
+      // Emitted as a <colgroup> under `table-layout: fixed`, which is what
+      // makes them binding: with the automatic algorithm a declared width is
+      // a suggestion Chromium may overrule from cell content, and it did —
+      // that is how the same table came out proportioned one way here and
+      // another way in Word. Fixed layout also means a table can no longer
+      // be wider than the page, which used to make Chromium silently scale
+      // every page of the document down to fit it.
+      // A table with more columns than the portrait text column can give a
+      // readable minimum to is drawn on a landscape page of its own instead
+      // of being crushed into one. See fitsWidth() for where that line is,
+      // and the `@page landscape` rule below for how the page is asked for.
+      const wide = !fitsWidth(cols, size.totalDxa, size.bodyPt);
+      const total = wide ? size.landscapeDxa : size.totalDxa;
+      const widths = columnWidthsDxa(b, cols, total, size.bodyPt);
+      const group = widths
+        .map((w) => `<col style="width: ${((w / total) * 100).toFixed(3)}%">`)
+        .join('');
       const head = b.head
         .map((c, i) => `<th style="text-align: ${ALIGN_CSS[b.align[i] ?? 'l']}">${inline(c)}</th>`)
         .join('');
@@ -108,7 +146,8 @@ function block(b: Block): string {
               .join('')}</tr>`,
         )
         .join('');
-      return `<table><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+      const markup = `<table class="sized"><colgroup>${group}</colgroup><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+      return wide ? `<div class="wide-table">${markup}</div>` : markup;
     }
     case 'heatmap': {
       const weeks = b.rows[0]?.values.length ?? 0;
@@ -187,6 +226,7 @@ function cornerMarkMarkup(theme: Theme, cls: string, heightPt: number): string {
  * where it always did.
  */
 function coverMain(doc: Doc, theme: Theme): string {
+  const size = colSizing(theme);
   const { pageBlocks, restBlocks } = splitAtFirstPagebreak(doc.blocks);
   const ruleIdxs = ruleIndexes(pageBlocks);
 
@@ -195,7 +235,7 @@ function coverMain(doc: Doc, theme: Theme): string {
     // this feature's "a cover with no rules must render exactly as it does
     // today" rule. No panel, no foot, no corner mark: nothing here is
     // guessed from an unmarked document.
-    return `${coverTitleMarkup(doc)}${doc.blocks.map(block).join('\n')}`;
+    return `${coverTitleMarkup(doc)}${doc.blocks.map((x) => block(x, size)).join('\n')}`;
   }
 
   const { panel, flowing, foot } = partitionCoverBlocks(pageBlocks, ruleIdxs);
@@ -203,7 +243,7 @@ function coverMain(doc: Doc, theme: Theme): string {
   // below — another taste call, not a measured brand value: the panel is a
   // smaller frame than the page and a full-size mark would crowd it.
   const panelMark = cornerMarkMarkup(theme, 'corner-mark-panel', (theme.cornerMark?.heightPt ?? 0) * 0.6);
-  const panelHtml = `<div class="cover-panel">${panelMark}${coverTitleMarkup(doc)}${panel.map(block).join('\n')}</div>`;
+  const panelHtml = `<div class="cover-panel">${panelMark}${coverTitleMarkup(doc)}${panel.map((x) => block(x, size)).join('\n')}</div>`;
   // A `quote` between the rules is the cover's statement band (see the
   // `.cover-statement` CSS). The modifier is what turns the zone into a flex
   // column, and it is applied only when there is a band to centre: a cover
@@ -211,7 +251,7 @@ function coverMain(doc: Doc, theme: Theme): string {
   // that flow implies, so nothing about such a page moves.
   const hasStatement = flowing.some((b) => b.t === 'quote');
   const mod = hasStatement ? ' cover-statement-zone' : '';
-  const flowingHtml = `<div class="cover-flow${mod}">${flowing.map(block).join('\n')}</div>`;
+  const flowingHtml = `<div class="cover-flow${mod}">${flowing.map((x) => block(x, size)).join('\n')}</div>`;
   // No second, page-corner mark here. It was drawn for a while, offset past
   // the print margin so it would bleed off the trimmed edge the way the real
   // originals look — and it printed as nothing at all, every time. Chromium
@@ -230,9 +270,9 @@ function coverMain(doc: Doc, theme: Theme): string {
   // page-height flex frame — which exists only to push the foot down — is
   // skipped and `top` renders in plain flow instead.
   const body = foot.length > 0
-    ? `<div class="cover-frame">${top}<div class="cover-foot">${foot.map(block).join('\n')}</div></div>`
+    ? `<div class="cover-frame">${top}<div class="cover-foot">${foot.map((x) => block(x, size)).join('\n')}</div></div>`
     : top;
-  return `${body}${restBlocks.map(block).join('\n')}`;
+  return `${body}${restBlocks.map((x) => block(x, size)).join('\n')}`;
 }
 
 function firstPageHeader(doc: Doc, theme: Theme): string {
@@ -278,13 +318,26 @@ export async function buildHtml(doc: Doc, theme: Theme): Promise<string> {
   --rule: ${c.rule};
   --title: ${c.title};
 }
-/* This @page rule only governs a browser's own print preview of the raw
-   HTML — useful for eyeballing the document standalone. The PDF that
-   render/pdf.ts actually produces gets its margins from the page.pdf()
-   call's own margin option, which Chromium honours instead of this rule
-   once preferCSSPageSize is false; the two are computed the same way on
-   purpose, but this one is not what ships. */
+/* The sheet and its margins, and this IS what ships: pdf.ts prints with
+   preferCSSPageSize, so Chromium takes them from here rather than from the
+   page.pdf() options. It has to, because a named page is the only way one
+   document can hold sheets of two orientations, and that is what the
+   wide-table rule below needs. */
 @page{ size: ${page.size}; margin: ${toMm(page.marginPt)}; }
+/* A named page, asked for by the wide-table rule below. pdf.ts prints with
+   preferCSSPageSize so that these two rules — not the print options —
+   decide the sheet, which is the only way one document can hold pages of
+   two orientations. */
+@page landscape{ size: ${page.size} landscape; margin: ${toMm(page.marginPt)}; }
+/* A table too wide for the portrait text column gets a sheet of its own,
+   turned on its side (see where block() draws a table). The breaks either side
+   are what keep the rotation to this one table instead of everything that
+   follows it. */
+.wide-table{ page: landscape; break-before: page; break-after: page; }
+/* The portrait cap belongs to the portrait text column; on its own landscape
+   sheet the table's percentages are already measured against the wider one,
+   and leaving the cap on would strand a third of the page unused. */
+.wide-table table.sized{ max-width: none; }
 *{ box-sizing: border-box; }
 html,body{ margin:0; padding:0; }
 body{
@@ -350,6 +403,18 @@ tr{ break-inside: avoid; }
 thead{ display: table-header-group; }
 th{ text-align: left; font-weight: 700; border-bottom: 1pt solid var(--rule); padding: 4pt 6pt; }
 td{ border-bottom: 0.5pt solid var(--rule); padding: 4pt 6pt; vertical-align: top; }
+/* The column widths block() emits in a <colgroup> are only binding under
+   fixed layout: the automatic algorithm treats a declared width as one
+   input among several and will overrule it from cell content. Fixed layout
+   also means a table cannot be wider than the page — which is what used to
+   make Chromium scale every page of the document down to fit one wide
+   table, silently. See table-width.ts. */
+table.sized{ table-layout: fixed; }
+/* break-word, not anywhere: a word is broken only when it cannot fit a line
+   of its own, rather than wherever the line happens to end. Plain anywhere
+   feeds the min-content width, so it makes columns narrower than the text
+   really needs and chops ordinary headers mid-syllable. */
+table.sized td, table.sized th{ overflow-wrap: break-word; }
 table.heatmap{ table-layout: fixed; }
 table.heatmap td, table.heatmap th{ border-bottom: none; text-align: center; padding: 3pt 2pt; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 /* table-layout: fixed sizes every column from the FIRST row's cells alone.
@@ -448,7 +513,8 @@ body{ position: relative; }
 
   const cover = doc.meta.cover === true;
   const headerHtml = cover ? '' : firstPageHeader(doc, theme);
-  const mainHtml = cover ? coverMain(doc, theme) : doc.blocks.map(block).join('\n');
+  const size = colSizing(theme);
+  const mainHtml = cover ? coverMain(doc, theme) : doc.blocks.map((x) => block(x, size)).join('\n');
 
   return `<!doctype html>
 <html lang="${escapeHtml(doc.meta.lang)}">

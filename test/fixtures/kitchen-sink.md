@@ -49,3 +49,18 @@ fixture that referenced a file on disk would be testing the wrong thing.
 A closing paragraph after a horizontal rule, long enough to run onto a second
 line so that the leading between wrapped lines is visible in the baseline
 image and a change to it cannot pass unnoticed.
+
+## A table too wide for the page
+
+Eighteen columns cannot each have a readable minimum width inside the portrait
+text column, so this one is drawn on a landscape sheet of its own. Where that
+line is drawn, and how the sideways page is asked for, are decided by the two
+renderers together rather than by this fixture.
+
+| Discipline | W01 | W02 | W03 | W04 | W05 | W06 | W07 | W08 | W09 | W10 | W11 | W12 | W13 | W14 | W15 | W16 | W17 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Lead Electrical Engineer | 7 days / week | 7 days / week | 7 days / week | 7 days / week | 7 days / week | 7 days / week | 7 days / week | 7 days / week | 7 days / week | 7 days / week | 7 days / week | 7 days / week | 7 days / week | 7 days / week | 7 days / week | 7 days / week | 7 days / week |
+| BIM Coordinator | 2 days / week | 2 days / week | 2 days / week | 2 days / week | 2 days / week | 2 days / week | 2 days / week | 2 days / week | 2 days / week | 2 days / week | 2 days / week | 2 days / week | 2 days / week | 2 days / week | 2 days / week | 2 days / week | 2 days / week |
+
+A paragraph after the wide table, on a portrait page again — the rotation is
+scoped to the one table, not to everything that follows it.
