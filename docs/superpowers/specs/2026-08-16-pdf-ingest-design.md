@@ -1,7 +1,8 @@
 # Reading PDF — design
 
-**Status:** approved in outline, 2026-08-16. Approach A (lines-first) with a
-token round-trip gate.
+**Status:** approved 2026-08-16. Approach A (lines-first) with a token
+round-trip gate; the three questions left open at review are settled at the
+foot of this document.
 
 ## Why this exists, and what would make it a mistake
 
@@ -180,15 +181,34 @@ exceeded rather than truncated silently:
   synthetic PDF that reproduces the same grid shape.
 - **Refusals**, one case each, asserting the message names what and where.
 
-## Open questions for review
+## Decisions that were open, and how they were settled
 
-1. The gate compares source text to the assembled IR rather than to the
-   rendered document. Cheaper, runs always, targets the reader's risk — but
-   it is narrower than "source versus output". Accept?
-2. Should a failed gate refuse the build, or write the document and exit
-   non-zero with the divergence named? Refusing is consistent with the
-   project's stance; writing it lets a person look at what went wrong.
-3. Heading level from type size needs a theme to compare against, but
-   ingestion has no theme. Options: infer levels from the document's own size
-   distribution (largest distinct size is h1, next h2), or carry sizes into
-   the IR and let the renderer decide. The former keeps the IR clean.
+Recorded rather than folded silently into the plan, so overturning one is a
+one-line change here and a visible one.
+
+**1. The gate compares source text to the assembled IR, not to the rendered
+document.** It targets the risk that actually exists — a renderer cannot move
+a number from one cell to another, and renderer agreement is already held by
+`test/agreement/`. It needs no browser, so it runs on every build instead of
+being an opt-in nobody remembers. If a reason appears to check the produced
+file too, that is a `--verify` flag and a separate change.
+
+**2. A failed gate refuses the build.** Writing the document and exiting
+non-zero would leave a file on disk that looks finished and is wrong, and
+somebody would eventually send it. Refusing is what this project does with
+half an offer, an unreadable annex and a summary line that disagrees with the
+budget; a mis-read table is the same kind of thing. The message names the
+first divergence, which is what a person needs to go and look.
+
+**3. Heading level comes from the document's own size distribution**, not
+from the theme: the largest distinct body size is h1, the next h2, the next
+h3, and anything at or below the modal size is a paragraph. Ingestion has no
+theme and should not acquire one — every other ingester produces a Doc that
+any theme can draw. Carrying raw point sizes into the IR was the alternative
+and is worse: it would put a rendering concern in the representation, and
+`Block` has stayed free of those on purpose.
+
+The cost of 3 is a document whose headings are all one size: it has none, and
+its prose is paragraphs. That is honest — a PDF with no size contrast carries
+no heading structure to recover — and it is reported, so a document that came
+out flat says so rather than looking deliberately flat.
