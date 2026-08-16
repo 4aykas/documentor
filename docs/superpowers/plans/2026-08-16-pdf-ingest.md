@@ -382,7 +382,7 @@ git commit -m "Recognise a source PDF's own letterhead by position, not by meani
 - Produces:
   ```ts
   export type Grid = { xs: number[]; ys: number[] };
-  export type GridTable = { rows: string[][]; usedRuns: Set<TextRun>; top: number; bottom: number };
+  export type GridTable = { rows: string[][]; usedRuns: Set<TextRun> };
   export function findGrid(rects: readonly Rect[]): Grid | null;
   export function tableFrom(grid: Grid, runs: readonly TextRun[]): GridTable;
   ```
@@ -417,7 +417,31 @@ describe('findGrid', () => {
     const g = findGrid(drawn());
     expect(g).not.toBeNull();
     expect(g!.xs).toEqual([50, 200, 400]);
-    expect(g!.ys).toEqual([700, 720, 740, 760]);
+    // Four drawn boundaries plus the implied top, one median gap above.
+    expect(g!.ys).toEqual([700, 720, 740, 760, 780]);
+  });
+
+  it('adds the top boundary a bottom-ruled table never draws', () => {
+    // Three rules under three rows, as any typeset table draws them — the
+    // shape this project's own renderer produces. Without an implied top the
+    // first row's text falls outside the grid and is lost.
+    const rule = (y: number): Rect[] => [
+      { x0: 50, x1: 200, y0: y, y1: y + 0.5 },
+      { x0: 200, x1: 400, y0: y, y1: y + 0.5 },
+    ];
+    const g = findGrid([...rule(661.5), ...rule(684), ...rule(706.5)]);
+    expect(g).not.toBeNull();
+    expect(g!.ys).toEqual([661.75, 684.25, 706.75, 729.25]);
+  });
+
+  it('reads a rule's two long edges as one boundary', () => {
+    // A 0.5pt rule arrives as y=661 and y=662; two boundaries there would
+    // invent a 1pt-tall row.
+    const g = findGrid([
+      { x0: 50, x1: 200, y0: 661, y1: 662 }, { x0: 200, x1: 400, y0: 661, y1: 662 },
+      { x0: 50, x1: 200, y0: 700, y1: 701 }, { x0: 200, x1: 400, y0: 700, y1: 701 },
+    ]);
+    expect(g!.ys).toHaveLength(3); // two rules, plus the implied top
   });
 
   it('returns null when nothing is drawn twice — the refusal the design rests on', () => {
@@ -476,22 +500,30 @@ Expected: FAIL — cannot find module `src/ingest/pdf/grid.js`.
 import type { Rect, TextRun } from './geometry.js';
 
 export type Grid = { xs: number[]; ys: number[] };
-export type GridTable = { rows: string[][]; usedRuns: Set<TextRun>; top: number; bottom: number };
+export type GridTable = { rows: string[][]; usedRuns: Set<TextRun> };
 
 /** How many rectangles must share an edge before it counts as a boundary.
  *  Two is enough to mean "drawn deliberately"; the real files repeat their
  *  column edges 24-26 times, so nothing here is delicate. */
 const MIN_REPEAT = 2;
-/** Coordinates within this many points are the same edge. */
-const TOL = 1;
+/** Edges closer together than this are the same drawn line. A rule is drawn
+ *  as a thin filled rectangle, so its two long edges arrive as two numbers a
+ *  fraction of a point apart — measured at 661 and 662 for a 0.5pt rule on
+ *  this project's own output. Treating them as two boundaries invents a
+ *  1pt-tall row between them. */
+const MERGE = 2;
 
 function boundaries(values: number[]): number[] {
-  const tally = new Map<number, number>();
-  for (const v of values) {
-    const k = Math.round(v / TOL) * TOL;
-    tally.set(k, (tally.get(k) ?? 0) + 1);
+  const sorted = [...values].sort((a, b) => a - b);
+  const groups: number[][] = [];
+  for (const v of sorted) {
+    const last = groups[groups.length - 1];
+    if (last !== undefined && v - last[last.length - 1]! <= MERGE) last.push(v);
+    else groups.push([v]);
   }
-  return [...tally.entries()].filter(([, n]) => n >= MIN_REPEAT).map(([v]) => v).sort((a, b) => a - b);
+  return groups
+    .filter((g) => g.length >= MIN_REPEAT)
+    .map((g) => g.reduce((a, b) => a + b, 0) / g.length);
 }
 
 export function findGrid(rects: readonly Rect[]): Grid | null {
@@ -499,7 +531,16 @@ export function findGrid(rects: readonly Rect[]): Grid | null {
   const ys = boundaries(rects.flatMap((r) => [r.y0, r.y1]));
   // Two boundaries make one column; a table needs at least one column and one
   // row, and anything less than that is not a grid but a stray box.
-  return xs.length >= 2 && ys.length >= 2 ? { xs, ys } : null;
+  if (xs.length < 2 || ys.length < 2) return null;
+  // A typeset table draws a rule UNDER each row, so n rows arrive as n
+  // boundaries and the top row has no upper edge — its text would fall
+  // outside the grid and be lost. Measured on this project's own table:
+  // rules at 706.5, 684 and 661.5 against a header at y=715. The implied top
+  // is one more row's worth above the highest rule, taken from the rules'
+  // own median gap, so it comes from drawn geometry and nothing else.
+  const gaps = ys.slice(1).map((y, i) => y - ys[i]!).sort((a, b) => a - b);
+  const median = gaps[Math.floor(gaps.length / 2)] ?? 0;
+  return { xs, ys: median > 0 ? [...ys, ys[ys.length - 1]! + median] : ys };
 }
 
 export function tableFrom(grid: Grid, runs: readonly TextRun[]): GridTable {
@@ -524,14 +565,14 @@ export function tableFrom(grid: Grid, runs: readonly TextRun[]): GridTable {
   const rows = cells
     .map((row) => row.map((rs) => rs.sort((a, b) => a.x - b.x).map((r) => r.text).join(' ').trim()))
     .reverse();
-  return { rows, usedRuns, top: ys[ys.length - 1]!, bottom: ys[0]! };
+  return { rows, usedRuns };
 }
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run test/ingest/pdf-grid.test.ts`
-Expected: PASS, 5 tests.
+Expected: PASS, 7 tests.
 
 - [ ] **Step 5: Commit**
 
