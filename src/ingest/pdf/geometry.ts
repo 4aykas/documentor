@@ -10,10 +10,23 @@ const OP_SAVE = 10;
 const OP_RESTORE = 11;
 const OP_TRANSFORM = 12;
 const OP_RECTANGLE = 19;
-const OP_MOVE_TO = 13;
-const OP_LINE_TO = 14;
-const OP_CURVE_TO = 15;
 const OP_CONSTRUCT_PATH = 91;
+
+/** How many coordinates each path op consumes, matching pdfjs's own walk in
+ *  `constructPath`. Every op it can emit is here on purpose: the coordinate
+ *  cursor is shared by the whole path, so one op missing from this table does
+ *  not lose that op — it shifts every rectangle after it, silently, which is
+ *  the one failure this reader exists to prevent. An op not in the table is
+ *  therefore an error rather than a skip. */
+const PATH_OP_ARGS: Readonly<Record<number, number>> = {
+  13: 2, // moveTo
+  14: 2, // lineTo
+  15: 6, // curveTo
+  16: 4, // curveTo2
+  17: 4, // curveTo3
+  18: 0, // closePath
+  19: 4, // rectangle
+};
 
 export type Rect = { x0: number; y0: number; x1: number; y1: number };
 export type TextRun = { text: string; x: number; y: number; sizePt: number };
@@ -51,17 +64,20 @@ export async function readPageGeometry(page: PdfPageLike): Promise<PageGeometry>
     const [pathOps, coords] = argsArray[i] as [number[], number[]];
     let a = 0;
     for (const op of pathOps) {
+      const args = PATH_OP_ARGS[op];
+      if (args === undefined) {
+        throw new Error(`documentor: unknown PDF path operator ${op} — refusing to read the page's rectangles, because every coordinate after it would be wrong`);
+      }
       if (op === OP_RECTANGLE) {
         const [x, y, w, h] = [coords[a]!, coords[a + 1]!, coords[a + 2]!, coords[a + 3]!];
-        a += 4;
         const p = applyMatrix(ctm, x, y);
         const q = applyMatrix(ctm, x + w, y + h);
         rects.push({
           x0: Math.min(p.x, q.x), x1: Math.max(p.x, q.x),
           y0: Math.min(p.y, q.y), y1: Math.max(p.y, q.y),
         });
-      } else if (op === OP_CURVE_TO) a += 6;
-      else if (op === OP_MOVE_TO || op === OP_LINE_TO) a += 2;
+      }
+      a += args;
     }
   }
 
@@ -72,11 +88,15 @@ export async function readPageGeometry(page: PdfPageLike): Promise<PageGeometry>
     const it = raw as { str?: string; transform?: number[] };
     if (typeof it.str !== 'string' || it.str.trim() === '' || it.transform === undefined) continue;
     const t = it.transform;
-    // Unrotated text is [size, 0, 0, size, x, y]. Anything with a shear or a
-    // rotation is counted, not kept: reading it would need a second geometry
-    // and the caller reports the count rather than losing it in silence.
-    if (t[1] !== 0 || t[2] !== 0) { rotated += 1; continue; }
-    runs.push({ text: it.str, x: t[4]!, y: t[5]!, sizePt: Math.abs(t[0]!) });
+    // Unrotated text is [size, 0, 0, size, x, y] with both scales POSITIVE.
+    // Anything with a shear, a rotation, or a flip is counted, not kept:
+    // reading it would need a second geometry and the caller reports the count
+    // rather than losing it in silence. The sign test is what catches the 180°
+    // case — [-size, 0, 0, -size, x, y] has no shear term at all, so testing
+    // only b and c would file upside-down text as ordinary body text and hand
+    // the grid its baseline as if it were the top of the glyphs.
+    if (t[1] !== 0 || t[2] !== 0 || t[0]! <= 0 || t[3]! <= 0) { rotated += 1; continue; }
+    runs.push({ text: it.str, x: t[4]!, y: t[5]!, sizePt: t[0]! });
   }
   const vp = page.getViewport({ scale: 1 });
   return { rects, runs, rotated, widthPt: vp.width, heightPt: vp.height };
