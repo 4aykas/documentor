@@ -152,7 +152,7 @@ describe('documentor proposal — the cover example template', () => {
     const template = readFileSync(join(ROOT, 'templates', 'proposal-cover.example.md'), 'utf8');
     await writeFile(join(coverDir, 'cover.template.md'), template, 'utf8');
     const data = JSON.parse(
-      readFileSync(join(ROOT, 'test', 'fixtures', 'cover-example.proposal.json'), 'utf8'),
+      readFileSync(join(ROOT, 'templates', 'proposal-cover.example.json'), 'utf8'),
     ) as Record<string, unknown>;
     data['template'] = './cover.template.md';
     await writeFile(join(coverDir, 'cover.proposal.json'), JSON.stringify(data, null, 2), 'utf8');

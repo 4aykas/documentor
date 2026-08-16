@@ -136,8 +136,8 @@ Two generic examples ship to copy from: `templates/offer.example.md` for a
 proposal that starts straight into its sections, and
 `templates/proposal-cover.example.md` for one that opens with a cover page —
 the same file, plus the zones, the statement band and the labelled-value
-block described below. Its data file must set `"cover": true`; see
-`test/fixtures/cover-example.proposal.json`. A real template carries a
+block described below. Its data file must set `"cover": true`; `templates/proposal-cover.example.json`
+is one, and both ship, so `documentor proposal` runs on the pair as installed. A real template carries a
 company's own commercial terms and belongs outside a public repository, the
 way this repository keeps its own brand book out of git.
 

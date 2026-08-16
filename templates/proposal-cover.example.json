@@ -1,5 +1,5 @@
 {
-  "template": "../../templates/proposal-cover.example.md",
+  "template": "./proposal-cover.example.md",
   "kind": "COMMERCIAL PROPOSAL",
   "project": "Example Project",
   "cover": true,

@@ -94,6 +94,20 @@ describe('what an installed copy contains', () => {
     }
   });
 
+  it('points readers at nothing that stays behind in the repository', () => {
+    // README.md ships. A path it offers as an example therefore has to be in
+    // the package, and `test/` never is — it is not under any `files` entry.
+    // Caught for real: the README pointed at
+    // `test/fixtures/cover-example.proposal.json` as the data file to look
+    // at, and only installing the tarball into an empty directory showed
+    // that a reader could not open it. The example data now lives beside the
+    // template it drives, under `templates/`, where the rule above already
+    // requires it to ship.
+    const readme = readFileSync(join(ROOT, 'README.md'), 'utf8');
+    const stranded = [...readme.matchAll(/`(test\/[\w./-]+)`/g)].map((m) => m[1]!);
+    expect(stranded, 'README.md names a test/ path, which does not ship').toEqual([]);
+  });
+
   it('builds before npm can pack or publish it', () => {
     // dist/ is gitignored, so the build has to happen inside npm's own
     // lifecycle — a human remembering to run it first is exactly the step that
