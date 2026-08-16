@@ -137,3 +137,66 @@ describe('documentor inspect <data.json>', () => {
     expect(parsed.errors.join('\n')).toMatch(/bogus/);
   });
 });
+
+// The cover is the proposal feature's most-worked surface and, until this
+// existed, nothing built one from a template through the CLI: the zones, the
+// statement band, the key/value block and the corner mark were covered at
+// renderer level and by one pixel baseline made from hand-written IR. A
+// template is where a user meets the feature, so a template is what this
+// tests — and templates/proposal-cover.example.md is the same file the
+// README points them at, not a fixture that could drift from it.
+describe('documentor proposal — the cover example template', () => {
+  let coverDir: string;
+  beforeAll(async () => {
+    coverDir = await mkdtemp(join(tmpdir(), 'documentor-cover-'));
+    const template = readFileSync(join(ROOT, 'templates', 'proposal-cover.example.md'), 'utf8');
+    await writeFile(join(coverDir, 'cover.template.md'), template, 'utf8');
+    const data = JSON.parse(
+      readFileSync(join(ROOT, 'test', 'fixtures', 'cover-example.proposal.json'), 'utf8'),
+    ) as Record<string, unknown>;
+    data['template'] = './cover.template.md';
+    await writeFile(join(coverDir, 'cover.proposal.json'), JSON.stringify(data, null, 2), 'utf8');
+  });
+
+  it('draws all three zones, the band and the key/value block', async () => {
+    const o = io();
+    const code = await runProposal([join(coverDir, 'cover.proposal.json'), '--to', 'docx'], o);
+    expect(code).toBe(0);
+    // The template's own HTML comments are the only thing reported as left
+    // out — they explain the zones to whoever copies the file, and no
+    // document format carries a comment.
+    expect(o.errs.join('\n')).not.toMatch(/cannot be assembled|warning/);
+    const xml = await docxPart(await readFile(join(coverDir, 'cover.plain.docx')), 'word/document.xml');
+
+    const tables = xml.match(/<w:tbl>[\s\S]*?<\/w:tbl>/g) ?? [];
+    // The panel, the metadata block, the statement band, then the body's own
+    // summary/schedule/budget tables.
+    expect(tables.length).toBeGreaterThanOrEqual(3);
+    const [panel, meta, band] = tables;
+    expect(panel).toContain('COMMERCIAL PROPOSAL');
+    expect(panel).toContain('ENGINEERING SERVICE');
+
+    // The metadata block: an empty header row is dropped, and with it the row
+    // rules — the label sits beside its value, not under a banded grid.
+    expect(meta).toContain('Proposal No.');
+    expect(meta).not.toContain('w:val="DocTableHeader"');
+
+    // The band carries the template's own sentence, in the CoverStatement style.
+    expect(band).toContain('Example Project');
+    expect(band).toContain('w:val="CoverStatement"');
+
+    // The mark is anchored outside the panel table, and the foot is framed to
+    // the page's bottom margin.
+    expect(xml.indexOf('<w:drawing>')).toBeLessThan(xml.indexOf('<w:tbl>'));
+    expect(xml).toContain('w:yAlign="bottom"');
+  });
+
+  it('drops nothing but the template\'s own comments', async () => {
+    const o = io();
+    await runProposal([join(coverDir, 'cover.proposal.json'), '--to', 'md'], o);
+    // Every "left out" line is an HTML comment the template writes for the
+    // reader; anything else would be content the cover lost.
+    const dropped = [...o.out, ...o.errs].filter((l) => l.trim().startsWith('- '));
+    expect(dropped.every((l) => l.includes('block html: <!--')), dropped.join('\n')).toBe(true);
+  });
+});

@@ -132,7 +132,12 @@ drawn from the same team array (`{{@heatmap style=scale|numbers|marks}}`,
 an annex through the spreadsheet reader — with its row cap raised to 2000 for
 this one path, because a reference register is searched, not read.
 
-`templates/offer.example.md` is a generic example; a real template carries a
+Two generic examples ship to copy from: `templates/offer.example.md` for a
+proposal that starts straight into its sections, and
+`templates/proposal-cover.example.md` for one that opens with a cover page —
+the same file, plus the zones, the statement band and the labelled-value
+block described below. Its data file must set `"cover": true`; see
+`test/fixtures/cover-example.proposal.json`. A real template carries a
 company's own commercial terms and belongs outside a public repository, the
 way this repository keeps its own brand book out of git.
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PACKAGE_NAME, bundledThemeIds } from '../../src/theme/resolve.js';
@@ -83,10 +83,15 @@ describe('what an installed copy contains', () => {
     // it a second time, so a renamed example fails here instead of leaving
     // a shipped README pointing at nothing.
     const readme = readFileSync(join(ROOT, 'README.md'), 'utf8');
-    const referenced = readme.match(/`(templates\/[\w.-]+)`/);
-    expect(referenced, 'README.md no longer names a templates/ example file').not.toBeNull();
-    const path = referenced![1]!;
-    expect(shippedUnder(path), `README.md references ${path}, which is not under any "files" entry`).toBeDefined();
+    // Every templates/ file the README names, not just the first: there is
+    // more than one example now, and checking only the first would let a
+    // later one ship broken.
+    const referenced = [...readme.matchAll(/`(templates\/[\w.-]+)`/g)].map((m) => m[1]!);
+    expect(referenced.length, 'README.md no longer names a templates/ example file').toBeGreaterThan(0);
+    for (const path of new Set(referenced)) {
+      expect(shippedUnder(path), `README.md references ${path}, which is not under any "files" entry`).toBeDefined();
+      expect(existsSync(join(ROOT, path)), `README.md references ${path}, which does not exist`).toBe(true);
+    }
   });
 
   it('builds before npm can pack or publish it', () => {

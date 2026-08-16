@@ -1,0 +1,57 @@
+{
+  "template": "../../templates/proposal-cover.example.md",
+  "kind": "COMMERCIAL PROPOSAL",
+  "project": "Example Project",
+  "cover": true,
+  "stage": "Detail Design",
+  "number": "0001-00-01",
+  "docNumber": "00-GN-1000",
+  "date": "01.09.2026",
+  "rev": "0",
+  "author": {
+    "name": "A. Author",
+    "phone": "+48 000 000 000",
+    "email": "author@example.com"
+  },
+  "summary": [
+    {
+      "item": "Engineering works",
+      "price": 4500,
+      "covers": "budget"
+    },
+    {
+      "item": "Single site visit, if required",
+      "price": 490
+    }
+  ],
+  "team": [
+    {
+      "role": "BIM Coordinator",
+      "rate": 45,
+      "hoursPerWeek": [
+        4,
+        4,
+        4,
+        4,
+        4
+      ]
+    },
+    {
+      "role": "Mechanical Engineer",
+      "rate": 45,
+      "hoursPerWeek": [
+        16,
+        16,
+        16,
+        16,
+        16
+      ]
+    }
+  ],
+  "sections": {
+    "general": "The scope of services covers an example engineering assignment, described here in the client's own terms.",
+    "scope": "The contractor provides dedicated engineering resources for the assignment:\n\n- modelling and layouts\n- coordination and validation",
+    "assumptions": "- All works are carried out in coordination with the client's responsible engineers.",
+    "exclusions": "- Business trips are not included and are agreed separately."
+  }
+}
