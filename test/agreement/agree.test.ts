@@ -30,9 +30,11 @@ const EPOCH = 1_000_000_000;
 
 let browser: Browser;
 let source: string;
+let coverSource: string;
 beforeAll(async () => {
   browser = await chromium.launch();
   source = await readFile(join(HERE, '..', 'fixtures', 'kitchen-sink.md'), 'utf8');
+  coverSource = await readFile(join(HERE, '..', 'fixtures', 'cover.md'), 'utf8');
 });
 afterAll(async () => { await browser.close(); });
 
@@ -57,9 +59,13 @@ afterAll(async () => { await browser.close(); });
  *     and is stripped page by page below.
  */
 describe('the renderers agree', () => {
-  async function expectRenderersAgree(markdownSource: string): Promise<void> {
+  // `cover` is a flag on meta, not something Markdown can say — a proposal's
+  // data file sets it. Setting it here keeps this suite about the renderers
+  // rather than about assembly, which is what it is for.
+  async function expectRenderersAgree(markdownSource: string, cover = false): Promise<void> {
     const theme = await loadTheme('plain');
     const { doc } = ingestMarkdown(markdownSource);
+    if (cover) doc.meta.cover = true;
     const buf = await renderPdf(doc, theme, { epochSeconds: EPOCH, browser });
 
     const md = runsFromMarkdown(renderMarkdown(doc));
@@ -68,10 +74,23 @@ describe('the renderers agree', () => {
       .map((r) => ({ kind: classify(r.sizePt, theme), text: r.text }))
       .filter((r): r is Run => r.kind !== 'chrome');
 
+    // A cover's statement band opens with display type — deliberately, that is
+    // what the band is — so a classifier that reads size alone calls it a
+    // heading in the PDF while Markdown keeps it a quote. Neither is wrong,
+    // and it is the third deliberate exclusion in this file rather than a
+    // fourth thing to reconcile. Only the band's own first line is excused,
+    // by its exact text, so a real heading appearing or vanishing still
+    // fails.
+    const bandHeadlines = new Set(
+      cover
+        ? doc.blocks.flatMap((b) => (b.t === 'quote' && b.paras[0] ? [norm(flattenInline(b.paras[0]))] : []))
+        : [],
+    );
     // Headings, in order, with their level — a heading demoted to body text in
     // one renderer and not the other lands here.
     const headings = (rs: Run[]) =>
-      rs.filter((r) => r.kind.startsWith('heading')).map((r) => `h${r.kind.slice(-1)} ${r.text}`);
+      rs.filter((r) => r.kind.startsWith('heading') && !bandHeadlines.has(norm(r.text)))
+        .map((r) => `h${r.kind.slice(-1)} ${r.text}`);
     expectSameSequence('heading', { label: 'Markdown', items: headings(md) }, { label: 'PDF', items: headings(pdf) });
 
     // Table cell values, in row-major order, compared word by word rather than
@@ -119,6 +138,16 @@ describe('the renderers agree', () => {
 
   it('agrees on the kitchen-sink fixture, every block type at once', async () => {
     await expectRenderersAgree(source);
+  });
+
+  it('agrees on a cover page, where the renderers read the same blocks differently', async () => {
+    // The cover is the one place the two renderers deliberately read the same
+    // flat block list in different ways: a `rule` closes a panel instead of
+    // drawing a line, a `quote` becomes a statement band, a table with an
+    // empty header row loses that row. Each is a chance for one renderer to
+    // carry a word the other drops — and until this existed the suite had
+    // only ever seen kitchen-sink.md, which is not a cover.
+    await expectRenderersAgree(coverSource, true);
   });
 
   it('agrees on the numbering of an ordered list that a sublist interrupts', async () => {

@@ -486,6 +486,15 @@ body{ position: relative; }
    degrades to ordinary top-to-bottom flow. */
 .cover-frame{ display: flex; flex-direction: column; justify-content: space-between; min-height: ${(trim.h - page.marginPt * 2).toFixed(2)}pt; }
 .cover-foot{ margin-top: 24pt; }
+/* Both siblings are positioned for one reason, and it is not layout: the
+   panel above has to be positioned to anchor the corner mark, and a
+   positioned box paints AFTER its in-flow siblings. With the panel the only
+   positioned one, its text — the document's own title — landed last in the
+   PDF's content stream, so extracting or copy-pasting a cover returned the
+   title after the address block. Positioning the siblings too puts all three
+   in the same paint layer, where DOM order decides, and reading order is
+   restored. Costs nothing else: none of them is offset. */
+.cover-flow, .cover-foot{ position: relative; }
 /* The statement band, and the flex column that positions it. Both are applied
    only to a cover whose flowing zone carries a quote (see coverMain), so a
    cover without one is untouched by every rule in this group.
