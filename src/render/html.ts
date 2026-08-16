@@ -4,7 +4,7 @@
 
 import type { Block, Doc, Inline } from '../ir/types.js';
 import { PAGE_PT, toMm, type Theme } from '../theme/types.js';
-import { PANEL_BORDER_PT, partitionCoverBlocks, ruleIndexes, splitAtFirstPagebreak } from './cover-zones.js';
+import { PANEL_BORDER_PT, coverStatementPt, partitionCoverBlocks, ruleIndexes, splitAtFirstPagebreak } from './cover-zones.js';
 import { arimoFaceCss } from './fonts.js';
 import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
@@ -508,7 +508,7 @@ body{ position: relative; }
   background: color-mix(in srgb, var(--brand) ${Math.round(STATEMENT_TINT * 100)}%, white);
   border-left: 4pt solid var(--brand); }
 .cover-statement-zone > blockquote > p{ margin-bottom: ${(ty.bodyPt * 0.5).toFixed(1)}pt; }
-.cover-statement-zone > blockquote > p:first-child{ font-size: ${(ty.titlePt * 0.5).toFixed(1)}pt;
+.cover-statement-zone > blockquote > p:first-child{ font-size: ${coverStatementPt(ty).toFixed(1)}pt;
   line-height: 1.15; font-weight: 700; color: var(--brand); }
 .cover-statement-zone > blockquote > p:last-child{ margin-bottom: 0; }
 /* Seated in the panel's top-right corner: the glyph's own top and right edges

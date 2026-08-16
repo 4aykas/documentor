@@ -362,6 +362,28 @@ describe('cover zones', () => {
     expect(html).not.toMatch(/\.corner-mark-panel\{[^}]*transform/);
   });
 
+  it("the statement band's headline is never smaller than a section heading", async () => {
+    // The band's premise is that its first line is display type. Half the
+    // cover title delivers that for a theme whose title is large — TEBIN's
+    // 39pt gives 19.5 — but `plain` sets titlePt to 18, so half of it was 9pt
+    // against a 10pt body and the headline came out SMALLER than the sentence
+    // under it.
+    const quote: Block = { t: 'quote', paras: [[{ t: 'text', v: 'Headline' }]] };
+    const cover: Doc = {
+      meta: { title: 'Cover', lang: 'en', cover: true },
+      blocks: [para('lead'), rule, quote, rule, para('foot')],
+    };
+    const modest = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C' }, type: { titlePt: 18, h2Pt: 13, bodyPt: 10 } });
+    const modestHtml = await buildHtml(cover, modest);
+    expect(modestHtml).toContain('font-size: 13.0pt');
+    expect(modestHtml).not.toContain('font-size: 9.0pt');
+
+    // A theme whose title IS large keeps half of it, so nothing about the
+    // approved TEBIN cover moves.
+    const grand = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C' }, type: { titlePt: 39, h2Pt: 13, bodyPt: 10 } });
+    expect(await buildHtml(cover, grand)).toContain('font-size: 19.5pt');
+  });
+
   it("a cover's links carry no underline; every other page's still do", async () => {
     const link: Block = { t: 'para', text: [{ t: 'link', href: 'https://tebin.pro', children: [{ t: 'text', v: 'www.tebin.pro' }] }] };
     const cover: Doc = {

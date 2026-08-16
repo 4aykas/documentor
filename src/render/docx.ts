@@ -17,7 +17,7 @@ import {
 } from 'docx';
 import type { Block, Doc, Inline } from '../ir/types.js';
 import { PAGE_PT, type Theme } from '../theme/types.js';
-import { PANEL_BORDER_PT, partitionCoverBlocks, ruleIndexes, splitAtFirstPagebreak } from './cover-zones.js';
+import { PANEL_BORDER_PT, coverStatementPt, partitionCoverBlocks, ruleIndexes, splitAtFirstPagebreak } from './cover-zones.js';
 import { columnWidthsDxa, fitsWidth, isKeyValue } from './table-width.js';
 import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
@@ -93,7 +93,7 @@ function styles(theme: Theme) {
       // html.ts: `.cover-statement-zone > blockquote > p:first-child{
       // font-size: 0.5×titlePt; font-weight: 700; color: var(--brand); }` —
       // large display type, which is what brandOnLight is allowed to paint.
-      para('CoverStatement', 'Cover Statement', { size: halfPt(ty.titlePt * 0.5), bold: true, color: hex(c.brandOnLight) }, {
+      para('CoverStatement', 'Cover Statement', { size: halfPt(coverStatementPt(ty)), bold: true, color: hex(c.brandOnLight) }, {
         // html.ts: the band's own paragraphs carry `margin-bottom: 0.5×bodyPt`.
         spacing: { before: 0, after: dxa(ty.bodyPt * 0.5) },
       }),

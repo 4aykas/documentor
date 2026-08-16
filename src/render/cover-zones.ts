@@ -12,6 +12,7 @@
 // calls this; an ordinary document's `rule` never reaches it.
 
 import type { Block } from '../ir/types.js';
+import type { Theme } from '../theme/types.js';
 
 /**
  * The hairline a cover's panel is drawn with. It lives here because three
@@ -22,6 +23,22 @@ import type { Block } from '../ir/types.js';
  * glyph's outside — small, and the first thing a reader notices.
  */
 export const PANEL_BORDER_PT = 0.75;
+
+/**
+ * The size of the statement band's first line — the one thing about the band
+ * that is display type rather than prose. Half the theme's cover title, but
+ * never smaller than a section heading: `plain` sets titlePt to 18, so half
+ * of it was 9pt against a 10pt body, and the band's headline came out
+ * SMALLER than the sentence under it. A theme with a modest title size is
+ * not a theme that wants a modest band; it is a theme whose cover title
+ * happens not to be huge.
+ *
+ * Shared by both renderers rather than spelled out twice — the same reason
+ * PANEL_BORDER_PT is here.
+ */
+export function coverStatementPt(type: Theme['type']): number {
+  return Math.max(type.titlePt * 0.5, type.h2Pt);
+}
 
 /** Every index in `blocks` that holds a `rule`. */
 export function ruleIndexes(blocks: Block[]): number[] {
