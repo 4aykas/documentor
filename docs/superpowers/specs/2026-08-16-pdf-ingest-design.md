@@ -138,8 +138,6 @@ assumed.
 
 ## Identifying page furniture
 
-Two conditions, both required:
-
 Two passes, so neither condition depends on the other:
 
 1. **Candidates.** A run whose position repeats, within a tolerance, on every
