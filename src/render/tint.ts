@@ -36,4 +36,33 @@ export function mixToWhite(hex: string, t: number): string {
  *  not. */
 export const STATEMENT_TINT = 0.08;
 
+/**
+ * Which of two candidate text colours actually reads on `fill` — the theme's
+ * ink, or white. Chosen by WCAG contrast ratio rather than by a threshold
+ * somebody guessed, because the answer depends on the theme's brand and no
+ * fixed cut-off is right for every one of them.
+ *
+ * This exists because the heatmap's darkest step is the brand at full
+ * strength, and the number in that cell was drawn in ink regardless. For
+ * TEBIN that is near-black on dark red — legible, barely. For `plain`, whose
+ * brand IS its ink (#1A1A1A by design), it was black on black: the value
+ * simply was not on the page. Note what this does NOT do — it never reaches
+ * for colors.brandOnDark, which stays null until a theme declares one for
+ * the reason its own comment gives. Ink and white are not brand colours;
+ * this is a contrast computation, not a palette guess.
+ */
+export function readableOn(fill: string, ink: string): string {
+  const lum = (hex: string): number => {
+    const n = parseInt(hex.replace('#', ''), 16);
+    const ch = (shift: number): number => {
+      const c = ((n >> shift) & 0xff) / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * ch(16) + 0.7152 * ch(8) + 0.0722 * ch(0);
+  };
+  const ratio = (a: number, b: number): number => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  const bg = lum(fill);
+  return ratio(bg, lum(ink)) >= ratio(bg, 1) ? ink : '#FFFFFF';
+}
+
 export const weekLabel = (i: number): string => `W${String(i + 1).padStart(2, '0')}`;

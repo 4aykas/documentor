@@ -22,7 +22,7 @@ import { columnWidthsDxa, fitsWidth, isKeyValue } from './table-width.js';
 import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
 import { normalizeDocx } from './normalize-docx.js';
-import { mixToWhite, SCALE_STEPS, STATEMENT_TINT, stepOf, weekLabel } from './tint.js';
+import { mixToWhite, readableOn, SCALE_STEPS, STATEMENT_TINT, stepOf, weekLabel } from './tint.js';
 
 const halfPt = (pt: number): number => Math.round(pt * 2);
 const dxa = (pt: number): number => Math.round(pt * 20);
@@ -417,8 +417,14 @@ function heatmapBlocks(b: Extract<Block, { t: 'heatmap' }>, theme: Theme): (Para
   // to the label column so the widths still sum to the text column exactly.
   const widths = [total - weekW * weeks, ...Array.from({ length: weeks }, () => weekW)];
 
-  const run = (text: string, brand: boolean) =>
-    new TextRun({ text, size: halfPt(theme.type.bodyPt * 0.95), ...(brand ? { color: hex(theme.colors.brandOnLight) } : {}) });
+  const run = (text: string, brand: boolean, on?: string) =>
+    new TextRun({
+      text, size: halfPt(theme.type.bodyPt * 0.95),
+      ...(brand ? { color: hex(theme.colors.brandOnLight) } : {}),
+      // `on` is the colour the number needs against the fill it sits on;
+      // html.ts computes the same one per step. See readableOn.
+      ...(on === undefined ? {} : { color: hex(on) }),
+    });
   const cell = (children: Paragraph[], width: number, fill?: string) =>
     new TableCell({
       width: { size: width, type: WidthType.DXA },
@@ -451,8 +457,13 @@ function heatmapBlocks(b: Extract<Block, { t: 'heatmap' }>, theme: Theme): (Para
           return cell([centred(marks > 0 ? [run('▪'.repeat(marks), true)] : [])], weekW);
         }
         const step = stepOf(v, max, SCALE_STEPS.length);
-        const fill = step > 0 ? mixToWhite(theme.colors.brandOnLight, SCALE_STEPS[step - 1]!).slice(1) : undefined;
-        const text = b.style === 'numbers' && v > 0 ? centred([run(String(v), false)]) : new Paragraph({ children: [] });
+        const mixed = step > 0 ? mixToWhite(theme.colors.brandOnLight, SCALE_STEPS[step - 1]!) : undefined;
+        const fill = mixed?.slice(1);
+        const text = b.style === 'numbers' && v > 0
+          // The number reads against its own cell, not against paper: the
+          // darkest step is the brand at full strength.
+          ? centred([run(String(v), false, mixed === undefined ? undefined : readableOn(mixed, theme.colors.ink))])
+          : new Paragraph({ children: [] });
         return cell([text], weekW, fill);
       }),
     ],

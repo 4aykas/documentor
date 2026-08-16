@@ -8,7 +8,7 @@ import { PANEL_BORDER_PT, coverStatementPt, partitionCoverBlocks, ruleIndexes, s
 import { arimoFaceCss } from './fonts.js';
 import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
-import { SCALE_STEPS, STATEMENT_TINT, stepOf, weekLabel } from './tint.js';
+import { SCALE_STEPS, STATEMENT_TINT, mixToWhite, readableOn, stepOf, weekLabel } from './tint.js';
 import { columnWidthsDxa, dxa, fitsWidth, isKeyValue } from './table-width.js';
 
 export function escapeHtml(s: string): string {
@@ -443,7 +443,13 @@ table.heatmap td, table.heatmap th{ border-bottom: none; text-align: center; pad
    a width there is simply ignored for layout purposes. */
 table.heatmap thead th:first-child{ width: 28%; }
 table.heatmap td.hm-label{ text-align: left; }
-${SCALE_STEPS.map((t, i) => `.hm-s${i + 1}{ background: color-mix(in srgb, var(--brand) ${Math.round(t * 100)}%, white); }`).join('\n')}
+/* Each step carries its own text colour, computed from the fill rather than
+   inherited from the page. The darkest step is the brand at full strength,
+   and a theme whose brand is dark — plain's IS its ink — drew the number
+   black on black, so the value was not on the page at all. color-mix with
+   these fractions and mixToWhite agree by construction (see tint.ts), so the
+   colour named here is the colour the browser actually paints on. */
+${SCALE_STEPS.map((t, i) => `.hm-s${i + 1}{ background: color-mix(in srgb, var(--brand) ${Math.round(t * 100)}%, white); color: ${readableOn(mixToWhite(theme.colors.brandOnLight, t), theme.colors.ink)}; }`).join('\n')}
 .hm-marks{ color: var(--brand); letter-spacing: 1pt; } /* deliberate exemption from brandOnLight: a fill-shaped glyph, not small text; see heatmapBlocks() in docx.ts */
 /* break-BEFORE, not after. With break-after, a marker that lands at the top
    of a fresh page (because the content before it filled the previous one)
