@@ -71,7 +71,10 @@ describe('splitChrome', () => {
     const { body, dropped } = splitChrome([page(1), page(2)], HEIGHT);
     expect(body[0]!.map((r) => r.text)).toEqual(['Row Alpha']);
     expect(body[1]!.map((r) => r.text)).toEqual(['Row Beta']);
-    expect(dropped.join('\n')).not.toMatch(/ACME SUPPLIES/);
+    // The report now lists what was actually dropped, so both furniture
+    // texts must be named — this is a stronger check than "letterhead text
+    // is absent from the report" ever was.
+    expect(dropped.join('\n')).toMatch(/ACME SUPPLIES/);
     expect(dropped.join('\n')).toMatch(/4 run/); // 2 positions * 2 pages
   });
 
@@ -98,14 +101,11 @@ describe('splitChrome', () => {
     expect(dropped.join('\n')).toMatch(/no body content/);
   });
 
-  // --- Fix round 2: pass one is text-and-position only; furniture is decided
-  // by pass two, geometrically, against the page's own height ---
-
-  it('keeps a realistic totals row: a static caption near the body is nearer the content than the edge', () => {
+  it('keeps a realistic totals row: a static caption far from the edge stays body even though it is a candidate', () => {
     // "Total:" is a static caption, identical on every page, exactly like a
     // letterhead line — no text-only rule can tell them apart. What tells
-    // them apart is that this one sits two lines below the last item and
-    // hundreds of points from the bottom of the page.
+    // them apart is that this one sits at 76% of the sheet from the bottom
+    // edge, nowhere near the outer margin a real footer lives in.
     const page = (n: number): TextRun[] => [
       run(n === 1 ? 'Widget Alpha' : 'Widget Beta', 60, 700),
       run(n === 1 ? '$10.00' : '$20.00', 400, 700),
@@ -121,10 +121,11 @@ describe('splitChrome', () => {
   });
 
   it('drops a letterhead, a footer caption, AND a bare page number together', () => {
-    // The bare page number is the case that used to slip through: not a
-    // candidate under the old text guards, so it counted as body and
-    // stretched the band down to swallow the real footer above it. Caught
-    // directly here, it never gets the chance to do that.
+    // The bare page number is the case that used to slip through under a
+    // text-only rule: not a candidate under either round-1 guard, so it
+    // counted as body and stretched the band down to swallow the real
+    // footer above it. Caught directly here (both position AND margin), it
+    // never gets the chance to do that.
     const page = (n: number): TextRun[] => [
       run('ACME SUPPLIES', 300, 800),
       run(n === 1 ? 'Report for January' : 'Report for February', 60, 600),
@@ -159,5 +160,152 @@ describe('splitChrome', () => {
     expect(body[0]!.map((r) => r.text)).toEqual(['Item Alpha', '1', 'Item Gamma', '1']);
     expect(body[1]!.map((r) => r.text)).toEqual(['Item Beta', '2', 'Item Delta', '2']);
     expect(dropped).toEqual([]);
+  });
+
+  // --- Fix round 3: furniture needs BOTH the band and the margin ---
+
+  it('drops a letterhead block even when a varying line sits close beneath it', () => {
+    // Under the "nearer to content" rule this replaces, the letterhead was
+    // only 24pt from the varying invoice line and 42pt from the top edge,
+    // so "nearer the content" kept it — the address printed twice. The band
+    // (this line is above the entire content range) and the margin (42pt is
+    // 5% of an 842pt sheet) now agree, so it goes.
+    const page = (n: number): TextRun[] => [
+      run('TEBIN.PRO Sp. z o.o.', 400, 800),
+      run('NIP: 9552562516', 400, 788),
+      run(`Invoice ${n === 1 ? 'January' : 'February'}`, 400, 776),
+      run(n === 1 ? 'Body row January' : 'Body row February', 60, 600),
+      run(`${n} / 2`, 300, 30),
+    ];
+    const { body, dropped } = splitChrome([page(1), page(2)], HEIGHT);
+    expect(body[0]!.map((r) => r.text)).toEqual(['Invoice January', 'Body row January']);
+    expect(body[1]!.map((r) => r.text)).toEqual(['Invoice February', 'Body row February']);
+    expect(dropped.join('\n')).toMatch(/TEBIN\.PRO/);
+    expect(dropped.join('\n')).toMatch(/NIP:/);
+  });
+
+  it('drops a landscape title: the margin is a fraction of a short page, not a fixed number of points', () => {
+    // At heightPt=595 (landscape), 15% of the sheet is 89.25pt — a title
+    // 35pt from the top edge is comfortably inside that, though it would
+    // not be on a taller, portrait sheet.
+    const page = (n: number): TextRun[] => [
+      run('Revenue Estimation', 300, 560),
+      run(n === 1 ? 'Row January' : 'Row February', 60, 540),
+    ];
+    const { body, dropped } = splitChrome([page(1), page(2)], 595);
+    expect(body[0]!.map((r) => r.text)).toEqual(['Row January']);
+    expect(body[1]!.map((r) => r.text)).toEqual(['Row February']);
+    expect(dropped.join('\n')).toMatch(/Revenue Estimation/);
+  });
+
+  it('keeps a candidate that sits close to a landscape edge but outside the margin fraction', () => {
+    // Same 595pt sheet: a caption 95pt from the nearer edge is outside the
+    // 89.25pt (15%) margin, even though 95pt would read as "close to the
+    // edge" on an absolute scale. This is the case a fixed-points margin
+    // (rather than a fraction of the page) gets wrong.
+    const page = (n: number): TextRun[] => [
+      run(n === 1 ? 'Body January' : 'Body February', 60, 300),
+      run('Side Caption', 400, 95),
+    ];
+    const { body, dropped } = splitChrome([page(1), page(2)], 595);
+    expect(body[0]!.map((r) => r.text)).toEqual(['Body January', 'Side Caption']);
+    expect(body[1]!.map((r) => r.text)).toEqual(['Body February', 'Side Caption']);
+    expect(dropped).toEqual([]);
+  });
+
+  it('drops a footer that sits nearer the last body row than the edge, on a dense page', () => {
+    // The last body row reaches y=42, only 14pt above the footer at y=28 —
+    // nearer to that content than to the bottom edge (28pt). Distance to
+    // content alone (the previous, superseded rule) kept this footer.
+    // Distance to the edge as a fraction of the page (28 / 842 = 3.3%) is
+    // what actually says "footer", regardless of how close the body itself
+    // runs to the bottom margin.
+    const page = (n: number): TextRun[] => [
+      run(n === 1 ? 'Last row January' : 'Last row February', 60, 42),
+      run('Confidential', 300, 28),
+    ];
+    const { body, dropped } = splitChrome([page(1), page(2)], HEIGHT);
+    expect(body[0]!.map((r) => r.text)).toEqual(['Last row January']);
+    expect(body[1]!.map((r) => r.text)).toEqual(['Last row February']);
+    expect(dropped.join('\n')).toMatch(/Confidential/);
+  });
+
+  it('protects a subtotal caption sitting inside the margin, because the body band reaches that far down too', () => {
+    // Both non-candidate rows sit inside the outer margin themselves (a
+    // dense table running close to the bottom edge). The candidate caption
+    // between them is inside the margin fraction as well, but it is also
+    // inside the band those two rows define — the band is what keeps it,
+    // not the margin, which would drop it on its own.
+    const page = (n: number): TextRun[] => [
+      run(n === 1 ? 'Item Alpha' : 'Item Beta', 60, 140),
+      run('Subtotal:', 300, 120),
+      run(n === 1 ? 'Item Gamma' : 'Item Delta', 60, 100),
+    ];
+    const { body, dropped } = splitChrome([page(1), page(2)], HEIGHT);
+    expect(body[0]!.map((r) => r.text)).toEqual(['Item Alpha', 'Subtotal:', 'Item Gamma']);
+    expect(body[1]!.map((r) => r.text)).toEqual(['Item Beta', 'Subtotal:', 'Item Delta']);
+    expect(dropped).toEqual([]);
+  });
+
+  it('lands in the every-run-is-a-candidate fallback when body content varies only by a trailing amount', () => {
+    // "Turnover 1000" / "Turnover 2000" strip to the identical "Turnover "
+    // template, exactly as a real page number would — this is the
+    // documented, accepted gap in pass one's text rule. Paired with a
+    // repeating title, every run on this page is a candidate, so there is
+    // no non-candidate content anywhere to measure a band or margin
+    // against. This must land in the refusal-to-guess fallback, not be
+    // silently mishandled by whatever the band/margin code happens to do
+    // with an empty content set.
+    const page = (n: number): TextRun[] => [
+      run('Revenue Estimation', 300, 560),
+      run(n === 1 ? 'Turnover 1000' : 'Turnover 2000', 60, 500),
+    ];
+    const { body, dropped } = splitChrome([page(1), page(2)], 595);
+    expect(body[0]!.map((r) => r.text)).toEqual(['Revenue Estimation', 'Turnover 1000']);
+    expect(body[1]!.map((r) => r.text)).toEqual(['Revenue Estimation', 'Turnover 2000']);
+    expect(dropped.join('\n')).toMatch(/no body content/);
+  });
+
+  it('drops a letterhead while keeping a bare-digit value column on the same page', () => {
+    // Restores the combination the "keeps a column" test above no longer
+    // covers on its own: a bare-digit column (candidate by text, since "1"
+    // and "2" strip to the same empty template) sitting next to a genuine
+    // letterhead. A varying notes line anchors the body band; without it,
+    // every run here would be a candidate and the whole page would fall
+    // into the refusal-to-guess fallback instead of exercising the rule.
+    const page = (n: number): TextRun[] => [
+      run('TEBIN.PRO Sp. z o.o.', 400, 800),
+      run(n === 1 ? 'Notes for January' : 'Notes for February', 60, 620),
+      run('Labor', 60, 600),
+      run(`${n}`, 300, 600),
+      run('Other cost', 60, 580),
+      run(`${n}`, 300, 580),
+    ];
+    const { body, dropped } = splitChrome([page(1), page(2)], HEIGHT);
+    expect(body[0]!.map((r) => r.text)).toEqual(['Notes for January', 'Labor', '1', 'Other cost', '1']);
+    expect(body[1]!.map((r) => r.text)).toEqual(['Notes for February', 'Labor', '2', 'Other cost', '2']);
+    expect(dropped.join('\n')).toMatch(/TEBIN\.PRO/);
+  });
+
+  it('keeps a candidate that sits exactly on the margin boundary: a tie is not furniture', () => {
+    // At heightPt=1000, 15% is exactly 150pt. A candidate at y=150 is
+    // min(150, 850) = 150pt from its nearer edge — equal to the threshold,
+    // not less than it. This project keeps on a tie, deliberately: the
+    // comparison is strict, so an exact match on the boundary stays body.
+    const page = (n: number): TextRun[] => [
+      run(n === 1 ? 'Body January' : 'Body February', 60, 500),
+      run('Tied Caption', 300, 150),
+    ];
+    const { body, dropped } = splitChrome([page(1), page(2)], 1000);
+    expect(body[0]!.map((r) => r.text)).toEqual(['Body January', 'Tied Caption']);
+    expect(body[1]!.map((r) => r.text)).toEqual(['Body February', 'Tied Caption']);
+    expect(dropped).toEqual([]);
+  });
+
+  it('throws on a non-finite or non-positive page height instead of silently mis-classifying every run', () => {
+    const page: TextRun[] = [run('TEBIN.PRO Sp. z o.o.', 400, 800), run('Turnover', 60, 600)];
+    expect(() => splitChrome([page, page], 0)).toThrow(/finite positive number/);
+    expect(() => splitChrome([page, page], -842)).toThrow(/finite positive number/);
+    expect(() => splitChrome([page, page], Number.NaN)).toThrow(/finite positive number/);
   });
 });
