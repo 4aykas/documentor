@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyMatrix, readPageGeometry } from '../../src/ingest/pdf/geometry.js';
+import { PATH_OP_ARGS, applyMatrix, readPageGeometry } from '../../src/ingest/pdf/geometry.js';
 
 // pdfjs op codes, from pdfjs-dist@4.10.38's OPS table. Hardcoded rather than
 // imported so the test states what shape it is feeding in.
@@ -7,6 +7,32 @@ const OPS = {
   save: 10, restore: 11, transform: 12, constructPath: 91,
   moveTo: 13, lineTo: 14, curveTo: 15, curveTo2: 16, curveTo3: 17, closePath: 18, rectangle: 19,
 };
+
+describe('PATH_OP_ARGS', () => {
+  it('names exactly the path operators pdfjs can emit, at the codes pdfjs gives them', async () => {
+    // The table's argument counts are read off pdfjs's own constructPath and
+    // cannot be imported. The op CODES can be, and this is the guard that
+    // matters: `pdfjs-dist` is depended on with a caret, so a minor bump
+    // arrives without anyone deciding to take it. If that bump renumbers an
+    // operator or adds an eighth path op, the reader would start throwing on
+    // real documents — or, worse, mis-walk one. Fail here instead, at the
+    // table, where the fix is to re-read constructPath and update the counts.
+    const { OPS } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const expected = {
+      moveTo: 2, lineTo: 2, curveTo: 6, curveTo2: 4, curveTo3: 4, closePath: 0, rectangle: 4,
+    };
+    const byName = Object.fromEntries(
+      Object.entries(expected).map(([name, args]) => [name, { code: OPS[name as keyof typeof OPS], args }]),
+    );
+    for (const [name, { code, args }] of Object.entries(byName)) {
+      expect(PATH_OP_ARGS[code], `${name} (op ${code})`).toBe(args);
+    }
+    // And nothing beyond them: an entry here that pdfjs no longer emits is as
+    // much a stale assumption as a missing one.
+    expect(Object.keys(PATH_OP_ARGS).map(Number).sort((a, b) => a - b))
+      .toEqual(Object.values(byName).map((v) => v.code).sort((a, b) => a - b));
+  });
+});
 
 describe('applyMatrix', () => {
   it('maps a path coordinate into page space, y-flip included', () => {

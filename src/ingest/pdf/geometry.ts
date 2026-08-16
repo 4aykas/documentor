@@ -18,7 +18,7 @@ const OP_CONSTRUCT_PATH = 91;
  *  not lose that op — it shifts every rectangle after it, silently, which is
  *  the one failure this reader exists to prevent. An op not in the table is
  *  therefore an error rather than a skip. */
-const PATH_OP_ARGS: Readonly<Record<number, number>> = {
+export const PATH_OP_ARGS: Readonly<Record<number, number>> = {
   13: 2, // moveTo
   14: 2, // lineTo
   15: 6, // curveTo
