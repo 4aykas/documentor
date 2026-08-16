@@ -82,30 +82,78 @@ describe('kitchen sink baseline (local pixels only)', () => {
  * and the foot after the last one — are visible here, in the test, instead of
  * being a property of a Markdown file somebody has to open to understand.
  */
+const para = (v: string): Block => ({ t: 'para', text: [{ t: 'text', v }] });
+
+/** One cover, rendered by every theme that gets a picture, so the images are
+ *  comparable rather than each showing a different document. */
+const COVER: Doc = {
+  meta: { title: 'COMMERCIAL PROPOSAL', lang: 'en', cover: true },
+  blocks: [
+    para('ENGINEERING SERVICE'),
+    para('PROJECT — Baseline Fixture'),
+    { t: 'rule' },
+    para('Reference 0000-00-00A'),
+    { t: 'quote', paras: [[{ t: 'text', v: 'Baseline Fixture' }], [{ t: 'text', v: 'The statement band, centred in the cover’s middle.' }]] },
+    para('A. Author'),
+    { t: 'rule' },
+    para('TEBIN.PRO sp. z o.o.'),
+  ],
+};
+
+/** Renders `doc` with `themeId` and compares page one against `name`. */
+async function expectPageOneMatches(doc: Doc, themeId: string, name: string): Promise<void> {
+  const theme = await loadTheme(themeId);
+  resetPdfjsWorkerGlobal();
+  const pages = await rasterPages(await renderPdf(doc, theme, { epochSeconds: EPOCH, browser }));
+  await mkdir(ACTUAL, { recursive: true });
+  await writeFile(join(ACTUAL, name), pages[0]!);
+  const golden = join(BASELINE, name);
+  expect(existsSync(golden), `no baseline yet — review test/baseline/__actual__/${name} and copy it into __baseline__ if it is correct`).toBe(true);
+  expect(pages[0]!.equals(await readFile(golden)), `${name} differs from its baseline; compare it with test/baseline/__actual__/${name}`).toBe(true);
+}
+
 describe('a TEBIN cover page (local pixels only)', () => {
   it('page one matches its committed image', async () => {
-    const p = (v: string): Block => ({ t: 'para', text: [{ t: 'text', v }] });
+    await expectPageOneMatches(COVER, 'tebin', 'tebin-cover-01.png');
+  });
+});
+
+/**
+ * The same cover under the other bundled theme, and it is here because of
+ * what looking at one only cost. Three defects in a row lived exactly where
+ * nobody had rendered anything but TEBIN: the statement band's headline came
+ * out at 9pt against a 10pt body, because half of `plain`'s modest titlePt
+ * is smaller than its prose; the heatmap's darkest cells drew black numbers
+ * on a black fill, because `plain`'s brand IS its ink; and a README pointer
+ * that only a packaged install could see. A theme is a configuration this
+ * renderer is supposed to serve, not a decoration on one company's document.
+ */
+describe('the same cover under the plain theme (local pixels only)', () => {
+  it('page one matches its committed image', async () => {
+    await expectPageOneMatches(COVER, 'plain', 'plain-cover-01.png');
+  });
+});
+
+/**
+ * The heatmap under a theme whose brand is as dark as its ink. Values are
+ * chosen to land on every step of the scale, including the darkest, which is
+ * the one that printed its number invisibly. A markup assertion cannot see
+ * this — the number was in the XML the whole time, in a colour nobody could
+ * read.
+ */
+describe('the heatmap under the plain theme (local pixels only)', () => {
+  it('page one matches its committed image', async () => {
     const doc: Doc = {
-      meta: { title: 'COMMERCIAL PROPOSAL', lang: 'en', cover: true },
-      blocks: [
-        p('ENGINEERING SERVICE'),
-        p('PROJECT — Baseline Fixture'),
-        { t: 'rule' },
-        p('Reference 0000-00-00A'),
-        { t: 'quote', paras: [[{ t: 'text', v: 'Baseline Fixture' }], [{ t: 'text', v: 'The statement band, centred in the cover’s middle.' }]] },
-        p('A. Author'),
-        { t: 'rule' },
-        p('TEBIN.PRO sp. z o.o.'),
-      ],
+      meta: { title: 'Involvement', lang: 'en' },
+      blocks: [{
+        t: 'heatmap', style: 'numbers',
+        rows: [
+          { label: 'Lead', values: [40, 30, 20, 8, 2] },
+          { label: 'Support', values: [4, 8, 16, 32, 40] },
+        ],
+      }],
     };
-    const theme = await loadTheme('tebin');
-    resetPdfjsWorkerGlobal();
-    const pages = await rasterPages(await renderPdf(doc, theme, { epochSeconds: EPOCH, browser }));
-    await mkdir(ACTUAL, { recursive: true });
-    await writeFile(join(ACTUAL, 'tebin-cover-01.png'), pages[0]!);
-    const golden = join(BASELINE, 'tebin-cover-01.png');
-    expect(existsSync(golden), 'no baseline yet — review test/baseline/__actual__/tebin-cover-01.png and copy it into __baseline__ if it is correct').toBe(true);
-    expect(pages[0]!.equals(await readFile(golden))).toBe(true);
+    await expectPageOneMatches(doc, 'plain', 'plain-heatmap-01.png');
   });
 });
 
