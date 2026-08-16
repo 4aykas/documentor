@@ -1,7 +1,7 @@
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
 import { PDFDocument } from 'pdf-lib';
 import type { Doc } from '../ir/types.js';
-import { PAGE_PT, toMm, type Theme } from '../theme/types.js';
+import { PAGE_PT, type Theme } from '../theme/types.js';
 import { buildHtml, escapeHtml } from './html.js';
 import { arimoFaceCss } from './fonts.js';
 
@@ -285,7 +285,13 @@ export async function renderPdf(
       // no extra band at all — a 33pt gap, comfortably past the 12pt
       // legibility floor the sweep was judged against. That is why this is
       // just `theme.page.marginPt`, on all four sides, rather than a
-      // constant added to top alone.
+      // constant added to top alone. That margin is declared in the
+      // stylesheet's own `@page` rule, not passed here: once
+      // preferCSSPageSize is on, the `margin` option is ignored outright —
+      // measured by printing the same page with the option at 16.93mm and at
+      // 40mm against a CSS margin of 16.93mm, and finding the first ink at
+      // 49.8pt from the top both times. It used to be passed anyway, which
+      // read as configuration and was not.
       //
       // What no margin value can fix: an oversized header is not clipped,
       // it **overprints the body** — proved by forcing a ~1000-character
@@ -297,35 +303,27 @@ export async function renderPdf(
       // grows downward from a fixed point near the physical page top no
       // matter how much room the margin gives it, so no margin value here
       // guards against a title long enough to wrap multiple times.
-      const margin = {
-        // page.pdf() rejects `pt`; mm is the unit the theme converts into.
-        top: toMm(theme.page.marginPt),
-        bottom: toMm(theme.page.marginPt),
-        left: toMm(theme.page.marginPt),
-        right: toMm(theme.page.marginPt),
-      };
       // Two renders of the one page already loaded with the one HTML string:
       // same body layout both times (headerTemplate never reaches the body's
       // layout box — measured in the spike), so pagination is identical and
       // only the header band differs. That equality is what makes it safe to
       // take page 1 from one render and pages 2..N from the other below.
+      // No `format` and no `margin`: the sheet and its margins come from the
+      // stylesheet's `@page` rules (see buildHtml), which is what
+      // preferCSSPageSize means and what the named landscape page needs.
       const withHeader = await page.pdf({
-        format: theme.page.size === 'A4' ? 'A4' : 'Letter',
         printBackground: true,
         preferCSSPageSize: true,
         displayHeaderFooter: true,
         headerTemplate: await runningHeader(doc, theme),
         footerTemplate: '<span></span>',
-        margin,
       });
       const withoutHeader = await page.pdf({
-        format: theme.page.size === 'A4' ? 'A4' : 'Letter',
         printBackground: true,
         preferCSSPageSize: true,
         displayHeaderFooter: true,
         headerTemplate: '<span></span>',
         footerTemplate: '<span></span>',
-        margin,
       });
       return await stitchCleanFirstPage(Buffer.from(withHeader), Buffer.from(withoutHeader), opts.epochSeconds);
     } finally {

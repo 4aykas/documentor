@@ -327,4 +327,25 @@ describe('renderPdf', () => {
     const headerBand = bands[0]!;
     expect(headerBand.end - headerBand.start, `the header's own ink band is ${headerBand.end - headerBand.start}px tall — that is wide enough to have swallowed the page's own first heading rather than staying clamped to it own two lines; got bands ${JSON.stringify(bands)}`).toBeLessThan(60);
   });
+  it("prints at the theme's own page size, which only the stylesheet now sets", async () => {
+    // Letter is a supported page size and nothing exercised it. It matters
+    // more since printing moved to preferCSSPageSize: the `format` option is
+    // no longer passed, so `@page{ size: Letter }` is the only thing saying
+    // what sheet this is. A CSS keyword Chromium did not accept would fall
+    // back silently, and every Letter document would come out A4.
+    const letter = resolveTheme({
+      id: 'us', colors: { brandOnLight: '#DA291C' }, page: { size: 'Letter', marginPt: 48 },
+    });
+    const buf = await renderPdf(ingestMarkdown('# T\n\nprose\n').doc, letter, { epochSeconds: EPOCH, browser });
+    // pdf-to-img and pdfText share one pdfjs worker global; rasterising
+    // without this leaves every later text extraction in the file broken.
+    resetPdfjsWorkerGlobal();
+    const [png] = await rasterPages(buf, 1);
+    // The PNG's own IHDR, at scale 1: width and height in points.
+    const width = png!.readUInt32BE(16);
+    const height = png!.readUInt32BE(20);
+    // 612x792pt; A4 would be 595x842.
+    expect({ width, height }).toEqual({ width: 612, height: 792 });
+  });
+
 });
