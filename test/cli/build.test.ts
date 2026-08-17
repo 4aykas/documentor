@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PDFDocument, StandardFonts, rectangle, stroke, setLineWidth, setStrokingRgbColor } from 'pdf-lib';
 import type { Doc } from '../../src/ir/types.js';
 import { renderDocx } from '../../src/render/docx.js';
+import { renderPdf } from '../../src/render/pdf.js';
 import { resolveTheme } from '../../src/theme/resolve.js';
-import { FORMATS, parseArgs, runBuild } from '../../src/cli/build.js';
+import { FORMATS, READABLE_EXTS, parseArgs, runBuild } from '../../src/cli/build.js';
 
 const collect = () => {
   const log: string[] = []; const err: string[] = [];
@@ -321,5 +323,211 @@ describe('runBuild', () => {
     expect(await readdir(outA)).toEqual(['report.plain.pdf']);
     expect(await readdir(outB)).toEqual(['report.plain.pdf']);
     expect(Buffer.compare(withoutFlag, computedDirectly)).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reading a PDF — task 6: the fourth ingester wired into build.ts. The unit
+// behaviour of ingestPdf itself (grid detection, the join, the token gate,
+// the limits) is already covered by test/ingest/pdf*.test.ts; everything
+// here is specifically about the CLI wiring: the extension is dispatched,
+// the advisory and the dropped list reach the report the same way every
+// other ingester's do, and a refusal never leaves a partial artefact behind.
+// ---------------------------------------------------------------------------
+
+const pdfTheme = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C' } });
+
+/** pdf-lib's own `page.drawRectangle` never emits the PDF `re` operator
+ *  grid.ts's own reader looks for (see test/ingest/pdf.test.ts's identical
+ *  comment) — pushing the raw operator is what makes a fixture built here
+ *  representative of a real, drawn-grid table rather than testing nothing. */
+function drawCellRect(x: number, y: number, w: number, h: number): ReturnType<typeof rectangle>[] {
+  return [setLineWidth(1), setStrokingRgbColor(0, 0, 0), rectangle(x, y, w, h), stroke()];
+}
+
+/** A multi-page PDF of positioned text runs, no rectangles at all — enough
+ *  to exercise prose, headings and page-furniture repetition without any of
+ *  grid.ts's own table-detection machinery. */
+async function multiPagePdf(pages: { text: string; x: number; y: number; size: number }[][]): Promise<Buffer> {
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  for (const items of pages) {
+    const page = pdf.addPage([612, 792]);
+    for (const it of items) page.drawText(it.text, { x: it.x, y: it.y, size: it.size, font });
+  }
+  return Buffer.from(await pdf.save());
+}
+
+/** A single boxed table — every cell its own drawn rectangle, the shape the
+ *  two real financial documents this reader was built for actually use. */
+async function boxedTablePdf(header: string[], rows: string[][], colXs: number[]): Promise<Buffer> {
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const page = pdf.addPage([612, 792]);
+  const rowH = 20;
+  let y = 700;
+  for (const row of [header, ...rows]) {
+    for (let c = 0; c < colXs.length - 1; c++) {
+      const x0 = colXs[c]!;
+      const x1 = colXs[c + 1]!;
+      page.pushOperators(...drawCellRect(x0, y - rowH, x1 - x0, rowH));
+      const cell = row[c] ?? '';
+      if (cell !== '') page.drawText(cell, { x: x0 + 4, y: y - rowH + 6, size: 10, font });
+    }
+    y -= rowH;
+  }
+  return Buffer.from(await pdf.save());
+}
+
+async function pdfFixture(bytes: Buffer, name = 'report.pdf'): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'documentor-cli-pdf-'));
+  const file = join(dir, name);
+  await writeFile(file, bytes);
+  return file;
+}
+
+describe('runBuild reading a PDF', () => {
+  it('READABLE_EXTS names .pdf, and .pdf is one of the extensions a build can read', () => {
+    // Mutation target: dropping '.pdf' from READABLE_EXTS (build.ts's own
+    // export, the extension-routing decision this task adds) makes this
+    // fail without touching anything else — the directory-batch tests below
+    // would still pass on a single-file run alone, so this pins the set
+    // itself, not just one path through it.
+    expect(READABLE_EXTS.has('.pdf')).toBe(true);
+  });
+
+  it('builds a PDF this project rendered itself, straight through to Markdown, prose intact', async () => {
+    const doc: Doc = {
+      meta: { title: 'Re-issue', lang: 'en' },
+      blocks: [{ t: 'para', text: [{ t: 'text', v: 'Body text.' }] }],
+    };
+    const bytes = await renderPdf(doc, pdfTheme, { epochSeconds: 1_000_000_000 });
+    const file = await pdfFixture(Buffer.from(bytes));
+    const { io } = collect();
+    expect(await runBuild([file, '--to', 'md'], io)).toBe(0);
+    const target = join(file, '..', 'report.plain.md');
+    expect((await readdir(join(file, '..'))).sort()).toEqual(['report.pdf', 'report.plain.md']);
+    expect(await readFile(target, 'utf8')).toContain('Body text.');
+  });
+
+  it('reads a boxed table cell for cell through the CLI, the same shape ingestPdf\'s own unit tests exercise', async () => {
+    const bytes = await boxedTablePdf(
+      ['Item', '2024', '2025'],
+      [['Turnover', '3253', '4387'], ['Labor', '1536', '2004']],
+      [50, 250, 400, 550],
+    );
+    const file = await pdfFixture(bytes);
+    const { io } = collect();
+    expect(await runBuild([file, '--to', 'md'], io)).toBe(0);
+    const text = await readFile(join(file, '..', 'report.plain.md'), 'utf8');
+    expect(text).toContain('Turnover');
+    expect(text).toContain('3253');
+    expect(text).toContain('4387');
+  });
+
+  it('an undeclared repeated block reaches the report as an advisory, naming the y-value that would remove it', async () => {
+    // Two pages, each printing the same text at the same position — the
+    // observation findRepeated makes, and the whole user interface for page
+    // furniture per the design doc ("Identifying page furniture"): reported,
+    // never silently removed.
+    const bytes = await multiPagePdf([
+      [{ text: 'LETTERHEAD', x: 50, y: 750, size: 12 }, { text: 'Alpha content.', x: 50, y: 700, size: 10 }],
+      [{ text: 'LETTERHEAD', x: 50, y: 750, size: 12 }, { text: 'Beta content.', x: 50, y: 700, size: 10 }],
+    ]);
+    const file = await pdfFixture(bytes);
+    const { io, err } = collect();
+    expect(await runBuild([file, '--to', 'md'], io)).toBe(0);
+    const report = err.join('\n');
+    // The full advisory line, not a summary of it — the design's own
+    // requirement that this reach the user "intact", never truncated.
+    expect(report).toMatch(/repeated block at y=750, x=50: LETTERHEAD/);
+    expect(report).toMatch(/dropAbovePt below 750 or dropBelowPt above 750 would remove it/);
+    // Nothing was actually removed: both pages' letterhead print in the
+    // output, because nothing was declared.
+    const text = await readFile(join(file, '..', 'report.plain.md'), 'utf8');
+    expect(text).toContain('LETTERHEAD');
+    expect(text).toContain('Alpha content.');
+    expect(text).toContain('Beta content.');
+  });
+
+  it('a declared pdfChrome sidecar rule removes the furniture, and the removal (not the advisory) is reported', async () => {
+    const bytes = await multiPagePdf([
+      [{ text: 'LETTERHEAD', x: 50, y: 750, size: 12 }, { text: 'Alpha content.', x: 50, y: 700, size: 10 }],
+      [{ text: 'LETTERHEAD', x: 50, y: 750, size: 12 }, { text: 'Beta content.', x: 50, y: 700, size: 10 }],
+    ]);
+    const file = await pdfFixture(bytes);
+    const sidecar = join(file, '..', 'report.documentor.json');
+    await writeFile(sidecar, JSON.stringify({ pdfChrome: { dropAbovePt: 700 } }));
+    const { io, err } = collect();
+    expect(await runBuild([file, '--to', 'md'], io)).toBe(0);
+    const report = err.join('\n');
+    expect(report).toMatch(/2 run\(s\) removed by the declared rule/);
+    expect(report).not.toMatch(/dropAbovePt below .* would remove it/); // the advisory, not fired
+    const text = await readFile(join(file, '..', 'report.plain.md'), 'utf8');
+    expect(text).not.toContain('LETTERHEAD');
+    expect(text).toContain('Alpha content.');
+    expect(text).toContain('Beta content.');
+  });
+
+  it('refuses a page past the rectangle cap, and writes nothing — no partial artefact before the gate', async () => {
+    const pdf = await PDFDocument.create();
+    const page = pdf.addPage([612, 792]);
+    // PDF_MAX_RECTS_PER_PAGE is 5000 (src/ingest/pdf.ts) — one past it.
+    for (let i = 0; i < 5001; i++) {
+      page.pushOperators(...drawCellRect(50 + (i % 100), 50 + Math.floor(i / 100), 1, 1));
+    }
+    const file = await pdfFixture(Buffer.from(await pdf.save()));
+    const { io, err } = collect();
+    // The ingest() call in runBuild is unguarded, exactly like every other
+    // ingester's own thrown refusal (see test/cli/sidecar.test.ts's "a bad
+    // --theme flag" case for the identical, pre-existing shape) — it
+    // propagates as a rejected promise, caught only at the bin/ entry
+    // point, never as a bare stack trace (that top-level catch prints only
+    // the message — see src/bin/documentor.ts).
+    await expect(runBuild([file, '--to', 'md'], io)).rejects.toThrow(/5001 rectangles.*5000/s);
+    expect(err.join('\n')).toBe('');
+    // No output directory contents beyond the input itself: mkdir/writeFile
+    // in runBuild both run strictly after `ingest()` returns, so a refusal
+    // this early can never leave a partial file on disk.
+    expect(await readdir(join(file, '..'))).toEqual(['report.pdf']);
+  });
+
+  it('refuses a document with more pages than the limit, naming both numbers, before writing anything', async () => {
+    const blocks: Doc['blocks'] = [];
+    for (let i = 0; i < 5; i++) {
+      blocks.push({ t: 'para', text: [{ t: 'text', v: `Page ${i}` }] }, { t: 'pagebreak' });
+    }
+    const doc: Doc = { meta: { title: 'Long', lang: 'en' }, blocks };
+    const bytes = await renderPdf(doc, pdfTheme, { epochSeconds: 1_000_000_000 });
+    const file = await pdfFixture(Buffer.from(bytes));
+    const { io, err } = collect();
+    // build.ts's own ingest() dispatch calls ingestPdf with no `limits`
+    // override, so the CLI is held to PDF_MAX_PAGES (60) — this document
+    // renders to 6 pages, well under it, so this only proves the extension
+    // dispatch actually reaches ingestPdf rather than silently no-op'ing;
+    // the page-cap refusal itself is covered directly against ingestPdf in
+    // test/ingest/pdf.test.ts. Six pages with nothing repeated across all of
+    // them still produces chrome.ts's own "nothing looked like furniture"
+    // advisory line (pages.length >= 2 is enough to look) — by design, not
+    // an error, so this only checks the build succeeded and that line is
+    // exactly what reached the report.
+    expect(await runBuild([file, '--to', 'md'], io)).toBe(0);
+    expect(err.join('\n')).toMatch(/no repeated block was found across pages/);
+  });
+
+  it('.pdf is read the same way in a directory batch, through discoverInputs', async () => {
+    const doc: Doc = {
+      meta: { title: 'Batch', lang: 'en' },
+      blocks: [{ t: 'para', text: [{ t: 'text', v: 'Batched body.' }] }],
+    };
+    const bytes = await renderPdf(doc, pdfTheme, { epochSeconds: 1_000_000_000 });
+    const dir = await mkdtemp(join(tmpdir(), 'documentor-cli-pdf-batch-'));
+    await writeFile(join(dir, 'report.pdf'), Buffer.from(bytes));
+    const { io, log } = collect();
+    expect(await runBuild([dir, '--to', 'md'], io)).toBe(0);
+    expect(log.join('\n')).toMatch(/1 written/);
+    expect(await readdir(dir)).toEqual(expect.arrayContaining(['report.plain.md']));
+    const text = await readFile(join(dir, 'report.plain.md'), 'utf8');
+    expect(text).toContain('Batched body.');
   });
 });

@@ -4,6 +4,7 @@ import { chromium, type Browser } from 'playwright-core';
 import { ingestMarkdown } from '../ingest/md.js';
 import { ingestDocx } from '../ingest/docx.js';
 import { ingestXlsx } from '../ingest/xlsx.js';
+import { ingestPdf } from '../ingest/pdf.js';
 import type { Ingested } from '../ir/types.js';
 import { validateDoc, type Doc } from '../ir/validate.js';
 import { renderMarkdown } from '../render/md.js';
@@ -12,6 +13,7 @@ import { renderDocx } from '../render/docx.js';
 import { loadTheme, type Theme } from '../theme/resolve.js';
 import { resolveEpoch } from './timestamp.js';
 import { resolveConfig, SidecarResolutionError, type ConfigFlags, DEFAULT_THEME, DEFAULT_TO } from './config.js';
+import type { PdfChromeRule } from './sidecar.js';
 
 type Io = { log: (s: string) => void; err: (s: string) => void };
 // Exported so the top-level --help text can name exactly what this build
@@ -97,7 +99,7 @@ async function renderTo(
 // through a sidecar (see config.ts's own comment on why that still gives it
 // the right precedence over the document's own DocSubtitle with no extra
 // code here).
-export type IngestOpts = { title?: string; subtitle?: string; date?: string; entity?: string };
+export type IngestOpts = { title?: string; subtitle?: string; date?: string; entity?: string; chrome?: PdfChromeRule };
 
 /**
  * One spot for "which ingester, read how". Both ingesters return the same
@@ -114,19 +116,24 @@ export type IngestOpts = { title?: string; subtitle?: string; date?: string; ent
  * `build` rendering a different one from the same input.
  */
 export async function ingest(
-  ext: '.docx' | '.xlsx' | '.md' | '.markdown', input: string, opts: IngestOpts,
+  ext: '.docx' | '.xlsx' | '.pdf' | '.md' | '.markdown', input: string, opts: IngestOpts,
 ): Promise<Ingested> {
-  if (ext === '.docx' || ext === '.xlsx') {
+  if (ext === '.docx' || ext === '.xlsx' || ext === '.pdf') {
     const bytes = await readFile(input);
-    const result = ext === '.docx' ? await ingestDocx(bytes, opts) : await ingestXlsx(bytes, opts);
+    const result = ext === '.docx'
+      ? await ingestDocx(bytes, opts)
+      : ext === '.xlsx' ? await ingestXlsx(bytes, opts) : await ingestPdf(bytes, opts);
     // Neither ingester has a way to know the file it came from. ingestDocx
     // falls back to the literal string "Untitled" when neither --title nor a
     // body DocTitle supplied one, and ingestXlsx does the same — a workbook's
     // sheet names are not a document title — when neither --title nor a
-    // sidecar supplied one. The design's rule (first drawn for DOCX, applying
-    // just as well here) is that the file's own name is its title in that
-    // case, so this is the one place that can fill it in: --title still wins
-    // over it, checked above inside each ingester.
+    // sidecar supplied one. ingestPdf is the same again: a PDF has no
+    // DocTitle this reader trusts (the source's own /Title metadata is not
+    // read at all — see src/ingest/pdf.ts, which fills `meta.title` from
+    // `opts.title` or the literal "Untitled"). The design's rule (first
+    // drawn for DOCX, applying just as well here) is that the file's own
+    // name is its title in that case, so this is the one place that can fill
+    // it in: --title still wins over it, checked above inside each ingester.
     if (opts.title === undefined && result.doc.meta.title === 'Untitled') {
       result.doc.meta.title = basename(input, ext);
     }
@@ -251,8 +258,8 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
 
   const input = resolve(args.input);
   const ext = extname(input).toLowerCase();
-  if (ext !== '.md' && ext !== '.markdown' && ext !== '.docx' && ext !== '.xlsx') {
-    io.err(`documentor: cannot read ${ext || 'a file with no extension'} yet — this build reads .md, .docx and .xlsx`);
+  if (ext !== '.md' && ext !== '.markdown' && ext !== '.docx' && ext !== '.xlsx' && ext !== '.pdf') {
+    io.err(`documentor: cannot read ${ext || 'a file with no extension'} yet — this build reads .md, .docx, .xlsx and .pdf`);
     return 2;
   }
 
@@ -338,7 +345,7 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
 // requirement that both commands agree on what a batch contains), and a
 // second copy of this set would only ever be a second place for the two to
 // drift apart the day a fifth ingester arrives.
-export const READABLE_EXTS = new Set(['.md', '.markdown', '.docx', '.xlsx']);
+export const READABLE_EXTS = new Set(['.md', '.markdown', '.docx', '.xlsx', '.pdf']);
 
 export type Discovered = {
   inputs: string[];
@@ -473,12 +480,12 @@ async function processFile(
 ): Promise<FileResult> {
   try {
     const ext = extname(input).toLowerCase();
-    if (ext !== '.md' && ext !== '.markdown' && ext !== '.docx' && ext !== '.xlsx') {
-      // Unreachable via discoverInputs, which only ever returns these four
+    if (ext !== '.md' && ext !== '.markdown' && ext !== '.docx' && ext !== '.xlsx' && ext !== '.pdf') {
+      // Unreachable via discoverInputs, which only ever returns these five
       // extensions — kept as a live check anyway rather than an
       // unenforced assumption, in case this function ever gets a caller
       // that doesn't go through that filter.
-      throw new Error(`cannot read ${ext || 'a file with no extension'} yet — this build reads .md, .docx and .xlsx`);
+      throw new Error(`cannot read ${ext || 'a file with no extension'} yet — this build reads .md, .docx, .xlsx and .pdf`);
     }
     const epochSeconds = await resolveEpoch(process.env, input);
     const { doc, dropped } = await ingest(ext, input, cfg.ingestOpts);
@@ -631,7 +638,7 @@ async function runBuildBatch(
   const discovered = await discoverInputs(dir, args.recursive, discoveryTheme.id);
   const files = discovered.inputs;
   if (files.length === 0) {
-    io.err(`documentor: no readable input under ${dir} (looked for .md, .markdown, .docx${args.recursive ? ', recursively' : ''})`);
+    io.err(`documentor: no readable input under ${dir} (looked for .md, .markdown, .docx, .xlsx, .pdf${args.recursive ? ', recursively' : ''})`);
     return 2;
   }
 

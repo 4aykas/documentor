@@ -23,7 +23,7 @@
 import { stat } from 'node:fs/promises';
 import { resolve as resolvePath } from 'node:path';
 import { loadTheme } from '../theme/resolve.js';
-import { readSidecar, sidecarPathFor, type SidecarData } from './sidecar.js';
+import { readSidecar, sidecarPathFor, type PdfChromeRule, type SidecarData } from './sidecar.js';
 
 /** The subset of a command's own parsed flags this function needs for one
  *  input. `undefined` means "not given on the command line" — distinct from
@@ -43,7 +43,7 @@ export type ConfigFlags = {
 };
 
 export type ResolvedConfig = {
-  ingestOpts: { title?: string; subtitle?: string; date?: string; entity?: string };
+  ingestOpts: { title?: string; subtitle?: string; date?: string; entity?: string; chrome?: PdfChromeRule };
   theme: string;
   to: string[];
   plainNames: boolean;
@@ -142,6 +142,15 @@ export async function resolveConfig(input: string, flags: ConfigFlags): Promise<
   const date = flags.date ?? data.date;
   const entity = flags.entity ?? data.entity;
   const theme = flags.theme ?? data.theme ?? DEFAULT_THEME;
+  // No CLI flag, unlike title/date/entity: the design's own words for this
+  // are "write two numbers into a config", and a per-document geometric fact
+  // read off one run's advisory belongs recorded beside that document, not
+  // retyped on a command line every time it is rebuilt. Only ingestPdf reads
+  // this key; every other ingester's opts type simply has no such field, so
+  // a sidecar declaring it beside a .md/.docx/.xlsx source is inert, the
+  // same way `to`/`plainNames` are read for every input but not every input
+  // exercises them.
+  const chrome = data.pdfChrome;
 
   // Validated here, once, rather than left to whichever `loadTheme` call a
   // caller happens to make afterward — a flag-supplied theme still relies
@@ -164,6 +173,7 @@ export async function resolveConfig(input: string, flags: ConfigFlags): Promise<
       ...(subtitle === undefined ? {} : { subtitle }),
       ...(date === undefined ? {} : { date }),
       ...(entity === undefined ? {} : { entity }),
+      ...(chrome === undefined ? {} : { chrome }),
     },
     theme,
     to: flags.to ?? data.to ?? [...DEFAULT_TO],

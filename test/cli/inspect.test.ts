@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Doc } from '../../src/ir/types.js';
 import { renderDocx } from '../../src/render/docx.js';
+import { renderPdf } from '../../src/render/pdf.js';
 import { resolveTheme } from '../../src/theme/resolve.js';
 import { parseInspectArgs, renderHuman, runInspect, type InspectResult } from '../../src/cli/inspect.js';
 
@@ -533,5 +534,41 @@ describe('runInspect: directory input', () => {
     const { io } = collect();
     await runInspect([dir, '--json'], io);
     expect(await readdir(dir)).toEqual(['a.md']);
+  });
+});
+
+describe('inspect reads a PDF too — same extension dispatch build.ts uses', () => {
+  it('a single-file .pdf inspects cleanly, reporting what it understood', async () => {
+    const doc: Doc = {
+      meta: { title: 'From PDF', lang: 'en' },
+      blocks: [{ t: 'para', text: [{ t: 'text', v: 'Body text.' }] }],
+    };
+    const theme = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C' } });
+    const bytes = await renderPdf(doc, theme, { epochSeconds: 1_000_000_000 });
+    const dir = await mkdtemp(join(tmpdir(), 'documentor-inspect-pdf-'));
+    const file = join(dir, 'report.pdf');
+    await writeFile(file, Buffer.from(bytes));
+    const { io, log } = collect();
+    expect(await runInspect([file, '--json'], io)).toBe(0);
+    const result = parseJson(log);
+    expect(result.documents[0]!.status).toBe('ok');
+    expect(await readdir(dir)).toEqual(['report.pdf']); // inspect writes nothing
+  });
+
+  it('a directory batch discovers a .pdf alongside .md and .docx', async () => {
+    const doc: Doc = {
+      meta: { title: 'From PDF', lang: 'en' },
+      blocks: [{ t: 'para', text: [{ t: 'text', v: 'Body text.' }] }],
+    };
+    const theme = resolveTheme({ id: 't', colors: { brandOnLight: '#DA291C' } });
+    const bytes = await renderPdf(doc, theme, { epochSeconds: 1_000_000_000 });
+    const dir = await mkdtemp(join(tmpdir(), 'documentor-inspect-pdf-batch-'));
+    await writeFile(join(dir, 'a.md'), '# A\n\nHello.\n');
+    await writeFile(join(dir, 'b.pdf'), Buffer.from(bytes));
+    const { io, log } = collect();
+    expect(await runInspect([dir, '--json'], io)).toBe(0);
+    const result = parseJson(log);
+    expect(result.documents).toHaveLength(2);
+    expect(result.documents.every((d) => d.status === 'ok')).toBe(true);
   });
 });

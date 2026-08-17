@@ -281,7 +281,7 @@ function computeWarnings(doc: Doc, theme: Theme): string[] {
  * to an exit code.
  */
 async function inspectCore(
-  file: string, ext: '.docx' | '.xlsx' | '.md' | '.markdown', theme: Theme, opts: IngestOpts, sidecarPath: string | undefined,
+  file: string, ext: '.docx' | '.xlsx' | '.pdf' | '.md' | '.markdown', theme: Theme, opts: IngestOpts, sidecarPath: string | undefined,
 ): Promise<DocInspection> {
   const config = sidecarPath === undefined ? {} : { config: basename(sidecarPath) };
   let doc: Doc;
@@ -499,7 +499,7 @@ export async function runInspect(argv: string[], io: Io): Promise<number> {
     }
     documents = [];
     for (const file of discovered.inputs) {
-      const ext = extname(file).toLowerCase() as '.md' | '.markdown' | '.docx' | '.xlsx';
+      const ext = extname(file).toLowerCase() as '.md' | '.markdown' | '.docx' | '.xlsx' | '.pdf';
       try {
         const resolved = await resolveConfig(file, configFlagsFrom(args));
         // inspect has no --to flag of its own to validate a format against,
@@ -530,8 +530,8 @@ export async function runInspect(argv: string[], io: Io): Promise<number> {
     // document inspection does ("what does this contain?"). See
     // runProposalInspect.
     if (ext === '.json') return runProposalInspect(inputArg, args.json, io);
-    if (ext !== '.md' && ext !== '.markdown' && ext !== '.docx' && ext !== '.xlsx') {
-      io.err(`documentor: cannot read ${ext || 'a file with no extension'} yet — inspect reads .md, .docx and .xlsx`);
+    if (ext !== '.md' && ext !== '.markdown' && ext !== '.docx' && ext !== '.xlsx' && ext !== '.pdf') {
+      io.err(`documentor: cannot read ${ext || 'a file with no extension'} yet — inspect reads .md, .docx, .xlsx and .pdf`);
       return 2;
     }
     // A single-file run treats a sidecar that does not resolve as a usage

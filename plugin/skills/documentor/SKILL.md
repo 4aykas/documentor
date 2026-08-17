@@ -1,6 +1,6 @@
 ---
 name: documentor
-description: Re-issue an existing Markdown, Word or Excel document as a well-typeset PDF, Word, or Markdown file using the documentor CLI. Use when the user has a written .md, .docx or .xlsx file and wants it re-typeset, branded, or exported to PDF/Word — not for writing new documents from scratch, not for .pdf sources (documentor cannot read PDF), and not for changing what a document says — except a commercial proposal, which `documentor proposal` assembles from a data file and a template (still writing no text of its own).
+description: Re-issue an existing Markdown, Word, Excel or PDF document as a well-typeset PDF, Word, or Markdown file using the documentor CLI. Use when the user has a written .md, .docx, .xlsx or .pdf file and wants it re-typeset, branded, or exported to PDF/Word — PDF input is narrower than the other three (drawn tables and single-column prose only; run inspect first) — not for writing new documents from scratch, and not for changing what a document says — except a commercial proposal, which `documentor proposal` assembles from a data file and a template (still writing no text of its own).
 ---
 
 # documentor
@@ -42,7 +42,19 @@ Know these before promising anything to the user:
 - **Appearance only, never text.** Content is carried through verbatim. If a
   sentence looks weak, that is not this skill's call to fix — propose it to
   the user as a separate, visible edit; never silently rewrite.
-- **Reads `.md`, `.markdown`, `.docx` and `.xlsx`.** No `.pdf` in.
+- **Reads `.md`, `.markdown`, `.docx`, `.xlsx` and `.pdf`.** A PDF has no
+  structure of its own, so what comes back is narrower than the other three:
+  drawn tables, single-column prose, headings from the document's own size
+  distribution. An image and a run of rotated text are excluded and named
+  in the report. A table with no rectangle-drawn grid — including one
+  drawn only as thin bottom-border rules, with no cell touching the
+  next — is *not* refused: its text still comes back, just as flat
+  paragraphs rather than a table, because nothing on the page proves where
+  one column ends. That is why `documentor` cannot usefully read back its
+  own rendered PDFs: its own table CSS draws exactly that disconnected-rule
+  shape. Page furniture (a letterhead, a footer) is never removed unless the
+  sidecar's `pdfChrome` field says where — run `inspect` first and relay
+  its advisory rather than guessing a value.
 - **A spreadsheet has to be a register, not a workbook.** A merge confined to
   one row is flattened and reported by range; a merge spanning more than one
   row refuses the sheet by name, and so does a sheet past 200 rows or 25
@@ -156,9 +168,11 @@ way it does.
 
 Every field is optional; a sidecar holding only `{"theme": "tebin"}` is valid.
 Fields this file accepts: `title`, `subtitle`, `date`, `entity`, `theme`,
-`to`, `plainNames` — `to` is an array of format names, `plainNames` is a
-boolean, the rest are strings. An unknown key refuses the whole file by
-name, so do not invent field names.
+`to`, `plainNames`, `pdfChrome` — `to` is an array of format names,
+`plainNames` is a boolean, `pdfChrome` is an object (PDF input only — see
+"Reads" above, and its own two number fields there), and the rest are
+strings. An unknown key refuses the whole file by name, so do not invent
+field names.
 
 **Show the sidecar's contents to the user before building.** The decisions
 must be visible — that is the point of the file existing. If the user is

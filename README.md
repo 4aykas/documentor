@@ -46,7 +46,7 @@ drift apart.
 | **Markdown `.md`** | yes | yes | yes | — |
 | **Word `.docx`** | yes | yes | yes | — |
 | **Excel `.xlsx`** | yes | yes | yes | — |
-| **PDF** | — | — | — | — |
+| **PDF** | yes | yes | yes | — |
 
 This table is about re-issuing a single existing source. Proposals sit
 outside it: `documentor proposal` takes two inputs, a data `.json` file and
@@ -77,6 +77,64 @@ deliberate rather than unfinished:
   Nothing else is silently dropped either: comments, tracked changes,
   footnotes, text boxes and the old letterhead are all named in the run's
   report.
+- **Reading a PDF serves a document whose tables are drawn, and is honest
+  about everything else.** A PDF has no structure — positioned glyphs and
+  drawn paths, no headings and no cell boundaries — so everything is
+  inferred. Portrait and landscape pages both read; a single-column page's
+  paragraphs and headings come back, heading level taken from the
+  document's own size distribution rather than a theme (a PDF with no size
+  contrast has no heading structure to recover, and says so). A table is
+  read only from the rectangles the page actually draws — its grid, every
+  cell abutting the next, never from where the text merely lines up:
+  clustering text by position would read an unruled table, and would, now
+  and then, misread a two-column page as one. A table split by a page
+  break joins back into one.
+
+  Two different things happen to what falls outside that. An image and a
+  run of rotated text are each *excluded and reported* — what it was, how
+  many, and where — the same way a dropped `.docx` table is. Multi-column
+  text and a table with no rectangle-drawn grid at all (including one
+  drawn only as disconnected thin rules, with no cell actually abutting the
+  next) are not excluded and not named individually: their text is kept,
+  simply read in reading order as ordinary paragraphs rather than
+  reconstructed into a table or columns it cannot prove. That is a
+  deliberate fallback, not a bug — clustering text into a grid the page
+  never drew is exactly the guessing this reader refuses to do — but it is
+  a quieter outcome than "refused," and worth knowing before you rely on a
+  table coming back as a table. Forms and annotations are not part of what
+  this reader looks at: page geometry here is drawn paths and positioned
+  text only, so form-field and annotation content, if any, is outside what
+  it sees at all.
+
+  What keeps the rest honest is a check no other reader here needs: the
+  source's own text and the assembled document's text are compared token by
+  token after ingestion, and any difference refuses the whole build, naming
+  the first divergence — a value in the wrong column is the failure worth
+  fearing, because nothing about the output would otherwise say so. A page
+  count past the limit and a page that draws past its rectangle cap are
+  refused by name too, each naming the count and the limit.
+
+  Page furniture (a letterhead, an address block, a running footer) is
+  **declared, never inferred.** With nothing declared, nothing is removed —
+  instead the run reports every repeated block it found, with the y-value
+  that would drop it. Write those two numbers into the input's
+  `<name>.documentor.json` sidecar as `"pdfChrome": { "dropAbovePt": …,
+  "dropBelowPt": … }` and rerun; there is no command-line option for this —
+  the sidecar is where a fact discovered from one run's own advisory
+  belongs. One manual step per document *shape*, not per document, in
+  exchange for the guarantee that this reader never deletes a line it only
+  suspected was furniture.
+
+  **`documentor` cannot usefully read back its own rendered PDFs.** Its
+  table CSS draws one bottom border per cell — disconnected thin rules,
+  with no cell actually touching the next — which is exactly the grid-less
+  shape described above. The build itself does not fail: every cell's text
+  survives, in row-major reading order, but as flat paragraph lines rather
+  than a table, because nothing on the page proves where one column ends
+  and the next begins. That is a known, accepted gap, not a bug to fix
+  here: re-issuing a PDF `documentor` itself produced is not a use case
+  this ingester serves, and a table that came back would look badly broken
+  either way.
 - **A table's columns are sized from their content, by one solver both
   renderers call** (src/render/table-width.ts). Widths are proportional to
   what each column actually carries, with a floor so a one-character column

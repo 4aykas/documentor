@@ -9,6 +9,18 @@
 import { readFile } from 'node:fs/promises';
 import { basename, dirname, extname, join } from 'node:path';
 
+/** The PDF page-furniture rule — see docs/superpowers/specs/2026-08-16-pdf-
+ *  ingest-design.md, "Identifying page furniture". Only meaningful for a
+ *  `.pdf` input; a sidecar beside a `.md`/`.docx`/`.xlsx` source may still
+ *  carry it (nothing here knows the input's extension), and it is simply
+ *  unused by those ingesters — the same way `to`/`plainNames` are read by
+ *  every input but only some of them are exercised by a given build. There
+ *  is no CLI flag for this: the design's own words are "write two numbers
+ *  into a config", not "pass two flags", and a per-document geometric fact
+ *  discovered from one run's advisory belongs recorded beside that document,
+ *  not retyped on every command line that rebuilds it. */
+export type PdfChromeRule = { dropAbovePt?: number; dropBelowPt?: number };
+
 /** Every field the sidecar file can hold. All optional — a sidecar holding
  *  only `{"theme": "tebin"}` is valid and useful, per the design. */
 export type SidecarData = {
@@ -19,6 +31,7 @@ export type SidecarData = {
   theme?: string;
   to?: string[];
   plainNames?: boolean;
+  pdfChrome?: PdfChromeRule;
 };
 
 // Exported so anything that documents the sidecar format — the skill's
@@ -26,7 +39,7 @@ export type SidecarData = {
 // the field list from its one source of truth rather than a hand-copied set
 // that could drift the way README/--help already have (see
 // test/guardrails/docs-parity.test.ts's own module comment).
-export const SIDECAR_KEYS = new Set<string>(['title', 'subtitle', 'date', 'entity', 'theme', 'to', 'plainNames']);
+export const SIDECAR_KEYS = new Set<string>(['title', 'subtitle', 'date', 'entity', 'theme', 'to', 'plainNames', 'pdfChrome']);
 
 /** `<stem>.documentor.json`, beside the input — the design's own naming
  *  rule, spelled out once so automatic discovery here and any future writer
@@ -108,6 +121,28 @@ export async function readSidecar(path: string): Promise<SidecarData> {
   if (obj['plainNames'] !== undefined) {
     if (typeof obj['plainNames'] !== 'boolean') typeErr(path, 'plainNames', 'a boolean', obj['plainNames']);
     data.plainNames = obj['plainNames'];
+  }
+  if (obj['pdfChrome'] !== undefined) {
+    const raw = obj['pdfChrome'];
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+      typeErr(path, 'pdfChrome', 'an object with optional "dropAbovePt"/"dropBelowPt" numbers', raw);
+    }
+    const rawObj = raw as Record<string, unknown>;
+    for (const key of Object.keys(rawObj)) {
+      if (key !== 'dropAbovePt' && key !== 'dropBelowPt') {
+        throw new Error(`sidecar ${path}: unknown key "pdfChrome.${key}"`);
+      }
+    }
+    const rule: PdfChromeRule = {};
+    if (rawObj['dropAbovePt'] !== undefined) {
+      if (typeof rawObj['dropAbovePt'] !== 'number') typeErr(path, 'pdfChrome.dropAbovePt', 'a number', rawObj['dropAbovePt']);
+      rule.dropAbovePt = rawObj['dropAbovePt'];
+    }
+    if (rawObj['dropBelowPt'] !== undefined) {
+      if (typeof rawObj['dropBelowPt'] !== 'number') typeErr(path, 'pdfChrome.dropBelowPt', 'a number', rawObj['dropBelowPt']);
+      rule.dropBelowPt = rawObj['dropBelowPt'];
+    }
+    data.pdfChrome = rule;
   }
   return data;
 }

@@ -87,6 +87,38 @@ describe('sidecar.ts: readSidecar', () => {
   });
 });
 
+describe('sidecar.ts: readSidecar — pdfChrome (the PDF page-furniture rule)', () => {
+  it('accepts a pdfChrome with both numbers', async () => {
+    const { file } = await fixture('# Report\n');
+    const path = await sidecarFor(file, { pdfChrome: { dropAbovePt: 800, dropBelowPt: 40 } });
+    expect(await readSidecar(path)).toEqual({ pdfChrome: { dropAbovePt: 800, dropBelowPt: 40 } });
+  });
+
+  it('accepts a pdfChrome with only one of the two keys', async () => {
+    const { file } = await fixture('# Report\n');
+    const path = await sidecarFor(file, { pdfChrome: { dropAbovePt: 800 } });
+    expect(await readSidecar(path)).toEqual({ pdfChrome: { dropAbovePt: 800 } });
+  });
+
+  it('refuses a pdfChrome that is not an object', async () => {
+    const { file } = await fixture('# Report\n');
+    const path = await sidecarFor(file, { pdfChrome: 'above 800' });
+    await expect(readSidecar(path)).rejects.toThrow(/"pdfChrome" must be an object/);
+  });
+
+  it('refuses an unknown key inside pdfChrome, naming it', async () => {
+    const { file } = await fixture('# Report\n');
+    const path = await sidecarFor(file, { pdfChrome: { dropAbovePt: 800, dropAboev: 800 } });
+    await expect(readSidecar(path)).rejects.toThrow(/unknown key "pdfChrome\.dropAboev"/);
+  });
+
+  it('refuses a non-numeric dropAbovePt, naming the field', async () => {
+    const { file } = await fixture('# Report\n');
+    const path = await sidecarFor(file, { pdfChrome: { dropAbovePt: '800' } });
+    await expect(readSidecar(path)).rejects.toThrow(/"pdfChrome\.dropAbovePt" must be a number/);
+  });
+});
+
 describe('config.ts: resolveConfig — --config with a directory input', () => {
   it('build refuses --config against a directory, explaining why', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'documentor-sidecar-dir-'));
