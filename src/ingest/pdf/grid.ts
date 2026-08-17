@@ -22,7 +22,19 @@ const MIN_REPEAT = 2;
 /** Edges closer together than this are the same drawn rule — measured on a
  *  real 0.5pt rule, whose two long edges arrive as 661 and 662. Used for
  *  clustering x/y edges into one boundary, and (see `adjacent` below) for
- *  deciding whether two rectangles physically touch. */
+ *  deciding whether two rectangles physically touch.
+ *
+ *  NOT a comfortable value with headroom on both sides — bisected directly
+ *  against TEBIN P&L ACCOUNT.pdf (the whole suite stays green throughout):
+ *  the safe range is (1.95, 3], and 2 sits only 0.05 above its own floor.
+ *  Below 1.95 — confirmed directly, at 1.95 itself — the P&L's own column
+ *  edges (24-26 repeats each, comfortably past MIN_REPEAT) stop clustering
+ *  into six boundaries and produce a SEVENTH, phantom column instead: every
+ *  data row gains a trailing empty cell, silently, with every existing test
+ *  still passing, because no fixture before this was found ever placed two
+ *  edges this close together on purpose. The tight side is the floor, not
+ *  the ceiling — narrowing this constant is far more dangerous than
+ *  widening it. */
 const EDGE_TOL = 2;
 /** Runs within this many points of a cell's topmost run are read as the
  *  same wrapped line of text, not a second line. The same measured value as

@@ -149,6 +149,39 @@ describe('readPageGeometry', () => {
     expect(g.rotated).toBe(1);
   });
 
+  it('F3: restores the CTM after save/restore, so a later rectangle drawn under the identity matrix is not left shifted', async () => {
+    // A one-token mutation — OP_RESTORE not popping the CTM stack — was
+    // measured to destroy every table in BOTH real financial documents
+    // (findGrid finds no connected components at all, since every
+    // rectangle after the first unrestored save/transform lands at the
+    // wrong coordinates) while leaving the entire 786-test suite green: no
+    // existing fixture ever draws a rectangle under a save/transform/
+    // restore followed by ANOTHER rectangle under the restored (identity)
+    // matrix, so nothing pinned the pop itself, only that a transform is
+    // ever applied at all.
+    const page = {
+      getOperatorList: async () => ({
+        fnArray: [
+          OPS.save, OPS.transform, OPS.constructPath, OPS.restore, OPS.constructPath,
+        ],
+        argsArray: [
+          null,
+          [1, 0, 0, 1, 500, 500], // shift everything by (500, 500) inside the save/restore pair
+          [[OPS.rectangle], [0, 0, 10, 10], [0, 0, 10, 10]], // rect A, drawn under the shift
+          null,
+          [[OPS.rectangle], [0, 0, 10, 10], [0, 0, 10, 10]], // rect B, drawn AFTER restore — must see the identity matrix, not the shift
+        ],
+      }),
+      getTextContent: async () => ({ items: [] }),
+      getViewport: () => ({ width: 595.5, height: 842 }),
+    };
+    const g = await readPageGeometry(page);
+    expect(g.rects).toEqual([
+      { x0: 500, y0: 500, x1: 510, y1: 510 }, // rect A: still under the shift
+      { x0: 0, y0: 0, x1: 10, y1: 10 }, // rect B: identity matrix restored
+    ]);
+  });
+
   it('drops a run that is only whitespace', async () => {
     const page = {
       getOperatorList: async () => ({ fnArray: [], argsArray: [] }),

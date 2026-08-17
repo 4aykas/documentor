@@ -40,7 +40,18 @@ export type ChromeSplit = { body: TextRun[][]; dropped: string[] };
  *  at x=661 on one page and x=662 on the next, and rounding keeps those as
  *  two distinct positions instead of the one they visually are. A measured
  *  number, not a chosen one — the only tunable constant left in this
- *  module, now that the rule it used to feed a furniture decision is gone. */
+ *  module, now that the rule it used to feed a furniture decision is gone.
+ *
+ *  Not a comfortable value either, on the CEILING side: bisected directly
+ *  against TEBIN P&L ACCOUNT.pdf, this document's own output first changes
+ *  (a 42nd table row appears where there were 41, and the advisory starts
+ *  reporting numeric table VALUES — "1872, 60" — as if they were repeated
+ *  furniture, because column x-positions a table apart get folded into one
+ *  cluster) between 12 and 13, well below the widest gap the module's own
+ *  earlier design rounds discussed. The floor is comfortable by comparison
+ *  — no regression was found on either real document down to 0.01 — but
+ *  the ceiling is the side to respect: raising this constant "for safety"
+ *  is exactly backwards. */
 const POSITION_TOL = 2;
 
 /** How many distinct texts a single line of output — one block's advisory

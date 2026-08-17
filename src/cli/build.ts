@@ -281,7 +281,26 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
   // silently changes what is produced is the same failure as a silent drop.
   if (resolved.sidecarPath !== undefined) io.log(`documentor: using ${basename(resolved.sidecarPath)}`);
 
-  const { doc, dropped } = await ingest(ext, input, resolved.ingestOpts);
+  let doc: Doc;
+  let dropped: string[];
+  try {
+    ({ doc, dropped } = await ingest(ext, input, resolved.ingestOpts));
+  } catch (e) {
+    // Every OTHER path that can produce this kind of failure already names
+    // the file: runBuildBatch's own summary prefixes every per-file reason
+    // with `basename(file)` (see processFile/printSummary), and so does
+    // `inspect`'s per-document report. This, the single-file path, was the
+    // exception — an ingester's own refusal (a PDF's page/rectangle cap, or
+    // its token gate catching a divergence between its source and its own
+    // assembled output) surfaced with nothing above it saying which
+    // document even produced it, unlike the design doc's own example
+    // ("documentor: refusing TEBIN P&L ACCOUNT.pdf — the reader's own
+    // output does not match the source"). Reformatted here to match it —
+    // this is still the same uncaught-throw class every other ingester
+    // failure in this path already is (exit 1 via bin/documentor.ts's own
+    // top-level catch, unchanged), only the message now says which file.
+    throw new Error(`refusing ${basename(input)} — ${(e as Error).message}`);
+  }
   // The gate between ingest and render. Every renderer assumes a well-formed
   // Doc — an exhaustive switch over `Block` type-checks but says nothing about
   // what actually arrives at runtime from an ingester, a hand-written IR file

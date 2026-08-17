@@ -81,7 +81,18 @@ const PAGE_FRAME_FRACTION = 0.75;
  *  value itself. */
 const COLUMN_POSITION_TOL = 3;
 
-function withoutPageFrame(rects: readonly Rect[], widthPt: number, heightPt: number): Rect[] {
+// Exported so this filter's own OR — the one branch measured to flip the
+// output of both real documents while leaving the entire suite green (see
+// this file's own header comment and test/ingest/pdf.test.ts's
+// "withoutPageFrame" tests) — can be pinned directly against hand-built
+// rectangles, rather than only through a full PDF whose exact geometry
+// would have to reproduce the same shape by accident. A rectangle kept by
+// this filter is anything that is NOT wide-and-tall at once: a cell that is
+// wide but short (a header banner spanning the table's own width) or tall
+// but narrow (a full-height label column) must each survive on their own —
+// swapping the OR for an AND drops both, since neither alone satisfies
+// "narrow in both dimensions".
+export function withoutPageFrame(rects: readonly Rect[], widthPt: number, heightPt: number): Rect[] {
   return rects.filter(
     (r) => (r.x1 - r.x0) < PAGE_FRAME_FRACTION * widthPt || (r.y1 - r.y0) < PAGE_FRAME_FRACTION * heightPt,
   );
@@ -109,7 +120,22 @@ function headingLevels(runs: readonly TextRun[]): Map<number, 1 | 2 | 3> {
  *  "how a bare run becomes a heading or a paragraph" has one definition. */
 function proseBlocks(runs: readonly TextRun[], levels: ReadonlyMap<number, 1 | 2 | 3>): Block[] {
   const out: Block[] = [];
-  for (const r of [...runs].sort((a, b) => b.y - a.y)) {
+  // y descending, x ascending on a tie — the SAME order `sourcePageTokens`'s
+  // own `byPosition` sorts the gate's source side by (see that function's
+  // own comment for the two P&L header rows that motivated it). Before this
+  // was pinned, this function sorted by y alone: a stable sort, so two runs
+  // at the same y kept whatever order pdfjs happened to emit them in, which
+  // is drawing order, not necessarily reading order. Every real fixture this
+  // reader has been built and measured against draws left-to-right, so the
+  // two orders coincided and nothing here ever surfaced the gap — until a
+  // producer that draws right-to-left at one y (see this file's own
+  // "sorts prose by y then x" test) turned it into a FALSE refusal: a
+  // correct document, read correctly by a person, rejected by the token
+  // gate for a divergence that was this function's own ordering, not a
+  // misread column. The gate is supposed to be the alarm that is never
+  // wrong about what it rings for; an ordering bug making it ring on a
+  // clean document is the one failure mode worse than not ringing at all.
+  for (const r of [...runs].sort((a, b) => b.y - a.y || a.x - b.x)) {
     const level = levels.get(Math.round(r.sizePt * 2) / 2);
     out.push(level === undefined ? { t: 'para', text: text(r.text) } : { t: 'heading', level, text: text(r.text) });
   }
@@ -270,6 +296,25 @@ export async function ingestPdf(
   // without inventing anything — it is the same drawn structure the whole
   // grid, one page earlier, already committed to.
   let lastTableXs: readonly number[] | undefined;
+  // The BELOW-the-grid counterpart of `aboveStart`/`excludedFromSource`
+  // below — this page's own trailing repeated-furniture prose (its footer),
+  // kept from the PREVIOUS iteration so a join firing on THIS page can
+  // retroactively treat it as furniture too, exactly as this page's own
+  // leading furniture already is. `above` moving with a join and `below`
+  // not was found to refuse a real, in-scope shape (F2): a two-page table
+  // with an identical letterhead above AND an identical footer below on
+  // both pages. `blocksStart` is where those blocks begin in `blocks` (they
+  // always run to whatever `blocks.length` was when the NEXT page started
+  // pushing its own above-prose, since nothing else is pushed between one
+  // page finishing and the next one starting); `belowRuns`/`belowTokenCount`
+  // are what let the join undo that page's own already-computed contribution
+  // to `sourceTokens`, the one side `excludedFromSource` cannot reach —
+  // `excludedFromSource` only ever filters THIS page's own `runs`, and the
+  // previous page's runs already left that page's iteration behind. `undefined`
+  // for a page with no grid at all: a page with nothing to join FROM has no
+  // "below the grid" concept, and `joinAnchor`'s own requirement that `prev`
+  // be a table already refuses a join across such a page regardless.
+  let prevJoinCandidate: { blocksStart: number; belowRuns: readonly TextRun[]; belowTokenCount: number } | undefined;
   // The token gate's source side, built per page as the same grid this loop
   // reads is still in scope — see `sourcePageTokens`'s own comment for why
   // this cannot be a single after-the-fact sort over `body`.
@@ -416,6 +461,29 @@ export async function ingestPdf(
             for (const r of above) excludedFromSource.add(r);
             dropped.push(`page ${i + 1}: repeated page furniture (${above.map((r) => r.text).join(', ')}) sat between two halves of a table this reader joined into one — printed once already, not repeated here, so the re-issued table reads in the source's own row order`);
           }
+          // F2: symmetric with the removal above. `joinAnchor` walked back
+          // PAST `prev`'s own trailing furniture (this page's now-removed
+          // `above` was not the only thing it skipped — the fragment
+          // BEFORE `prev`'s own footer, still sitting in `blocks` right
+          // after `prev`, is repeated furniture too, by the same test) to
+          // find `prev`. Undoing only THIS page's own push (the splice
+          // above) leaves that earlier footer sitting between `prev`'s own
+          // rows and the continuation rows `prev.rows.push` is about to
+          // add — source order reads footer-then-continuation, page by
+          // page; assembled order would read all-rows-then-footer, since
+          // the footer's block never moved. Removed here from both
+          // `blocks` (it is contiguous with what the splice above already
+          // cleared, since nothing else is pushed between one page ending
+          // and the next one starting) and from `sourceTokens` (its own
+          // page already computed and pushed its token contribution before
+          // this page's join decision could know to exclude it — popped
+          // off the tail here, which is safe only because nothing has been
+          // pushed to `sourceTokens` for THIS page yet).
+          if (prevJoinCandidate !== undefined && prevJoinCandidate.belowRuns.length > 0) {
+            blocks.splice(prevJoinCandidate.blocksStart);
+            sourceTokens.length -= prevJoinCandidate.belowTokenCount;
+            dropped.push(`page ${i}: repeated page furniture (${[...new Set(prevJoinCandidate.belowRuns.map((r) => r.text))].join(', ')}) sat between two halves of a table this reader joined into one — printed once already, not repeated here, so the re-issued table reads in the source's own row order`);
+          }
           prev.rows.push(...[head, ...rows]);
         } else {
           blocks.push({ t: 'table', head, rows, align: head.map(() => 'l' as const) });
@@ -423,9 +491,23 @@ export async function ingestPdf(
         lastTableXs = grid.xs;
       }
 
+      // Captured AFTER any join-time splicing above, so this always points
+      // at where THIS page's own below-prose blocks are about to land —
+      // the range a LATER page's join might need to remove symmetrically.
+      const belowBlocksStart = blocks.length;
       blocks.push(...proseBlocks(below, levels));
+      prevJoinCandidate = {
+        blocksStart: belowBlocksStart,
+        belowRuns: below,
+        belowTokenCount: below.reduce((n, r) => n + tokenise(r.text).length, 0),
+      };
     } else {
       blocks.push(...proseBlocks(prose, levels));
+      // No grid on this page at all — nothing "below the grid" for a later
+      // join to symmetrically remove, and `joinAnchor`'s own requirement
+      // that `prev` be a table already refuses joining across a page like
+      // this regardless.
+      prevJoinCandidate = undefined;
     }
     const sourceRuns = excludedFromSource.size === 0 ? runs : runs.filter((r) => !excludedFromSource.has(r));
     sourceTokens.push(...sourcePageTokens(sourceRuns, grid, table?.usedRuns));

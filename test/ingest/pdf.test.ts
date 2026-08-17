@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PDFDocument, StandardFonts, rectangle, stroke, setLineWidth, setStrokingRgbColor } from 'pdf-lib';
-import { ingestPdf } from '../../src/ingest/pdf.js';
+import { ingestPdf, withoutPageFrame } from '../../src/ingest/pdf.js';
 import { renderPdf } from '../../src/render/pdf.js';
 import { resolveTheme } from '../../src/theme/resolve.js';
 import type { Doc } from '../../src/ir/types.js';
@@ -51,6 +51,12 @@ type BoxedPage = {
    *  RULING 22 (and `findRepeated` underneath it) key repetition on
    *  position, not merely on text appearing somewhere on every page. */
   above?: { text: string; x: number; y: number }[];
+  /** Text drawn below the table — a footer, a page-of-N marker, a footnote
+   *  that sits under a boxed table rather than reaching the page's own
+   *  margin. Same repetition rule as `above`: identical text at an
+   *  identical position on every page is what `findRepeated` (and F2's own
+   *  symmetric-removal fix) key on. */
+  below?: { text: string; x: number; y: number }[];
   header?: string[];
   rows: string[][];
   /** Overrides the shared column x-positions for this page only — the
@@ -66,6 +72,7 @@ async function boxedTablePdf(pages: BoxedPage[], defaultColXs: number[]): Promis
   for (const p of pages) {
     const page = pdf.addPage([612, 792]);
     for (const a of p.above ?? []) page.drawText(a.text, { x: a.x, y: a.y, size: 10, font });
+    for (const b of p.below ?? []) page.drawText(b.text, { x: b.x, y: b.y, size: 10, font });
     const colXs = p.colXs ?? defaultColXs;
     const allRows = p.header ? [p.header, ...p.rows] : p.rows;
     let y = 700;
@@ -90,6 +97,52 @@ async function textPdf(items: { text: string; x: number; y: number; size: number
   for (const it of items) page.drawText(it.text, { x: it.x, y: it.y, size: it.size, font });
   return Buffer.from(await pdf.save());
 }
+
+describe('withoutPageFrame', () => {
+  // F3: swapping the `||` for an `&&` in pdf.ts's own filter was measured
+  // to reshape BOTH real documents (the P&L comes back as two tables, the
+  // first 27x3, with the 2026 Budget and YE FC figures dumped as loose
+  // paragraphs) while the entire suite — including every existing PDF
+  // test — stayed green. No existing fixture ever exercises a rectangle
+  // that is wide-but-short or tall-but-narrow, only the actual page-frame
+  // shape (wide AND tall) the filter exists to drop, so nothing pinned the
+  // OR itself. These are unit tests against the filter directly, with
+  // hand-built rectangles — a full PDF's geometry would have to reproduce
+  // this exact shape by accident to catch the same mutation, and it is not
+  // clear any PDF this reader has been measured against actually contains
+  // one; the P&L and Revenue Estimation regressions above were an emergent
+  // side effect of many ordinary per-cell rectangles no longer clustering
+  // into the same grid, not a single wide-or-tall rectangle being wrongly
+  // dropped or kept.
+  const widthPt = 600;
+  const heightPt = 800;
+
+  it('drops a rectangle that is wide AND tall at once (the page frame/background this filter exists for)', () => {
+    const frame = { x0: 0, y0: 0, x1: 600, y1: 800 };
+    expect(withoutPageFrame([frame], widthPt, heightPt)).toEqual([]);
+  });
+
+  it('keeps a rectangle that is wide but short — e.g. a header banner spanning the table\'s own width', () => {
+    // width 590 >= 0.75*600 (450): fails the width branch.
+    // height 20 < 0.75*800 (600): passes the height branch.
+    // OR: kept, because at least one branch says "not full-bleed".
+    // AND (the mutation): dropped, because the width branch alone fails it.
+    const wideShort = { x0: 0, y0: 0, x1: 590, y1: 20 };
+    expect(withoutPageFrame([wideShort], widthPt, heightPt)).toEqual([wideShort]);
+  });
+
+  it('keeps a rectangle that is tall but narrow — e.g. a full-height row-label column', () => {
+    // width 20 < 450: passes the width branch.
+    // height 790 >= 600: fails the height branch.
+    const tallNarrow = { x0: 0, y0: 0, x1: 20, y1: 790 };
+    expect(withoutPageFrame([tallNarrow], widthPt, heightPt)).toEqual([tallNarrow]);
+  });
+
+  it('keeps an ordinary per-cell rectangle, narrow in both dimensions', () => {
+    const cell = { x0: 50, y0: 700, x1: 200, y1: 720 };
+    expect(withoutPageFrame([cell], widthPt, heightPt)).toEqual([cell]);
+  });
+});
 
 describe('ingestPdf', () => {
   it('assigns heading levels from the size distribution, largest first, a fourth size clamped to h3', async () => {
@@ -478,5 +531,166 @@ describe('ingestPdf', () => {
     );
     expect(tableIdx).toBeGreaterThanOrEqual(0);
     expect(paraIdx).toBeGreaterThan(tableIdx);
+  });
+
+  it('F4: pins the assembler\'s own gridTop boundary — a run exactly on it stays out of the table', async () => {
+    // `above = prose.filter(r => r.y >= gridTop)` (this file, further up)
+    // decides whether a run sits inside the table's own vertical extent or
+    // above it. Flipping `>=` to `>` is enough to change the outcome with
+    // the whole suite green, since no existing fixture places a run
+    // EXACTLY on `gridTop` — every real run so far has sat safely inside a
+    // row or safely above the table.
+    const pdf = await PDFDocument.create();
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    const page = pdf.addPage([612, 792]);
+    // One column [50, 200], two boxed rows: bottom [600, 620), top [620, 640).
+    page.pushOperators(...drawCellRect(50, 600, 150, 20));
+    page.pushOperators(...drawCellRect(50, 620, 150, 20));
+    page.drawText('Bottom', { x: 55, y: 605, size: 10, font });
+    page.drawText('Top', { x: 55, y: 625, size: 10, font });
+    // Exactly at gridTop (640, the table's own topmost edge): must NOT be
+    // absorbed into the top row — it sits OUTSIDE the grid's own
+    // half-open extent, same as `band()`'s own convention.
+    page.drawText('AtGridTop', { x: 55, y: 640, size: 10, font });
+    const bytes = Buffer.from(await pdf.save());
+
+    // Must not throw: a wrong classification here either drops AtGridTop's
+    // text from the table silently (`>` would exclude it from `above` too,
+    // landing it nowhere) or, as measured, produces a genuine gate
+    // divergence — a false refusal on a document nothing is wrong with.
+    const { doc: back } = await ingestPdf(bytes);
+
+    const table = back.blocks.find((b): b is Extract<typeof back.blocks[number], { t: 'table' }> => b.t === 'table');
+    expect(table, 'no table was found').toBeDefined();
+    const cellText = (c: { t: string; v?: string }[]) => c.map((n) => ('v' in n ? n.v : '')).join(' ');
+    expect(cellText(table!.head[0]!)).toContain('Top');
+    expect(cellText(table!.head[0]!)).not.toContain('AtGridTop');
+
+    // "AtGridTop" survives as ordinary prose instead, printed above the
+    // table (`above`), same as an undrawn letterhead line would be.
+    const atGridTopPara = back.blocks.find(
+      (b) => b.t === 'para' && b.text.some((n) => n.t === 'text' && n.v === 'AtGridTop'),
+    );
+    expect(atGridTopPara, 'AtGridTop was not kept as its own prose block').toBeDefined();
+    expect(back.blocks.indexOf(atGridTopPara!)).toBeLessThan(back.blocks.indexOf(table!));
+  });
+
+  it('F4: pins the gate\'s own rowOf boundary against grid.ts\'s band() — a run exactly on an interior row edge must band the same way on both sides', async () => {
+    // `rowOf`, inside `sourcePageTokens` further down this file, is a
+    // SEPARATE half-open-interval check from `band()` in grid.ts —
+    // deliberately not shared code, so a genuine bug in the table-reading
+    // side would not silently apply to both halves of the token
+    // comparison (see `sourcePageTokens`'s own comment). The two must
+    // still agree on every boundary case, or the gate would either miss a
+    // real misread (both sides wrong the same way) or — the shape this
+    // fixture pins — refuse a correctly-read document because the two
+    // independently-written checks banded one run differently. No
+    // existing fixture puts a run exactly on an INTERIOR row boundary with
+    // enough surrounding content to expose a bucketing difference; this
+    // one does, deliberately: three rows, with row 1's two words (`R1a`,
+    // `R1b`) an x apart the boundary run `X` sits between, so which
+    // row's bucket `X` lands in is externally observable in the token
+    // order, not just internally consistent by coincidence.
+    const pdf = await PDFDocument.create();
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    const page = pdf.addPage([612, 792]);
+    // bottom [600,620), middle [620,640), top [640,660).
+    page.pushOperators(...drawCellRect(50, 600, 150, 20));
+    page.pushOperators(...drawCellRect(50, 620, 150, 20));
+    page.pushOperators(...drawCellRect(50, 640, 150, 20));
+    page.drawText('R0', { x: 55, y: 605, size: 10, font });
+    page.drawText('R1a', { x: 55, y: 625, size: 10, font });
+    page.drawText('R1b', { x: 120, y: 625, size: 10, font });
+    page.drawText('R2', { x: 55, y: 650, size: 10, font });
+    // Exactly on the boundary between the middle and top rows (640) —
+    // `band()`'s own convention puts this in the TOP row (the band whose
+    // BOTTOM edge this is): confirmed correct here, then re-checked from
+    // the gate's independent side by comparing token order below.
+    page.drawText('X', { x: 90, y: 640, size: 10, font });
+    const bytes = Buffer.from(await pdf.save());
+
+    // Must not throw. Measured directly: flipping `rowOf`'s own `>=`/`<`
+    // to `>`/`<=` moves `X` into the middle row's bucket on the SOURCE
+    // side only (band() on the assembled side is untouched), producing
+    // source tokens [R2, R1a, X, R1b, R0] against the correctly-assembled
+    // [R2, X, R1a, R1b, R0] — a divergence at the second token, refusing a
+    // document this reader read correctly.
+    const { doc: back } = await ingestPdf(bytes);
+    const table = back.blocks.find((b): b is Extract<typeof back.blocks[number], { t: 'table' }> => b.t === 'table');
+    expect(table, 'no table was found').toBeDefined();
+    const cellText = (c: { t: string; v?: string }[]) => c.map((n) => ('v' in n ? n.v : '')).join(' ');
+    // table.rows[0] (head) is the physically TOP row: "R2 X".
+    expect(cellText(table!.head[0]!)).toBe('R2 X');
+    expect(table!.rows.map((r) => cellText(r[0]!))).toEqual(['R1a R1b', 'R0']);
+  });
+
+  it('F2: a two-page table with a repeated footer below AND a repeated letterhead above does not falsely refuse', async () => {
+    // The coordinator's own repro: `joinAnchor` walks back PAST repeated
+    // blocks to find `prev`, so it happily skips over a footer sitting
+    // between `prev`'s own rows and page 2's now-removed letterhead — but
+    // before this fix, only the letterhead's removal (`above`) undid its
+    // own page's push; the footer, belonging to the PREVIOUS page, was
+    // left in place. Source order (page1: rows, footer; page2: rows,
+    // footer) and assembled order (all rows, page1's footer, page2's
+    // footer) then diverge the moment page1's rows finish, and the gate —
+    // correctly reading a real divergence in the pre-fix code — refused a
+    // document nothing is actually wrong with. TEBIN P&L ACCOUNT.pdf itself
+    // never exercised this: its own first fragment has no below-the-grid
+    // footer (the table fills the rest of page 1), so this shape needed its
+    // own fixture rather than relying on the real documents to catch it.
+    const colXs = [50, 250, 400];
+    const letterhead = { text: 'TEBIN confidential', x: 50, y: 750 };
+    const footer = { text: 'Page 1 of 2', x: 50, y: 100 }; // digit-stripped by findRepeated, so "Page 2 of 2" on page 2 still counts as the same repeated block
+    const page1Rows = [['Row 0', '0'], ['Row 1', '1'], ['Row 2', '2']];
+    const page2Rows = [['Row 3', '3'], ['Row 4', '4'], ['Row 5', '5']];
+    const bytes = await boxedTablePdf(
+      [
+        { above: [letterhead], below: [{ ...footer, text: 'Page 1 of 2' }], header: ['Item', 'Value'], rows: page1Rows },
+        { above: [letterhead], below: [{ ...footer, text: 'Page 2 of 2' }], rows: page2Rows },
+      ],
+      colXs,
+    );
+    const { doc: back, dropped } = await ingestPdf(bytes);
+    const tables = back.blocks.filter((b): b is Extract<typeof back.blocks[number], { t: 'table' }> => b.t === 'table');
+    expect(tables).toHaveLength(1);
+    expect(tables[0]!.rows.length).toBe(6);
+    const cellText = (c: { t: string; v?: string }[]) => c.map((n) => ('v' in n ? n.v : '')).join('');
+    expect(tables[0]!.rows.map((r) => cellText(r[1]!))).toEqual(['0', '1', '2', '3', '4', '5']);
+    // The footer's first occurrence still prints, exactly once — moved is
+    // not deleted, mirroring how the letterhead's own first occurrence
+    // survives.
+    const footerParas = back.blocks.filter(
+      (b) => b.t === 'para' && b.text.some((n) => n.t === 'text' && n.v.startsWith('Page ') && n.v.endsWith('of 2')),
+    );
+    expect(footerParas).toHaveLength(1);
+    // Its second occurrence is named in `dropped`, referencing page 1 (the
+    // page whose own footer this was), not page 2.
+    expect(dropped.some((d) => d.startsWith('page 1:') && d.includes('Page 1 of 2'))).toBe(true);
+  });
+
+  it('F6: prose sorts by y then x, matching the gate\'s own reading-order convention — a false refusal otherwise', async () => {
+    // pdfjs's getTextContent preserves DRAWING order, not necessarily
+    // reading order. Every fixture this reader has been built and measured
+    // against draws left-to-right, so `proseBlocks`'s own sort (y only,
+    // before this fix) and the gate's `sourcePageTokens`'s own `byPosition`
+    // (y then x, always) coincided — until a producer draws two runs at
+    // the same y out of x order, at which point a STABLE sort by y alone
+    // keeps draw order for the tie, while `byPosition` still sorts by x.
+    // Drawing "Right" before "Left" here reproduces exactly that: before
+    // this fix, `ingestPdf` refused this document (a real divergence, but
+    // one this function's own ordering created, not a misread column) —
+    // the worst kind of failure for a gate whose whole point is to be
+    // trusted when it does refuse.
+    const pdf = await PDFDocument.create();
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    const page = pdf.addPage([612, 792]);
+    page.drawText('Right', { x: 200, y: 700, size: 10, font }); // drawn first
+    page.drawText('Left', { x: 50, y: 700, size: 10, font }); // drawn second, same y, smaller x
+    const bytes = Buffer.from(await pdf.save());
+
+    // Must not throw.
+    const { doc: back } = await ingestPdf(bytes);
+    const words = back.blocks.map((b) => (b.t === 'para' && b.text[0]?.t === 'text' ? b.text[0].v : undefined));
+    expect(words).toEqual(['Left', 'Right']);
   });
 });

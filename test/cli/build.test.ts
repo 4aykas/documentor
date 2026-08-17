@@ -478,13 +478,14 @@ describe('runBuild reading a PDF', () => {
     }
     const file = await pdfFixture(Buffer.from(await pdf.save()));
     const { io, err } = collect();
-    // The ingest() call in runBuild is unguarded, exactly like every other
-    // ingester's own thrown refusal (see test/cli/sidecar.test.ts's "a bad
-    // --theme flag" case for the identical, pre-existing shape) — it
-    // propagates as a rejected promise, caught only at the bin/ entry
-    // point, never as a bare stack trace (that top-level catch prints only
-    // the message — see src/bin/documentor.ts).
-    await expect(runBuild([file, '--to', 'md'], io)).rejects.toThrow(/5001 rectangles.*5000/s);
+    // The ingest() call in runBuild's single-file path reformats a thrown
+    // refusal to name the file ("refusing <name> — …", matching the design
+    // doc's own example message and batch mode's existing naming) and
+    // re-throws — still the same uncaught-rejection class every ingester
+    // failure in this path already is (exit 1 via bin/documentor.ts's own
+    // top-level catch, no bare stack trace — that catch prints only the
+    // message), just no longer bare of which document it is about.
+    await expect(runBuild([file, '--to', 'md'], io)).rejects.toThrow(/refusing report\.pdf — .*5001 rectangles.*5000/s);
     expect(err.join('\n')).toBe('');
     // No output directory contents beyond the input itself: mkdir/writeFile
     // in runBuild both run strictly after `ingest()` returns, so a refusal

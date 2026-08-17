@@ -83,7 +83,14 @@ deliberate rather than unfinished:
   inferred. Portrait and landscape pages both read; a single-column page's
   paragraphs and headings come back, heading level taken from the
   document's own size distribution rather than a theme (a PDF with no size
-  contrast has no heading structure to recover, and says so). A table is
+  contrast has no heading structure to recover, and says so). The size
+  distribution is computed over the WHOLE document, table cells included —
+  in a table-dominated document (a financial statement, say) the modal size
+  is the table body's own, often smaller than ordinary prose, so an
+  ordinary sentence set at a perfectly normal size can come back promoted to a
+  heading merely for being larger than the table's own dense cell text; a
+  document that reads as flat prose everywhere still needs a look before
+  trusting every heading it grew. A table is
   read only from the rectangles the page actually draws — its grid, every
   cell abutting the next, never from where the text merely lines up:
   clustering text by position would read an unruled table, and would, now
