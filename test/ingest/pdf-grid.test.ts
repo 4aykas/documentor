@@ -31,24 +31,37 @@ const boxed = (xs: number[], ys: number[]): Rect[] => {
   }
   return out;
 };
-/** A bottom-ruled table's single row: the rule arrives as two half-width,
- *  thin rectangles, the shape this project's own renderer produces. */
+/** A single row of a table drawn ENTIRELY from disconnected thin rules: the
+ *  rule arrives as two half-width, thin rectangles. Ruling 19: neither
+ *  motivating document is built this way — measured directly, TEBIN P&L
+ *  ACCOUNT.pdf page 1 draws 145 rectangles and NONE is 2pt or thinner (125
+ *  are 19.51pt tall, one per cell); 2026 Revenue Estimation.pdf draws 89,
+ *  88 taller than 2pt. A table built from nothing but spaced-apart rules
+ *  like this one is out of scope and refused — see the refusal tests
+ *  below, which use exactly this helper with no bridging element, since a
+ *  rule stack cannot be told apart from an unrelated heading rule sharing
+ *  the same page margins by geometry alone. */
 const rule = (y: number): Rect[] => [
   { x0: 50, x1: 200, y0: y, y1: y + 0.5 },
   { x0: 200, x1: 400, y0: y, y1: y + 0.5 },
 ];
-/** A bottom-ruled table: one rule per row, PLUS the thin vertical divider
- *  between its two columns spanning every rule's full height. Under
- *  Ruling 18, two rectangles that don't physically touch are not one
- *  drawn structure — individual rule() calls, 20+pt apart at typical row
- *  height, do not touch each other by themselves. A real ruled table's own
- *  column divider (or an outer box, or repeated shading) is what makes its
- *  separately-drawn rules genuinely one structure; this is that divider,
- *  not a synthetic workaround for the test. */
-const ruledTable = (ys: number[]): Rect[] => [
-  ...ys.flatMap(rule),
-  { x0: 49.5, x1: 50.5, y0: Math.min(...ys) - 1, y1: Math.max(...ys) + 1.5 },
-];
+/** A single rectangle, at the shared column midpoint (x0=199, x1=201, well
+ *  inside every rule's own 50-400 span so it can never become a spurious
+ *  x-extreme), spanning from just outside the bottommost real cluster to
+ *  just outside the topmost — physically overlapping every rule between
+ *  them (so rectComponents never splits the sequence) without spanning the
+ *  TOPMOST pair of boundaries specifically: with three or more real
+ *  clusters this rectangle's own edges sit near the FIRST and LAST
+ *  clusters only, never the second-to-last one closedAtTop actually checks
+ *  against, so it cannot be mistaken for the table's own closed top. This
+ *  is NOT a claim that any real document draws a connecting rectangle like
+ *  this — it exists purely to exercise the median-gap and closedAtTop
+ *  ARITHMETIC on data that is honestly, if synthetically, one physically
+ *  connected structure; a genuinely disconnected rule stack (Ruling 19,
+ *  out of scope) is refused elsewhere in this file with no such aid. */
+const bridge = (ys: number[]): Rect => ({
+  x0: 199, x1: 201, y0: Math.min(...ys) - 1, y1: Math.max(...ys) + 1.5,
+});
 const run = (text: string, x: number, y: number): TextRun => ({ text, x, y, sizePt: 10 });
 
 describe('findGrid', () => {
@@ -61,35 +74,35 @@ describe('findGrid', () => {
     expect(g!.ys).toEqual([700, 720, 740, 760]);
   });
 
-  it('adds the top boundary a bottom-ruled table never draws', () => {
-    // Three rules under three rows, bridged by the column divider so they
-    // are one drawn structure under Ruling 18. Without an implied top the
-    // first row's text falls outside the grid and is lost.
-    const g = findGrid(ruledTable([661.5, 684, 706.5]));
-    expect(g).not.toBeNull();
-    const impliedTop = g!.ys[g!.ys.length - 1]!;
-    // Ruling 4's measured case: the header at y=715 must be admitted by the
-    // implied top, and the document title at y=736 must stay excluded.
-    expect(715).toBeLessThan(impliedTop);
-    expect(736).toBeGreaterThan(impliedTop);
+  it('Ruling 19: a table drawn entirely from disconnected thin rules is out of scope and refused', () => {
+    // This was ruling 4's original motivating shape: rules 22.5pt apart,
+    // measured as "706.5, 684, 661.5" against a header at y=715. That
+    // measurement turned out to be wrong — re-measured directly against
+    // the actual PDF, both motivating documents draw full, abutting cells
+    // (TEBIN P&L ACCOUNT.pdf page 1: 145 rectangles, none 2pt or thinner,
+    // 125 at 19.51pt tall, one per cell; 2026 Revenue Estimation.pdf: 89
+    // rectangles, 88 taller than 2pt), so this shape describes no document
+    // this reader is built for. It stays refused rather than resurrected
+    // with a bridging element, because a rule stack sharing a table's
+    // margins is geometrically identical to a heading rule sharing the
+    // same margins — only intent tells them apart, and this project
+    // refuses rather than guesses when only intent would decide (see
+    // findGrid's own comment at the degenerate-refusal site).
+    const g = findGrid([...rule(661.5), ...rule(684), ...rule(706.5)]);
+    expect(g).toBeNull();
   });
 
-  it('reads a rule\'s two long edges as one boundary', () => {
-    // A 0.5pt rule arrives as y=661 and y=662; two boundaries there would
-    // invent a 1pt-tall row. Bridged with a divider spanning both rules so
-    // they form one structure — which here also genuinely closes the box's
-    // own top, since the divider spans exactly that gap; the implied-top
-    // interaction has its own dedicated tests elsewhere in this file.
+  it('Ruling 19: a 0.5pt rule\'s two long edges merging into one boundary does not, by itself, make a disconnected rule stack a table', () => {
+    // Two isolated rules, 39pt apart: even though each rule's own y0/y1
+    // (0.5pt apart) correctly merge to a single boundary — the general
+    // EDGE_TOL merging this project relies on everywhere — two isolated
+    // rules never touch each other, so this stays refused, same as the
+    // three-rule case above.
     const g = findGrid([
       { x0: 50, x1: 200, y0: 661, y1: 662 }, { x0: 200, x1: 400, y0: 661, y1: 662 },
       { x0: 50, x1: 200, y0: 700, y1: 701 }, { x0: 200, x1: 400, y0: 700, y1: 701 },
-      { x0: 49.5, x1: 50.5, y0: 660, y1: 701.5 },
     ]);
-    expect(g).not.toBeNull();
-    // Two merged boundaries, not four: 661/662 collapse to one value and
-    // 700/701 collapse to another, rather than inventing a 1pt-tall row at
-    // each rule.
-    expect(g!.ys).toHaveLength(2);
+    expect(g).toBeNull();
   });
 
   it('returns null when nothing is drawn twice — the refusal the design rests on', () => {
@@ -164,11 +177,15 @@ describe('findGrid', () => {
   });
 
   it('takes a true median gap, not the upper-middle value an even count picks by index', () => {
-    // Three rules with an IRREGULAR gap between them. gaps[Math.floor(n/2)]
-    // on a 2-element array picks index 1 — the larger gap — which is
-    // indistinguishable from always taking the max. A true median averages
-    // the two middle gaps.
-    const g = findGrid(ruledTable([600, 610, 640]));
+    // Three rule-shaped clusters with an IRREGULAR gap between them,
+    // bridged into one physically connected structure by bridge() rather
+    // than the disconnected rule stack Ruling 19 keeps out of scope — this
+    // exercises the median ARITHMETIC in isolation, not a claim about how
+    // any real table is drawn. gaps[Math.floor(n/2)] on a 2-element array
+    // picks index 1 — the larger gap — which is indistinguishable from
+    // always taking the max. A true median averages the two middle gaps.
+    const rowYs = [600, 610, 640];
+    const g = findGrid([...rowYs.flatMap(rule), bridge(rowYs)]);
     expect(g).not.toBeNull();
     const ys = g!.ys;
     const gaps = [ys[1]! - ys[0]!, ys[2]! - ys[1]!];
@@ -182,14 +199,17 @@ describe('findGrid', () => {
   });
 
   it('documents the tall-header limitation: a header taller than the body rows falls outside the implied top', () => {
-    // Body rows 20pt apart, as measured on the real document. A header
-    // taller than the body — the ordinary case for a real table — sits
-    // well above the implied top a body-height median produces. This
-    // module refuses loud rather than reaching for text position to patch
-    // it: the header run stays outside the grid, and the downstream
-    // token-completeness gate refuses the document for a missing token
-    // instead of silently shipping a table with no header.
-    const g = findGrid(ruledTable([600, 620, 640]))!;
+    // Equal-gap rule clusters, bridged into one connected structure by
+    // bridge() — see the previous test's comment on why a bridge is used
+    // here and not for a table shape. A header taller than the body — the
+    // ordinary case for a real table — sits well above the implied top a
+    // body-height median produces. This module refuses loud rather than
+    // reaching for text position to patch it: the header run stays outside
+    // the grid, and the downstream token-completeness gate refuses the
+    // document for a missing token instead of silently shipping a table
+    // with no header.
+    const rowYs = [600, 620, 640];
+    const g = findGrid([...rowYs.flatMap(rule), bridge(rowYs)])!;
     const impliedTop = g.ys[g.ys.length - 1]!;
     const tallHeaderY = 680;
     expect(tallHeaderY).toBeGreaterThan(impliedTop);
@@ -333,18 +353,19 @@ describe('findGrid', () => {
 
   it('checks the TOP gap for closedAtTop, not an arbitrary pair of boundaries', () => {
     // A table whose BOTTOM gap is closed by a real rectangle but whose TOP
-    // gap is not (a hybrid: a boxed bottom row, a bottom-ruled top row,
-    // bridged by a divider). Checking any pair other than the topmost two
-    // would wrongly see the bottom row's real closure and skip the implied
-    // top the top row actually needs.
+    // gap is not (a boxed bottom row, a rule-shaped top row, bridged into
+    // one physically connected structure by bridge() — see the median-gap
+    // test's comment on why a bridge is used here, not for a table shape).
+    // Checking any pair other than the topmost two would wrongly see the
+    // bottom row's real closure and skip the implied top the top row
+    // actually needs.
     const bottomRow: Rect[] = [
       { x0: 50, x1: 200, y0: 700, y1: 720 }, { x0: 200, x1: 400, y0: 700, y1: 720 },
     ];
     const topRule: Rect[] = [
       { x0: 50, x1: 200, y0: 740, y1: 740.5 }, { x0: 200, x1: 400, y0: 740, y1: 740.5 },
     ];
-    const divider: Rect = { x0: 49.5, x1: 50.5, y0: 699, y1: 741 };
-    const g = findGrid([...bottomRow, ...topRule, divider]);
+    const g = findGrid([...bottomRow, ...topRule, bridge([700, 720, 740])]);
     expect(g).not.toBeNull();
     // 700, 720, ~740.something, plus the implied top: four boundaries.
     expect(g!.ys).toHaveLength(4);

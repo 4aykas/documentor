@@ -82,7 +82,19 @@ function adjacent(a: Rect, b: Rect): boolean {
  *  document's layout (Task 4) can hand each component to `findGrid`
  *  separately, rather than relying on `findGrid`'s own "biggest first"
  *  fallback below. Deduplicates its input first, same as `findGrid`, so a
- *  fill-plus-stroke pair of identical rectangles is one member, not two. */
+ *  fill-plus-stroke pair of identical rectangles is one member, not two.
+ *
+ *  Adjacency-based components work on real input because real tables draw
+ *  full, ABUTTING cells, not disconnected thin rules — this is a measured
+ *  fact about the two documents this reader is built for, not an
+ *  assumption, and it is not recoverable from the code without this note.
+ *  `TEBIN P&L ACCOUNT.pdf` page 1 draws 145 rectangles and NONE is 2pt or
+ *  thinner (125 are 19.51pt tall, one per cell); `2026 Revenue
+ *  Estimation.pdf` draws 89 rectangles, 88 of them taller than 2pt. Every
+ *  cell in both documents touches its row's neighbour, so this reader never
+ *  needs to bridge a gap between separately-drawn rules — see Ruling 19
+ *  (`findGridInComponent`'s degenerate-refusal comment) for the shape that
+ *  is refused because it isn't this. */
 export function rectComponents(rects: readonly Rect[]): Rect[][] {
   const distinct = distinctRects(rects);
   const n = distinct.length;
@@ -220,6 +232,22 @@ function findGridInComponent(component: readonly Rect[]): Grid | null {
   // A table needs at least one full cell: two x-boundaries and two
   // y-boundaries. Anything less is not a grid but a stray rectangle or two
   // that touch without ever mutually repeating an edge on either axis.
+  //
+  // RULING 19: this is also where a table drawn ENTIRELY from disconnected
+  // thin rules is refused — not as a special case, but as a consequence.
+  // Each rule is its own component (rectComponents never bridges a
+  // row-height gap), so a rule-only table never has more than two rects in
+  // any one component and never reaches this point with two real
+  // boundaries on each axis. That refusal is by design, not a gap to
+  // patch: neither document this reader is built for is that shape
+  // (measured directly — see rectComponents' own comment), and a rule
+  // stack sharing a table's page margins is geometrically identical to an
+  // unrelated heading rule sharing the same margins. Only intent tells
+  // them apart, and this project refuses rather than guesses when only
+  // intent would decide (the same call chrome.ts made about a totals row
+  // that looked exactly like a footer). findGrid's contract is a bare
+  // `null` either way, so there is nowhere to attach a message to this
+  // specific refusal reason beyond this comment.
   if (xs.length < 2 || ys.length < 2) return null;
   // A typeset table draws a rule UNDER each row, so n rows arrive as n
   // boundaries and the top row has no upper edge — its text would fall
