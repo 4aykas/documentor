@@ -20,8 +20,9 @@ export type GridTable = { rows: string[][]; usedRuns: Set<TextRun> };
  *  one rectangle has two sides. */
 const MIN_REPEAT = 2;
 /** Edges closer together than this are the same drawn rule — measured on a
- *  real 0.5pt rule, whose two long edges arrive as 661 and 662. Used only
- *  for clustering x/y edges into one boundary. */
+ *  real 0.5pt rule, whose two long edges arrive as 661 and 662. Used for
+ *  clustering x/y edges into one boundary, and (see `adjacent` below) for
+ *  deciding whether two rectangles physically touch. */
 const EDGE_TOL = 2;
 /** Runs within this many points of a cell's topmost run are read as the
  *  same wrapped line of text, not a second line. The same measured value as
@@ -55,6 +56,60 @@ function distinctRects(rects: readonly Rect[]): Rect[] {
   return out;
 }
 
+/** Ruling 18: table structure is decided by geometry, not by which edges
+ *  happen to repeat. Two rectangles that don't physically touch are not one
+ *  drawn structure, no matter how many numbers they have in common — a page
+ *  hundreds of points wide has plenty of room for an unrelated box to line
+ *  up on one axis (a logo sharing a table's left margin, two independent
+ *  tables sharing column x-positions, a stacked pair of same-width
+ *  sidebars) by pure coincidence. Adjacency needs BOTH axes close at once:
+ *  the gap between the rectangles' x-extents and the gap between their
+ *  y-extents must each be within EDGE_TOL (zero or negative means overlap).
+ *  Requiring only one axis is exactly what let a heading rule sharing a
+ *  table's page margins, or two independent tables sharing column margins,
+ *  merge into a table they were never part of. */
+function gap1D(a0: number, a1: number, b0: number, b1: number): number {
+  return Math.max(a0, b0) - Math.min(a1, b1);
+}
+function adjacent(a: Rect, b: Rect): boolean {
+  return gap1D(a.x0, a.x1, b.x0, b.x1) <= EDGE_TOL && gap1D(a.y0, a.y1, b.y0, b.y1) <= EDGE_TOL;
+}
+
+/** Splits a page's rectangles into connected components by physical
+ *  adjacency (see `adjacent`) — the drawn structures a page actually
+ *  contains, decided once, by definition, before anything asks whether any
+ *  of them is a table. Exported so a caller that already understands the
+ *  document's layout (Task 4) can hand each component to `findGrid`
+ *  separately, rather than relying on `findGrid`'s own "biggest first"
+ *  fallback below. Deduplicates its input first, same as `findGrid`, so a
+ *  fill-plus-stroke pair of identical rectangles is one member, not two. */
+export function rectComponents(rects: readonly Rect[]): Rect[][] {
+  const distinct = distinctRects(rects);
+  const n = distinct.length;
+  const parent = Array.from({ length: n }, (_, i) => i);
+  const find = (x: number): number => (parent[x] === x ? x : (parent[x] = find(parent[x]!)));
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (adjacent(distinct[i]!, distinct[j]!)) {
+        const ri = find(i);
+        const rj = find(j);
+        if (ri !== rj) parent[ri] = rj;
+      }
+    }
+  }
+  // Grouped by root in ascending original-index order, so the result is
+  // deterministic and depends only on input order, never on Map/Set
+  // iteration quirks or which root union() happened to pick.
+  const groups = new Map<number, Rect[]>();
+  for (let i = 0; i < n; i++) {
+    const root = find(i);
+    let g = groups.get(root);
+    if (g === undefined) { g = []; groups.set(root, g); }
+    g.push(distinct[i]!);
+  }
+  return [...groups.values()];
+}
+
 type Cluster = { mean: number; rects: Set<number> };
 
 /** Clusters values within EDGE_TOL of one another, anchored to each
@@ -82,26 +137,6 @@ function clusterEdges(entries: readonly { value: number; rect: number }[]): Clus
   }));
 }
 
-/** Which of the given rectangles (by index into THIS array) contribute to a
- *  cluster that meets MIN_REPEAT on this axis alone. Used only to decide
- *  table MEMBERSHIP (Ruling 17) — never to produce a boundary directly.
- *  Membership has to be checked per axis independently before a single
- *  rectangle is trusted, because a rectangle can legitimately repeat an
- *  edge with something that isn't part of the same table at all: a page
- *  hundreds of points wide gives plenty of room for an unrelated box (a
- *  logo, a second table) to share an x or a y with this one by
- *  coincidence, and repeating on ONE axis is exactly what coincidence looks
- *  like — a real table's own rectangles repeat on BOTH. */
-function qualifyingRectIndices(rects: readonly Rect[], pick: (r: Rect) => readonly [number, number]): Set<number> {
-  const entries = rects.flatMap((r, i) => pick(r).map((value) => ({ value, rect: i })));
-  if (entries.length === 0) return new Set();
-  const out = new Set<number>();
-  for (const c of clusterEdges(entries)) {
-    if (c.rects.size >= MIN_REPEAT) for (const idx of c.rects) out.add(idx);
-  }
-  return out;
-}
-
 /** The x- or y-edges of a rectangle set, reduced to boundaries. An edge
  *  counts as a boundary either because MIN_REPEAT distinct rectangles agree
  *  on it, or because it is the extreme (outermost) edge of the whole axis —
@@ -114,9 +149,11 @@ function qualifyingRectIndices(rects: readonly Rect[], pick: (r: Rect) => readon
  *  several identical ones, once deduped to one) would supply its own two
  *  edges as "extremes" and manufacture a grid out of nothing — exactly the
  *  case the refusal test guards ("returns null when nothing is drawn
- *  twice"). Callers pass only the table's MEMBER rectangles (see
- *  findGrid), not the raw input, so an unrelated rectangle elsewhere on the
- *  page can never widen what "extreme" means here. */
+ *  twice"). Forcing an extreme in is safe here in a way it was not for
+ *  Ruling 17's axis-only membership test: every rectangle passed in has
+ *  already been proven, by `rectComponents`, to physically touch every
+ *  other rectangle in the same structure — there is no unrelated box left
+ *  to widen the extent by coincidence, only the table's own geometry. */
 function boundaries(rects: readonly Rect[], pick: (r: Rect) => readonly [number, number]): number[] {
   const entries = rects.flatMap((r, i) => pick(r).map((value) => ({ value, rect: i })));
   if (entries.length === 0) return [];
@@ -135,10 +172,7 @@ function boundaries(rects: readonly Rect[], pick: (r: Rect) => readonly [number,
  *  it. A fully-boxed table (every cell its own rectangle) always closes
  *  this way; a bottom-ruled table never does, because its "rows" are
  *  inferred purely from rule spacing and no rectangle spans a full row's
- *  height at all. Callers pass only the table's MEMBER rectangles: an
- *  unrelated rectangle (or a coincidental pair of them) that happens to
- *  span the same y-range elsewhere on the page must never be able to
- *  suppress a real table's implied top and drop its header. */
+ *  height at all. */
 function closedAtTop(rects: readonly Rect[], ys: readonly number[]): boolean {
   if (ys.length < 2) return false;
   const below = ys[ys.length - 2]!;
@@ -146,31 +180,46 @@ function closedAtTop(rects: readonly Rect[], ys: readonly number[]): boolean {
   return rects.some((r) => Math.abs(r.y0 - below) <= CLOSE_TOL && Math.abs(r.y1 - top) <= CLOSE_TOL);
 }
 
-export function findGrid(rects: readonly Rect[]): Grid | null {
-  const distinct = distinctRects(rects);
-  // Ruling 17: a rectangle belongs to THIS table only if it repeats an edge
-  // on BOTH axes — x and y independently, then ANDed. A stray box anywhere
-  // else on the page (a logo, a second table, a decorative rule) can easily
-  // repeat an edge on ONE axis by coincidence; a table's own rectangles
-  // repeat on both, always, because that is what being a row-and-column of
-  // the SAME table means. Membership is computed once, from the deduped
-  // input, and everything from here on — the boundaries, the extremes, the
-  // closed-top check — is recomputed from the member set alone, so the
-  // answer no longer depends on what else the page happens to draw.
-  const qualifyingX = qualifyingRectIndices(distinct, (r) => [r.x0, r.x1]);
-  const qualifyingY = qualifyingRectIndices(distinct, (r) => [r.y0, r.y1]);
-  const members = distinct.filter((_, i) => qualifyingX.has(i) && qualifyingY.has(i));
+/** The median-gap implied top boundary, added only when the component does
+ *  not already close its own top (see `closedAtTop`). A true median, not
+ *  "whichever gap floor(n/2) lands on": for an even gap count that index is
+ *  the UPPER of the two middle values, which for a 2-gap table (three
+ *  rules) is exactly the larger gap — indistinguishable from always taking
+ *  the max. Averaging the two middle gaps is what actually resists an
+ *  irregular gap on either side.
+ *
+ *  KNOWN LIMITATION, accepted rather than patched around: this estimate
+ *  assumes the header row is the same height as the body rows. A header
+ *  taller than the body — the ordinary case for a real table — gets an
+ *  implied top only one (short) body-row above the last rule, short of
+ *  where the actual header text sits, and the header falls outside the
+ *  grid. That failure is loud, not silent: the excluded header runs are
+ *  simply outside the grid, same as any other out-of-grid run, and the
+ *  token-completeness gate downstream refuses the document for missing
+ *  tokens rather than shipping a table with no header. Reaching for text
+ *  position to patch this would fix the tall-header case but break the one
+ *  principle the whole design rests on — a drawn boundary is data, text
+ *  position is not — so a loud refusal here is the accepted trade. */
+function impliedYs(ys: readonly number[]): number[] {
+  const gaps = ys.slice(1).map((y, i) => y - ys[i]!).sort((a, b) => a - b);
+  const mid = gaps.length / 2;
+  const median = gaps.length === 0
+    ? 0
+    : Number.isInteger(mid)
+      ? (gaps[mid - 1]! + gaps[mid]!) / 2
+      : gaps[Math.floor(mid)]!;
+  return median > 0 ? [...ys, ys[ys.length - 1]! + median] : [...ys];
+}
 
-  const xs = boundaries(members, (r) => [r.x0, r.x1]);
-  const ys = boundaries(members, (r) => [r.y0, r.y1]);
+/** Everything findGrid does once it has settled on ONE physically-connected
+ *  component: derive boundaries, imply a top if the box doesn't close its
+ *  own, and refuse a degenerate result. */
+function findGridInComponent(component: readonly Rect[]): Grid | null {
+  const xs = boundaries(component, (r) => [r.x0, r.x1]);
+  const ys = boundaries(component, (r) => [r.y0, r.y1]);
   // A table needs at least one full cell: two x-boundaries and two
-  // y-boundaries. Anything less is not a grid but a stray box, or several
-  // rectangles that never mutually repeat on both axes at once — including
-  // the case where excluding a non-member happens to drop a boundary's
-  // distinct-rectangle count back below MIN_REPEAT. That is deliberately
-  // NOT resolved by iterating to a fixed point (recomputing membership
-  // against the new, smaller set, and so on): a single pass is predictable
-  // and an iteration is not, so this refuses instead of chasing convergence.
+  // y-boundaries. Anything less is not a grid but a stray rectangle or two
+  // that touch without ever mutually repeating an edge on either axis.
   if (xs.length < 2 || ys.length < 2) return null;
   // A typeset table draws a rule UNDER each row, so n rows arrive as n
   // boundaries and the top row has no upper edge — its text would fall
@@ -179,37 +228,34 @@ export function findGrid(rects: readonly Rect[]): Grid | null {
   // FULLY-BOXED table (every cell its own rectangle, both edges drawn) has
   // no such gap — closedAtTop is true — and adding an implied boundary on
   // top of a box that already closes itself would manufacture a phantom
-  // empty row above a real one. The implied top, when it IS needed, is one
-  // more row's worth above the highest boundary, taken from the real rows'
-  // own median gap: drawn geometry only, never text position, per the
-  // design's lines-first principle.
-  //
-  // KNOWN LIMITATION, accepted rather than patched around: this estimate
-  // assumes the header row is the same height as the body rows. A header
-  // taller than the body — the ordinary case for a real table — gets an
-  // implied top only one (short) body-row above the last rule, short of
-  // where the actual header text sits, and the header falls outside the
-  // grid. That failure is loud, not silent: the excluded header runs are
-  // simply outside the grid, same as any other out-of-grid run, and the
-  // token-completeness gate downstream refuses the document for missing
-  // tokens rather than shipping a table with no header. Reaching for text
-  // position to patch this would fix the tall-header case but break the
-  // one principle the whole design rests on — a drawn boundary is data,
-  // text position is not — so a loud refusal here is the accepted trade.
-  if (closedAtTop(members, ys)) return { xs, ys };
-  const gaps = ys.slice(1).map((y, i) => y - ys[i]!).sort((a, b) => a - b);
-  const mid = gaps.length / 2;
-  // A true median, not "whichever gap floor(n/2) lands on": for an even
-  // count that index is the UPPER of the two middle values, which for a
-  // 2-gap table (three rules) is exactly the larger gap — indistinguishable
-  // from always taking the max. Averaging the two middle gaps is what
-  // actually resists an irregular gap on either side.
-  const median = gaps.length === 0
-    ? 0
-    : Number.isInteger(mid)
-      ? (gaps[mid - 1]! + gaps[mid]!) / 2
-      : gaps[Math.floor(mid)]!;
-  return { xs, ys: median > 0 ? [...ys, ys[ys.length - 1]! + median] : ys };
+  // empty row above a real one.
+  const finalYs = closedAtTop(component, ys) ? ys : impliedYs(ys);
+  // A result with exactly two xs and two ys is a single box, not a table —
+  // one cell has no "row" or "column" for a text run to be placed relative
+  // to, and reading it as a 1x1 table merges everything inside it into one
+  // string, silently. This also closes a pre-existing hole for free: four
+  // full-width rules plus three internal verticals can cluster down to
+  // just their own outer extent (every interior edge failing MIN_REPEAT,
+  // every interior edge failing the extreme test too, since it isn't the
+  // min or the max) and collapse the whole table into one merged cell.
+  if (xs.length === 2 && finalYs.length === 2) return null;
+  return { xs, ys: finalYs };
+}
+
+export function findGrid(rects: readonly Rect[]): Grid | null {
+  const components = rectComponents(rects);
+  if (components.length === 0) return null;
+  // Caller convenience, not a rule about tables: handed a whole page's
+  // rectangles at once, the largest connected component (by rectangle
+  // count) is assumed to be the table of interest, and this refuses if
+  // even that component doesn't yield a grid. A page can draw more than
+  // one genuine table, or a table alongside unrelated boxed content of
+  // comparable size — "biggest" is not a claim about which one matters.
+  // Task 4, which knows the document's own layout, is expected to call
+  // rectComponents itself and try every component in turn rather than
+  // lean on this fallback.
+  const largest = components.reduce((a, b) => (b.length > a.length ? b : a));
+  return findGridInComponent(largest);
 }
 
 export function tableFrom(grid: Grid, runs: readonly TextRun[]): GridTable {
@@ -243,9 +289,13 @@ export function tableFrom(grid: Grid, runs: readonly TextRun[]): GridTable {
   // y values, all inside the same cell. Reading order is y-descending (top
   // line first), THEN x-ascending within a line — sorting every run in the
   // cell by x alone, regardless of which line it sits on, is what
-  // scrambles a wrapped cell into nonsense. Lines are banded with LINE_TOL
-  // and the same anchor-to-first discipline used for the grid's own edges
-  // above.
+  // scrambles a wrapped cell into nonsense. Lines are banded with LINE_TOL,
+  // anchored to the line's FIRST (topmost) run for the same chaining
+  // reason clusterEdges anchors to a cluster's first member: two runs a
+  // half-point apart in y are normal baseline jitter in extracted text and
+  // belong on one line, but anchoring to whichever run was added last would
+  // let a long, gently-sloped run of baselines chain into one "line"
+  // spanning far more than LINE_TOL.
   const linesOf = (cellRuns: readonly TextRun[]): TextRun[][] => {
     const sorted = [...cellRuns].sort((a, b) => b.y - a.y);
     const lines: TextRun[][] = [];

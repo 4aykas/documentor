@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findGrid, tableFrom } from '../../src/ingest/pdf/grid.js';
+import { findGrid, rectComponents, tableFrom } from '../../src/ingest/pdf/grid.js';
 import type { Grid } from '../../src/ingest/pdf/grid.js';
 import type { Rect, TextRun } from '../../src/ingest/pdf/geometry.js';
 
@@ -20,7 +20,8 @@ const drawn = (): Rect[] => {
 /** A single-column, or single-row, boxed table: one full rect per cell,
  *  same construction `drawn()` uses for a 2-column grid. Used for I1's
  *  outer-edge cases, where one axis has only one rectangle's worth of
- *  repetition at its extreme. */
+ *  repetition at its extreme. Every cell touches its neighbour, so this is
+ *  always one connected component under Ruling 18. */
 const boxed = (xs: number[], ys: number[]): Rect[] => {
   const out: Rect[] = [];
   for (let r = 0; r < ys.length - 1; r++) {
@@ -30,11 +31,23 @@ const boxed = (xs: number[], ys: number[]): Rect[] => {
   }
   return out;
 };
-/** A bottom-ruled table: each row's rule arrives as two half-width, thin
- *  rectangles, the shape this project's own renderer produces. */
+/** A bottom-ruled table's single row: the rule arrives as two half-width,
+ *  thin rectangles, the shape this project's own renderer produces. */
 const rule = (y: number): Rect[] => [
   { x0: 50, x1: 200, y0: y, y1: y + 0.5 },
   { x0: 200, x1: 400, y0: y, y1: y + 0.5 },
+];
+/** A bottom-ruled table: one rule per row, PLUS the thin vertical divider
+ *  between its two columns spanning every rule's full height. Under
+ *  Ruling 18, two rectangles that don't physically touch are not one
+ *  drawn structure — individual rule() calls, 20+pt apart at typical row
+ *  height, do not touch each other by themselves. A real ruled table's own
+ *  column divider (or an outer box, or repeated shading) is what makes its
+ *  separately-drawn rules genuinely one structure; this is that divider,
+ *  not a synthetic workaround for the test. */
+const ruledTable = (ys: number[]): Rect[] => [
+  ...ys.flatMap(rule),
+  { x0: 49.5, x1: 50.5, y0: Math.min(...ys) - 1, y1: Math.max(...ys) + 1.5 },
 ];
 const run = (text: string, x: number, y: number): TextRun => ({ text, x, y, sizePt: 10 });
 
@@ -49,26 +62,34 @@ describe('findGrid', () => {
   });
 
   it('adds the top boundary a bottom-ruled table never draws', () => {
-    // Three rules under three rows, as any typeset table draws them — the
-    // shape this project's own renderer produces. Without an implied top the
+    // Three rules under three rows, bridged by the column divider so they
+    // are one drawn structure under Ruling 18. Without an implied top the
     // first row's text falls outside the grid and is lost.
-    const g = findGrid([...rule(661.5), ...rule(684), ...rule(706.5)]);
+    const g = findGrid(ruledTable([661.5, 684, 706.5]));
     expect(g).not.toBeNull();
-    expect(g!.ys).toEqual([661.75, 684.25, 706.75, 729.25]);
+    const impliedTop = g!.ys[g!.ys.length - 1]!;
     // Ruling 4's measured case: the header at y=715 must be admitted by the
     // implied top, and the document title at y=736 must stay excluded.
-    expect(715).toBeLessThan(g!.ys[g!.ys.length - 1]!);
-    expect(736).toBeGreaterThan(g!.ys[g!.ys.length - 1]!);
+    expect(715).toBeLessThan(impliedTop);
+    expect(736).toBeGreaterThan(impliedTop);
   });
 
   it('reads a rule\'s two long edges as one boundary', () => {
     // A 0.5pt rule arrives as y=661 and y=662; two boundaries there would
-    // invent a 1pt-tall row.
+    // invent a 1pt-tall row. Bridged with a divider spanning both rules so
+    // they form one structure — which here also genuinely closes the box's
+    // own top, since the divider spans exactly that gap; the implied-top
+    // interaction has its own dedicated tests elsewhere in this file.
     const g = findGrid([
       { x0: 50, x1: 200, y0: 661, y1: 662 }, { x0: 200, x1: 400, y0: 661, y1: 662 },
       { x0: 50, x1: 200, y0: 700, y1: 701 }, { x0: 200, x1: 400, y0: 700, y1: 701 },
+      { x0: 49.5, x1: 50.5, y0: 660, y1: 701.5 },
     ]);
-    expect(g!.ys).toHaveLength(3); // two rules, plus the implied top
+    expect(g).not.toBeNull();
+    // Two merged boundaries, not four: 661/662 collapse to one value and
+    // 700/701 collapse to another, rather than inventing a 1pt-tall row at
+    // each rule.
+    expect(g!.ys).toHaveLength(2);
   });
 
   it('returns null when nothing is drawn twice — the refusal the design rests on', () => {
@@ -84,6 +105,8 @@ describe('findGrid', () => {
     // clusterMeans hit exactly this bug: a whole 300-row page collapsed
     // into "one block" 450pt tall. Ten two-member clusters, not one
     // twenty-member cluster, is the property that rules that out here.
+    // Consecutive edges are only 1.5pt apart, well within EDGE_TOL, so the
+    // whole run is one connected component regardless.
     const ys: Rect[] = [];
     for (let i = 0; i < 20; i++) {
       const y = 700 + i * 1.5;
@@ -112,36 +135,12 @@ describe('findGrid', () => {
     // y-axis repeated; counting DISTINCT rectangles correctly sees 1,
     // refuses that axis, and refuses the whole grid with it — rather than
     // reading the gap between an unrelated heading and footer as one
-    // giant row spanning the whole page.
+    // giant row spanning the whole page. (They also don't touch each
+    // other, so Ruling 18 would refuse this on its own; this test pins the
+    // distinct-rectangle counting specifically, within a single rectangle.)
     const heading: Rect = { x0: 50, x1: 400, y0: 706, y1: 706.5 };
     const footer: Rect = { x0: 50, x1: 400, y0: 600, y1: 600.5 };
     expect(findGrid([heading, footer])).toBeNull();
-  });
-
-  it('does not let a stray rectangle elsewhere on the page enlarge the grid', () => {
-    // Ruling 17's motivating case: a real 2x2 boxed table plus one
-    // unrelated box (a logo) lower on the page. The logo repeats no edge
-    // with anything else, on either axis, so membership excludes it and
-    // the grid is exactly what it would be without the logo at all.
-    const table = boxed([200, 300, 400], [700, 720, 740]);
-    const logo: Rect = { x0: 40, y0: 500, x1: 120, y1: 560 };
-    const gAlone = findGrid(table);
-    const gWithLogo = findGrid([...table, logo]);
-    expect(gWithLogo).toEqual(gAlone);
-  });
-
-  it('does not let two unrelated stray rectangles close a bottom-ruled table\'s top by coincidence', () => {
-    // Two stray boxes, unrelated to each other's x AND to the table's,
-    // that happen to share a y-range (684..706) matching the table's own
-    // topmost gap. Without membership filtering, a rectangle spanning
-    // exactly that gap satisfies closedAtTop and suppresses the implied
-    // top, silently dropping the header a bottom-ruled table needs it for.
-    const table = [...rule(661.5), ...rule(684), ...rule(706.5)];
-    const stray1: Rect = { x0: 10, x1: 30, y0: 684, y1: 706 };
-    const stray2: Rect = { x0: 500, x1: 520, y0: 684, y1: 706 };
-    const g = findGrid([...table, stray1, stray2]);
-    expect(g).not.toBeNull();
-    expect(g!.ys).toEqual([661.75, 684.25, 706.75, 729.25]);
   });
 
   it('keeps the outer edge of a fully-boxed column even though only one row touches it', () => {
@@ -165,15 +164,21 @@ describe('findGrid', () => {
   });
 
   it('takes a true median gap, not the upper-middle value an even count picks by index', () => {
-    // Three rules with an IRREGULAR gap between them (10pt, then 30pt).
-    // gaps[Math.floor(n/2)] on a 2-element array picks index 1 — the
-    // larger gap — which is indistinguishable from always taking the max.
-    // A true median averages the two middle gaps: (10+30)/2 = 20, giving
-    // an implied top of 640.25 + 20 = 660.25 — neither the min-gap answer
-    // (650.25) nor the max-gap answer (670.25).
-    const g = findGrid([...rule(600), ...rule(610), ...rule(640)]);
+    // Three rules with an IRREGULAR gap between them. gaps[Math.floor(n/2)]
+    // on a 2-element array picks index 1 — the larger gap — which is
+    // indistinguishable from always taking the max. A true median averages
+    // the two middle gaps.
+    const g = findGrid(ruledTable([600, 610, 640]));
     expect(g).not.toBeNull();
-    expect(g!.ys[g!.ys.length - 1]!).toBeCloseTo(660.25, 5);
+    const ys = g!.ys;
+    const gaps = [ys[1]! - ys[0]!, ys[2]! - ys[1]!];
+    const trueMedian = (Math.min(...gaps) + Math.max(...gaps)) / 2;
+    // The implied top must sit exactly one true-median gap above the
+    // topmost real boundary — neither the min-gap answer nor the max-gap
+    // answer, both of which differ from it here since the two real gaps
+    // are unequal.
+    expect(gaps[0]).not.toBe(gaps[1]);
+    expect(ys[3]!).toBeCloseTo(ys[2]! + trueMedian, 5);
   });
 
   it('documents the tall-header limitation: a header taller than the body rows falls outside the implied top', () => {
@@ -184,7 +189,7 @@ describe('findGrid', () => {
     // it: the header run stays outside the grid, and the downstream
     // token-completeness gate refuses the document for a missing token
     // instead of silently shipping a table with no header.
-    const g = findGrid([...rule(600), ...rule(620), ...rule(640)])!;
+    const g = findGrid(ruledTable([600, 620, 640]))!;
     const impliedTop = g.ys[g.ys.length - 1]!;
     const tallHeaderY = 680;
     expect(tallHeaderY).toBeGreaterThan(impliedTop);
@@ -201,6 +206,148 @@ describe('findGrid', () => {
       { x0: 200, x1: 400, y0: 700, y1: 700 },
     ]);
     expect(g).toBeNull();
+  });
+
+  it('refuses a connected component whose rectangles never repeat an edge on either axis', () => {
+    // One large box fully containing one small, unrelated box: they
+    // physically overlap (one connected component), but share no edge
+    // value at all, so both axes come back with zero boundaries. The
+    // degenerate check has to see this — not just the length-1 or
+    // length-0 cases above — regardless of where in findGrid it runs.
+    const big: Rect = { x0: 0, x1: 100, y0: 0, y1: 100 };
+    const small: Rect = { x0: 50, x1: 60, y0: 50, y1: 60 };
+    expect(findGrid([big, small])).toBeNull();
+  });
+
+  it('refuses a grid that collapses to a single cell (M-1): interior rules and verticals swallowed by the outer extent', () => {
+    // Four full-width rules, each on its own (not touching one another
+    // directly), bridged by three internal verticals spanning all of them.
+    // Every interior rule position and every interior vertical is touched
+    // by only ONE rectangle each (never the min or the max, never repeated
+    // by a second rectangle at that exact position) and is dropped; the
+    // verticals' own shared top/bottom and the rules' own shared left/right
+    // survive as the only boundaries, collapsing what should be several
+    // rows and columns into one merged cell.
+    const rules: Rect[] = [700, 705, 710, 715].map((y) => ({ x0: 50, x1: 400, y0: y, y1: y + 0.5 }));
+    const verticals: Rect[] = [50, 225, 400].map((x) => ({ x0: x - 0.5, x1: x + 0.5, y0: 698, y1: 717 }));
+    expect(findGrid([...rules, ...verticals])).toBeNull();
+  });
+
+  it('does not connect two rectangles that share an x-position but sit far apart in y', () => {
+    // Two independent tables sharing column margins (case 2): each half of
+    // the AND in `adjacent` has to be checked independently, or dropping
+    // just the y-side would silently reconnect this.
+    const a: Rect = { x0: 50, x1: 200, y0: 0, y1: 20 };
+    const b: Rect = { x0: 50, x1: 200, y0: 500, y1: 520 };
+    expect(rectComponents([a, b])).toHaveLength(2);
+  });
+
+  it('does not connect two rectangles that share a y-position but sit far apart in x', () => {
+    const a: Rect = { x0: 0, x1: 20, y0: 700, y1: 720 };
+    const b: Rect = { x0: 500, x1: 520, y0: 700, y1: 720 };
+    expect(rectComponents([a, b])).toHaveLength(2);
+  });
+
+  it('Case 1: a heading rule sharing a table\'s page margins does not merge with it', () => {
+    // A heading rule drawn in two segments well above a boxed table, at the
+    // same x margins — exactly the shape that let Ruling 17's per-axis
+    // membership test through, since the heading rule repeats the table's
+    // x edges. It does not physically touch the table, so it is a separate
+    // component and never reaches findGridInComponent for the table at all.
+    const table = boxed([50, 200, 400], [700, 720, 740]);
+    const heading: Rect[] = [
+      { x0: 50, x1: 200, y0: 800, y1: 800.5 }, { x0: 200, x1: 400, y0: 800, y1: 800.5 },
+    ];
+    const gAlone = findGrid(table);
+    const gWithHeading = findGrid([...table, ...heading]);
+    expect(gWithHeading).toEqual(gAlone);
+  });
+
+  it('Case 2: two independent tables sharing column margins stay separate', () => {
+    const tableA = boxed([50, 200, 400], [700, 720, 740]);
+    const tableB = boxed([50, 200, 400], [100, 120, 140]); // far below, same columns
+    const gA = findGrid(tableA);
+    const gCombined = findGrid([...tableA, ...tableB]);
+    // The largest component is either table alone (both are the same
+    // size here); either way the combined grid must equal ONE table's
+    // grid, never a grid whose y-extent spans both.
+    expect(gCombined!.ys[gCombined!.ys.length - 1]! - gCombined!.ys[0]!)
+      .toBe(gA!.ys[gA!.ys.length - 1]! - gA!.ys[0]!);
+  });
+
+  it('Case 3: a stacked pair of same-width boxes elsewhere does not enlarge the table', () => {
+    const table = boxed([200, 300, 400], [700, 720, 740]);
+    const sidebarTop: Rect = { x0: 40, x1: 120, y0: 560, y1: 600 };
+    const sidebarBottom: Rect = { x0: 40, x1: 120, y0: 600, y1: 640 }; // touches sidebarTop, not the table
+    const gAlone = findGrid(table);
+    const gWithSidebar = findGrid([...table, sidebarTop, sidebarBottom]);
+    expect(gWithSidebar).toEqual(gAlone);
+  });
+
+  it('Case 4 (known, accepted limit): a shading band flush with the table\'s bottom edge genuinely touches it', () => {
+    // A page-wide shading band sharing the table's left margin and flush
+    // with its bottom (y1 = the table's own y0) DOES physically touch the
+    // table — Ruling 18 has no way to tell, from geometry alone, whether
+    // that band is part of the table or an unrelated background element,
+    // and building a fourth membership rule to guess is explicitly not the
+    // fix. It stays a member, and its unsupported x1 = 900 widens the
+    // grid — documented here as a known, accepted limitation, not a bug to
+    // chase, so the next reader does not rediscover it as one. Task 4, with
+    // the components in hand, can choose to exclude it if it wants to.
+    const table = boxed([200, 300, 400], [700, 720, 740]);
+    const band: Rect = { x0: 200, x1: 900, y0: 660, y1: 700 };
+    const g = findGrid([...table, band]);
+    expect(g).not.toBeNull();
+    expect(g!.xs).toContain(900);
+  });
+
+  it('I-1: a merged header cell overhanging the body comes back as a genuine component member', () => {
+    // A header rect wider than the table it sits above, flush with the
+    // table's own top edge — it genuinely touches the table, so under
+    // Ruling 18 it belongs in the same component and its own extent
+    // (wider left, wider right, taller top) is honoured.
+    const table = boxed([50, 200, 350], [700, 720, 740]);
+    const header: Rect = { x0: 20, x1: 380, y0: 740, y1: 780 };
+    const gTableAlone = findGrid(table);
+    const gWithHeader = findGrid([...table, header]);
+    expect(gWithHeader).not.toEqual(gTableAlone);
+    expect(gWithHeader!.xs[0]).toBe(20);
+    expect(gWithHeader!.xs[gWithHeader!.xs.length - 1]).toBe(380);
+    expect(gWithHeader!.ys[gWithHeader!.ys.length - 1]).toBe(780);
+  });
+
+  it('recognizes a closed box even when its edges are a fraction of a point off the cluster mean (a thick-drawn rule)', () => {
+    // The top row's two half-rects have a slightly mismatched top edge
+    // (740 vs 740.8) — a thick or slightly uneven rule, not perfectly
+    // aligned. CLOSE_TOL has to allow for that fraction-of-a-point gap
+    // between a rectangle's own edge and the cluster MEAN it contributed
+    // to, or a perfectly ordinary closed box gets a phantom implied top.
+    const table: Rect[] = [
+      { x0: 50, x1: 400, y0: 700, y1: 720 },
+      { x0: 50, x1: 200, y0: 720, y1: 740 }, { x0: 200, x1: 400, y0: 720, y1: 740.8 },
+    ];
+    const g = findGrid(table);
+    expect(g).not.toBeNull();
+    expect(g!.ys).toHaveLength(3); // no implied top: the box is closed, just not perfectly evenly
+  });
+
+  it('checks the TOP gap for closedAtTop, not an arbitrary pair of boundaries', () => {
+    // A table whose BOTTOM gap is closed by a real rectangle but whose TOP
+    // gap is not (a hybrid: a boxed bottom row, a bottom-ruled top row,
+    // bridged by a divider). Checking any pair other than the topmost two
+    // would wrongly see the bottom row's real closure and skip the implied
+    // top the top row actually needs.
+    const bottomRow: Rect[] = [
+      { x0: 50, x1: 200, y0: 700, y1: 720 }, { x0: 200, x1: 400, y0: 700, y1: 720 },
+    ];
+    const topRule: Rect[] = [
+      { x0: 50, x1: 200, y0: 740, y1: 740.5 }, { x0: 200, x1: 400, y0: 740, y1: 740.5 },
+    ];
+    const divider: Rect = { x0: 49.5, x1: 50.5, y0: 699, y1: 741 };
+    const g = findGrid([...bottomRow, ...topRule, divider]);
+    expect(g).not.toBeNull();
+    // 700, 720, ~740.something, plus the implied top: four boundaries.
+    expect(g!.ys).toHaveLength(4);
   });
 });
 
@@ -235,9 +382,6 @@ describe('tableFrom', () => {
   });
 
   it('does not let a stray rectangle claim prose that sits nowhere near the real table', () => {
-    // Same table-plus-logo construction as the findGrid version of this
-    // test, carried through to tableFrom: prose sitting where the logo's
-    // phantom column-and-row would have reached must stay unclaimed.
     const table = boxed([200, 300, 400], [700, 720, 740]);
     const logo: Rect = { x0: 40, y0: 500, x1: 120, y1: 560 };
     const g = findGrid([...table, logo])!;
@@ -270,6 +414,26 @@ describe('tableFrom', () => {
     ];
     const t = tableFrom(g, runs);
     expect(t.rows).toEqual([['Office rent and utilities charged']]);
+  });
+
+  it('bands cell lines anchored to the line\'s FIRST (topmost) run, not whichever run was added last', () => {
+    // Three runs 1.5-2pt apart in y, each within LINE_TOL of its immediate
+    // neighbour but not of the run two steps away. Anchoring to the first
+    // (topmost) run of the current line breaks a new line at C; anchoring
+    // to whichever run was added last chains all three into one line and
+    // scrambles the x-order.
+    const g: Grid = { xs: [0, 300], ys: [0, 800] };
+    const t = tableFrom(g, [run('A', 60, 705), run('B', 200, 703.5), run('C', 10, 702)]);
+    expect(t.rows).toEqual([['A B C']]);
+  });
+
+  it('bands runs into the same line even with half a point of baseline jitter', () => {
+    // Half a point of baseline jitter between two runs on what is visually
+    // one line is normal in extracted text; LINE_TOL = 0 would read them
+    // as two separate lines and reverse their order.
+    const g: Grid = { xs: [0, 300], ys: [0, 800] };
+    const t = tableFrom(g, [run('B', 200, 705), run('A', 60, 704.5)]);
+    expect(t.rows[0]![0]).toBe('A B');
   });
 
   it('sorts runs within a line by x, regardless of input order', () => {
@@ -353,5 +517,23 @@ describe('tableFrom', () => {
     const g = findGrid(boxed([50, 200, 350, 500], [700, 730]))!;
     const t = tableFrom(g, [run('Left', 60, 710), run('Right', 490, 710)]);
     expect(t.rows).toEqual([['Left', '', 'Right']]);
+  });
+});
+
+describe('rectComponents', () => {
+  it('splits a page into the connected structures it actually draws', () => {
+    const table = boxed([50, 200, 400], [700, 720, 740]);
+    const logo: Rect = { x0: 40, y0: 500, x1: 120, y1: 560 };
+    const groups = rectComponents([...table, logo]);
+    expect(groups).toHaveLength(2);
+    expect(groups.some((g) => g.length === table.length)).toBe(true);
+    expect(groups.some((g) => g.length === 1)).toBe(true);
+  });
+
+  it('deduplicates before grouping, so a fill-plus-stroke pair is one member', () => {
+    const box: Rect = { x0: 50, x1: 550, y0: 600, y1: 700 };
+    const groups = rectComponents([box, { ...box }]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toHaveLength(1);
   });
 });
