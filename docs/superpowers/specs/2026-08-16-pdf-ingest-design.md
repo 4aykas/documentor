@@ -92,7 +92,7 @@ Four units, each testable alone:
 | Unit | Responsibility |
 |:--|:--|
 | `src/ingest/pdf/geometry.ts` | Operator list → rectangles and text runs in one coordinate space. Owns the CTM. |
-| `src/ingest/pdf/chrome.ts` | Which runs are page furniture. Pure: takes runs per page, returns the body runs and what it dropped. |
+| `src/ingest/pdf/chrome.ts` | Reports which blocks repeat across pages, and removes the ones the caller declared. Pure: takes runs per page, returns the body runs and what it removed. Decides nothing. |
 | `src/ingest/pdf/grid.ts` | Rectangles → a column/row grid; text runs → cells. Refuses rather than guesses. |
 | `src/ingest/pdf.ts` | Assembles the IR: headings, paragraphs, tables; joins a table across pages; produces `dropped`. |
 
@@ -132,29 +132,53 @@ in this scope.
 would be the case; single-column pages are in scope precisely because their
 reading order is unambiguous.
 
-Chrome dropped by `chrome.ts` is excluded from both sides of the comparison,
-or every document with a letterhead would fail. That exclusion is reported,
-so "excluded 4 lines × 2 pages as page furniture" is visible rather than
-assumed.
+Chrome removed by `chrome.ts` is excluded from both sides of the comparison,
+or every document with a letterhead would fail. That exclusion is safe only
+because the removal was *declared* — see the next section. The gate never
+excludes anything the reader decided on its own, because a gate that ignores
+the one component allowed to guess is not a gate.
 
 ## Identifying page furniture
 
-Two passes, so neither condition depends on the other:
+**The reader reports repeated blocks. It never decides to delete one.**
 
-1. **Candidates.** A run whose position repeats, within a tolerance, on every
-   page. Positional rather than textual on purpose: a page number differs on
-   every page and is furniture all the same.
-2. **Body band.** The y-range spanned by the runs that are *not* candidates —
-   the page's own content, whatever it is.
+This replaces an earlier design in which the reader inferred furniture from
+position, and the earlier design is worth recording, because it is the
+obvious one and it does not work.
 
-Furniture is a candidate lying outside the body band. The second pass is what
-stops a table's first column, which also repeats position on every page, from
-being mistaken for a letterhead: it sits inside the body band, so it stays.
+Three position-based rules were built and each was broken by an ordinary
+layout. Text repetition mistakes a totals row's static caption for a footer.
+"Closer to the page edge than to the nearest body run" is a coin flip,
+because a sheet's margin and its leading are the same order of magnitude. A
+body band plus a margin fraction deletes a totals row sitting at the foot of
+an invoice.
 
-A single-page document has no repetition to observe. It keeps everything and
-says so — the report names what was kept that a multi-page document would
-have dropped, so a one-page re-issue with a doubled letterhead is a visible
-outcome, not a surprise.
+That last failure is the general one, and it ends the argument. A totals row
+at y=100 with body at y=500, and a footer at y=100 with body at y=500, are
+the same geometry. Nothing on the page separates them. Only meaning does,
+and the reader has no access to meaning.
+
+So the reader does two separable things:
+
+1. **`findRepeated`** returns every block whose position and text repeat
+   across pages, with its y-range and its text. That is an observation, and
+   observations can be trusted. It is what an operator reads to learn what
+   their own document contains and where.
+2. **`splitChrome`** removes exactly what it was *told* to remove — runs
+   above a declared y, or below one. Nothing else. No declaration, no
+   removal.
+
+`documentor` re-issues documents its operator already owns, so the operator
+knows their own letterhead and can say where it ends. Trading one number in a
+config for a whole class of silent deletion is the trade this project makes
+everywhere else; there is no reason this component should be the exception.
+
+With nothing declared the reader keeps every run, and its report names the
+repeated blocks it found together with the y values that would remove them. A
+re-issue that prints the source's letterhead inside the body is then a visible
+outcome with an obvious fix, rather than a deletion nobody can see.
+
+A single-page document has no repetition to observe, and says so.
 
 ## Limits
 
@@ -212,3 +236,17 @@ The cost of 3 is a document whose headings are all one size: it has none, and
 its prose is paragraphs. That is honest — a PDF with no size contrast carries
 no heading structure to recover — and it is reported, so a document that came
 out flat says so rather than looking deliberately flat.
+
+**4. Page furniture is declared, not inferred** — added 2026-08-17, after
+three position-based rules were built and each was broken by an ordinary
+layout. This one was not an open question at review; it was settled the wrong
+way and had to be reopened, which is why it is recorded here with its cost
+rather than quietly amended above.
+
+The cost is that a first re-issue of an unfamiliar document prints the
+source's letterhead inside the body, and somebody has to read the report and
+write two numbers into the config before the second run. That is one manual
+step per document *shape*, not per document, and it buys the guarantee that
+the reader never deletes a line it merely suspected. Given that the failure
+being traded away is a totals row vanishing from an invoice with nothing on
+the page to say so, it is not a close call.
