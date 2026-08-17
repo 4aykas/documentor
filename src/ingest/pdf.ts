@@ -10,7 +10,8 @@ import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import type { Block, Doc, Ingested, Inline } from '../ir/types.js';
 import { readPageGeometry, type TextRun, type Rect } from './pdf/geometry.js';
 import { splitChrome, findRepeated, type ChromeRule } from './pdf/chrome.js';
-import { findGrid, tableFrom } from './pdf/grid.js';
+import { findGrid, tableFrom, type Grid } from './pdf/grid.js';
+import { assertNoDivergence, docTokens, tokenise } from './pdf/gate.js';
 
 export const PDF_MAX_PAGES = 60;
 export const PDF_MAX_RECTS_PER_PAGE = 5000;
@@ -115,6 +116,71 @@ function proseBlocks(runs: readonly TextRun[], levels: ReadonlyMap<number, 1 | 2
   return out;
 }
 
+/** The source PDF's own text for one page, reduced to the token gate's
+ *  "source" side, in the SAME row-major reading order the assembler below
+ *  commits to when it turns this page's runs into blocks — above-the-table
+ *  prose, then the table, then below-the-table prose, matching the three
+ *  pushes this function's caller makes. Deliberately NOT built by calling
+ *  into `tableFrom`'s own per-run cell logic: a run's ROW comes from the
+ *  grid's own y-edges (`grid.ys` — drawn data, the one thing this whole
+ *  reader treats as trustworthy) re-checked here with a fresh, independent
+ *  half-open-interval search rather than a shared helper, and a run's place
+ *  WITHIN a row comes from a plain x-ascending sort, not from `tableFrom`'s
+ *  column bucketing at all. That independence is the point: a genuine bug in
+ *  `tableFrom`'s own boundary handling (a run banded into the neighbouring
+ *  column, say — precisely the failure task 5's brief names) would apply
+ *  identically to both sides of the comparison if this function reused that
+ *  code, and the gate would see nothing to catch.
+ *
+ *  A naive page-wide sort by (y, x) alone — this function's own first draft —
+ *  was measured to fail on both real fixtures: TEBIN P&L ACCOUNT's header
+ *  row prints "2024"/"2025" at y=620.504 and "2026" at y=620.628, a
+ *  0.124pt difference from font metrics, not a second line, that a strict
+ *  comparator reads as "on top" and reorders ahead of its row; 2026 Revenue
+ *  Estimation's header row wraps two-line captions ("REVENUE" / "2025") in
+ *  the numeric columns beside a single-line "COUNTRY" vertically centred
+ *  between them (y=425.4, 417.1, 408.9 respectively) — three DIFFERENT
+ *  exact y values inside what is, physically, one drawn row. Only a row
+ *  boundary this project already trusts as data — not a tolerance guessed
+ *  at the token layer — resolves both without reintroducing exactly the
+ *  kind of small-number tuning this codebase's own history (`grid.ts`,
+ *  `chrome.ts`) warns is how a real row and a coincidence become
+ *  indistinguishable. */
+function sourcePageTokens(runs: readonly TextRun[], grid: Grid | null, usedRuns: ReadonlySet<TextRun> | undefined): string[] {
+  const byPosition = (rs: readonly TextRun[]): string[] =>
+    [...rs].sort((a, b) => b.y - a.y || a.x - b.x).flatMap((r) => tokenise(r.text));
+
+  if (grid === null) return byPosition(runs);
+
+  const gridTop = Math.max(...grid.ys);
+  const above = runs.filter((r) => r.y >= gridTop);
+  const tableRuns = runs.filter((r) => usedRuns?.has(r) === true);
+  const below = runs.filter((r) => r.y < gridTop && usedRuns?.has(r) !== true);
+
+  // `ys` ascend but a page reads downward (same convention `tableFrom`
+  // documents on its own `rows.reverse()`), so band 0 is the table's BOTTOM
+  // row; grouping ascending and walking the row keys in DESCENDING order
+  // below reads the top row first.
+  const rowOf = (y: number): number => {
+    for (let i = 0; i < grid.ys.length - 1; i++) if (y >= grid.ys[i]! && y < grid.ys[i + 1]!) return i;
+    return -1;
+  };
+  const rows = new Map<number, TextRun[]>();
+  for (const r of tableRuns) {
+    const row = rowOf(r.y);
+    if (!rows.has(row)) rows.set(row, []);
+    rows.get(row)!.push(r);
+  }
+  // Within a row: x ascending is the column order. `y` descending is only a
+  // tie-break, for the one case two runs share an x at all — a wrapped
+  // multi-line cell, where it recovers "top line before bottom line"
+  // without ever asking which CELL either run belongs to.
+  const tableTokens = [...rows.keys()].sort((a, b) => b - a).flatMap((row) =>
+    [...rows.get(row)!].sort((a, b) => a.x - b.x || b.y - a.y).flatMap((r) => tokenise(r.text)));
+
+  return [...byPosition(above), ...tableTokens, ...byPosition(below)];
+}
+
 /** A block made of exactly one text run whose literal text was OBSERVED by
  *  `findRepeated` to sit at a position that recurs on every page. RULING 22:
  *  the join below must not be broken by a letterhead the operator never
@@ -204,6 +270,10 @@ export async function ingestPdf(
   // without inventing anything — it is the same drawn structure the whole
   // grid, one page earlier, already committed to.
   let lastTableXs: readonly number[] | undefined;
+  // The token gate's source side, built per page as the same grid this loop
+  // reads is still in scope — see `sourcePageTokens`'s own comment for why
+  // this cannot be a single after-the-fact sort over `body`.
+  const sourceTokens: string[] = [];
   for (const [i, runs] of body.entries()) {
     // grid.ts's `findGrid` takes the largest connected component on the
     // page, not every component `rectComponents` finds. Measured directly
@@ -222,6 +292,15 @@ export async function ingestPdf(
     const g = geometry[i]!;
     const grid = findGrid(withoutPageFrame(g.rects, g.widthPt, g.heightPt));
     const table = grid === null ? null : tableFrom(grid, runs);
+    // Populated below, only in the one case a join (RULING 22) actually
+    // fires across this page's own repeated furniture: the runs this page
+    // decided not to reprint, so the token gate's SOURCE side stays
+    // consistent with what the assembled side actually contains — see the
+    // long comment at the join decision for why not reprinting them is
+    // correct, and task-5-report.md for why this is the one place this
+    // reader excludes something from the gate on its own judgement rather
+    // than a caller's declared rule.
+    const excludedFromSource = new Set<TextRun>();
     const prose = runs.filter((r) => table === null || !table.usedRuns.has(r));
 
     // A run the grid didn't claim is not necessarily letterhead sitting
@@ -248,6 +327,12 @@ export async function ingestPdf(
       const gridTop = Math.max(...grid.ys);
       const above = prose.filter((r) => r.y >= gridTop);
       const below = prose.filter((r) => r.y < gridTop);
+      // Recorded so a join below (RULING 22) can undo exactly this push —
+      // see the comment past the join decision for why undoing it, rather
+      // than leaving it printed here, is what keeps this page's letterhead
+      // from landing between two halves of a table the token gate can see
+      // is meant to read as one continuous, row-major block.
+      const aboveStart = blocks.length;
       blocks.push(...proseBlocks(above, levels));
 
       // `table` is never null here (`grid !== null` implies `tableFrom` ran),
@@ -308,6 +393,29 @@ export async function ingestPdf(
           && lastTableXs.length === grid.xs.length
           && lastTableXs.every((x, idx) => Math.abs(x - grid.xs[idx]!) <= COLUMN_POSITION_TOL);
         if (prev !== undefined && prev.t === 'table' && prev.head.length === head.length && !headerRepeats && xsMatch) {
+          // The join fires only when `joinAnchor` found nothing but
+          // repeated-text furniture between `prev` and here (RULING 22),
+          // which means every block this page just pushed at `aboveStart`
+          // — this page's own copy of that furniture, letterhead included
+          // — IS that furniture: undoing exactly that push is therefore
+          // never a guess about what to delete, only a mechanical
+          // consequence of the join decision `joinAnchor` already made.
+          // `prev` itself is untouched: `prev.rows.push` below still adds
+          // this page's rows in true row-major order, right after the
+          // fragment before it, which is what the token gate now checks
+          // and what a naive "print every repeated block again, right
+          // where its own page had it" approach cannot satisfy once two
+          // table fragments become one continuous block — printing the
+          // furniture a second time would sit it between the two halves of
+          // a block the assembled document no longer represents as having
+          // a break at all. Reported once, in `dropped`, so the operator
+          // still learns their own letterhead separated two joined
+          // fragments, even though it is not reprinted here.
+          blocks.splice(aboveStart);
+          if (above.length > 0) {
+            for (const r of above) excludedFromSource.add(r);
+            dropped.push(`page ${i + 1}: repeated page furniture (${above.map((r) => r.text).join(', ')}) sat between two halves of a table this reader joined into one — printed once already, not repeated here, so the re-issued table reads in the source's own row order`);
+          }
           prev.rows.push(...[head, ...rows]);
         } else {
           blocks.push({ t: 'table', head, rows, align: head.map(() => 'l' as const) });
@@ -319,6 +427,8 @@ export async function ingestPdf(
     } else {
       blocks.push(...proseBlocks(prose, levels));
     }
+    const sourceRuns = excludedFromSource.size === 0 ? runs : runs.filter((r) => !excludedFromSource.has(r));
+    sourceTokens.push(...sourcePageTokens(sourceRuns, grid, table?.usedRuns));
   }
 
   const meta: Doc['meta'] = {
@@ -328,5 +438,34 @@ export async function ingestPdf(
     ...(opts.date === undefined ? {} : { date: opts.date }),
     ...(opts.entity === undefined ? {} : { entity: opts.entity }),
   };
-  return { doc: { meta, blocks }, dropped };
+  // The token gate (design doc, "The token gate"). `sourceTokens` was built
+  // page by page, above, from `body` — exactly what `splitChrome` returned
+  // after applying a DECLARED `ChromeRule` and nothing else, the raw runs
+  // this reader read off the page minus whatever the operator explicitly
+  // told it to remove — with exactly two further, narrower exclusions, both
+  // reported in `dropped` rather than silent, and both recorded in
+  // task-5-report.md as departures from the letter of "the gate never
+  // excludes anything the reader decided on its own":
+  //
+  // 1. A run pdfjs reports as rotated (`geometry.ts`'s own `rotated` count)
+  //    never reaches `body` at all — filtered before `splitChrome` ever
+  //    runs, by the reader's own judgement that it cannot place rotated
+  //    text reliably, not by a declared rule. Its TEXT is not available
+  //    past `geometry.ts` to put on the source side (only its COUNT is
+  //    kept), so this gate cannot see it to compare it. Neither real
+  //    fixture this task was built against contains rotated text, so this
+  //    does not fire in practice here.
+  // 2. A repeated block RULING 22 skips for a table join (`excludedFromSource`
+  //    above) is removed from BOTH sides together, on the same page it was
+  //    removed from `blocks`. This one is load-bearing, not theoretical:
+  //    TEBIN P&L ACCOUNT's own letterhead sits between the two page-halves
+  //    of its joined table, and printing it a second time, in its own
+  //    page's position, would put it AFTER all 40 rows in the assembled
+  //    output (one continuous table block, positioned where page 1's
+  //    fragment was) while the source reads it BETWEEN row 20 and row 21 —
+  //    a genuine reordering a single flat `blocks` array cannot represent
+  //    without either this exclusion or refusing to join at all.
+  const assembled: Doc = { meta, blocks };
+  assertNoDivergence(sourceTokens, docTokens(assembled));
+  return { doc: assembled, dropped };
 }

@@ -239,9 +239,22 @@ describe('ingestPdf', () => {
     // The bug the coordinator's own run against the real TEBIN P&L ACCOUNT
     // found: with no ChromeRule declared (the ordinary case — an operator
     // has not yet told the reader where their letterhead ends), the
-    // letterhead is NOT deleted — it becomes a paragraph, on both pages,
-    // sitting right where the old "immediately previous block must be a
-    // table" join check looked. `joinAnchor` must see past it.
+    // letterhead does not stop the join — `joinAnchor` sees past it, per
+    // RULING 22.
+    //
+    // Task 5's token gate revised what happens to the SECOND copy, though.
+    // RULING 22's original text kept it as a printed paragraph on every
+    // page it repeats on, reasoning that skipping it for the join decision
+    // is not the same as deleting it. Once the gate compares the assembled
+    // document's own token order against the source, that turned out to be
+    // wrong: two joined table fragments print as ONE continuous table
+    // block, so a letterhead paragraph that still sits where page 2's own
+    // copy did lands AFTER all 40 rows in the assembled output, while the
+    // source PDF reads it BETWEEN row 20 and row 21 — a genuine reordering,
+    // not a cosmetic one, that the real TEBIN P&L ACCOUNT.pdf hits exactly
+    // this way. The reader now prints a joined-across letterhead once (its
+    // first occurrence) and reports every later one in `dropped` instead of
+    // reprinting it out of order.
     const colXs = [50, 250, 400];
     const page1Rows = Array.from({ length: 20 }, (_, i) => [`Row ${i}`, String(i)]);
     const page2Rows = Array.from({ length: 20 }, (_, i) => [`Row ${20 + i}`, String(20 + i)]);
@@ -253,16 +266,18 @@ describe('ingestPdf', () => {
       ],
       colXs,
     );
-    const { doc: back } = await ingestPdf(bytes);
+    const { doc: back, dropped } = await ingestPdf(bytes);
     const tables = back.blocks.filter((b) => b.t === 'table');
     expect(tables).toHaveLength(1);
     expect(tables[0]!.t === 'table' ? tables[0].rows.length : 0).toBe(40);
-    // The letterhead is not deleted — RULING 22 skips it for the join
-    // decision, it does not remove it — so it must still appear twice.
+    // Printed once — its first occurrence, on page 1, before the join had
+    // anything to join to yet.
     const letterheadParas = back.blocks.filter(
       (b) => b.t === 'para' && b.text.some((n) => n.t === 'text' && n.v === 'TEBIN CO'),
     );
-    expect(letterheadParas).toHaveLength(2);
+    expect(letterheadParas).toHaveLength(1);
+    // The second occurrence is not silently gone — it is named in `dropped`.
+    expect(dropped.some((d) => d.includes('TEBIN CO'))).toBe(true);
   });
 
   it("the joined table's head comes from the first fragment only; a continuation's own first row is a body row, never promoted to head", async () => {
