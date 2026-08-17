@@ -146,10 +146,37 @@ costs no browser, so the gate can run on every build rather than being an
 opt-in. A later `--verify` against the produced file is possible and is not
 in this scope.
 
-**What the gate cannot see:** a value the reader assigned to the wrong column
-*and* the source's own reading order happens to match. Column-major documents
-would be the case; single-column pages are in scope precisely because their
-reading order is unambiguous.
+**What the gate cannot see**, measured at the end of the branch rather than
+reasoned about at its start:
+
+1. A value the reader assigned to the wrong column *and* the source's own
+   reading order happens to match. Column-major documents would be the case;
+   single-column pages are in scope precisely because their reading order is
+   unambiguous.
+2. **A wrong grid.** This is the larger one and it qualifies the claim this
+   document opens with. The gate's source side partitions the page using the
+   same `grid` the assembler used, so it is independent of how text was
+   assigned to *columns* — a genuine column swap in `tableFrom` is caught,
+   with the right first-divergence index — but not of the grid itself. Move
+   `PAGE_FRAME_FRACTION` from 0.75 to 0.6 and the P&L comes back as a
+   three-column table with its 2026 Budget and YE FC figures spilled out as a
+   column of orphan numbers: exit 0, gate green, `dropped` empty. One
+   character in the page-frame filter does the same with the whole suite
+   passing.
+
+   The gate's own comment called `grid.ys` "drawn data, the one thing this
+   reader treats as trustworthy". It is not drawn data. It is the output of
+   five inference steps — the page-frame filter, connected components, edge
+   clustering, boundary selection, the implied top — and against those the
+   gate is checking the reader's arithmetic against the reader's own premise.
+
+So the opening claim should be read as narrower than it was written: a number
+cannot silently move *between columns of the grid the reader found*. Whether
+that grid is the one the document drew is defended by tests and by an
+operator's eyes, not by the gate. Closing this properly means deriving the
+source side's row and column bands from the rectangles directly, independent
+of `findGrid` — a second implementation of the same idea, which is what makes
+it a check rather than a restatement.
 
 Chrome removed by `chrome.ts` is excluded from both sides of the comparison,
 or every document with a letterhead would fail. That exclusion is safe only
