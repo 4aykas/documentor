@@ -45,12 +45,28 @@ async function roundTrip(doc: Doc) {
  * test/ingest/pdf-grid.test.ts hand-builds Rect/TextRun fixtures for the
  * same reason.
  */
-async function boxedTablePdf(pages: { header?: string[]; rows: string[][] }[], colXs: number[]): Promise<Buffer> {
+type BoxedPage = {
+  /** Text drawn above the table, before any rectangle — a letterhead line,
+   *  a page number, a one-off footnote, a section heading. `x`/`y` matter:
+   *  RULING 22 (and `findRepeated` underneath it) key repetition on
+   *  position, not merely on text appearing somewhere on every page. */
+  above?: { text: string; x: number; y: number }[];
+  header?: string[];
+  rows: string[][];
+  /** Overrides the shared column x-positions for this page only — the
+   *  shape two genuinely unrelated, adjacent tables take when they happen
+   *  to agree on column COUNT but were never drawn to the same layout. */
+  colXs?: number[];
+};
+
+async function boxedTablePdf(pages: BoxedPage[], defaultColXs: number[]): Promise<Buffer> {
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const rowH = 20;
   for (const p of pages) {
     const page = pdf.addPage([612, 792]);
+    for (const a of p.above ?? []) page.drawText(a.text, { x: a.x, y: a.y, size: 10, font });
+    const colXs = p.colXs ?? defaultColXs;
     const allRows = p.header ? [p.header, ...p.rows] : p.rows;
     let y = 700;
     for (const row of allRows) {
@@ -217,6 +233,204 @@ describe('ingestPdf', () => {
     const { doc: back } = await ingestPdf(bytes);
     const tables = back.blocks.filter((b) => b.t === 'table');
     expect(tables).toHaveLength(2);
+  });
+
+  it('joins a continuation across a page break even when an undeclared, repeating letterhead sits between the two halves (RULING 22)', async () => {
+    // The bug the coordinator's own run against the real TEBIN P&L ACCOUNT
+    // found: with no ChromeRule declared (the ordinary case — an operator
+    // has not yet told the reader where their letterhead ends), the
+    // letterhead is NOT deleted — it becomes a paragraph, on both pages,
+    // sitting right where the old "immediately previous block must be a
+    // table" join check looked. `joinAnchor` must see past it.
+    const colXs = [50, 250, 400];
+    const page1Rows = Array.from({ length: 20 }, (_, i) => [`Row ${i}`, String(i)]);
+    const page2Rows = Array.from({ length: 20 }, (_, i) => [`Row ${20 + i}`, String(20 + i)]);
+    const letterhead = { text: 'TEBIN CO', x: 50, y: 750 };
+    const bytes = await boxedTablePdf(
+      [
+        { above: [letterhead], header: ['Item', 'Value'], rows: page1Rows },
+        { above: [letterhead], rows: page2Rows },
+      ],
+      colXs,
+    );
+    const { doc: back } = await ingestPdf(bytes);
+    const tables = back.blocks.filter((b) => b.t === 'table');
+    expect(tables).toHaveLength(1);
+    expect(tables[0]!.t === 'table' ? tables[0].rows.length : 0).toBe(40);
+    // The letterhead is not deleted — RULING 22 skips it for the join
+    // decision, it does not remove it — so it must still appear twice.
+    const letterheadParas = back.blocks.filter(
+      (b) => b.t === 'para' && b.text.some((n) => n.t === 'text' && n.v === 'TEBIN CO'),
+    );
+    expect(letterheadParas).toHaveLength(2);
+  });
+
+  it("the joined table's head comes from the first fragment only; a continuation's own first row is a body row, never promoted to head", async () => {
+    const colXs = [50, 250, 400];
+    const letterhead = { text: 'TEBIN CO', x: 50, y: 750 };
+    const bytes = await boxedTablePdf(
+      [
+        { above: [letterhead], header: ['', '2024'], rows: [['Total CTC', '2161']] },
+        { above: [letterhead], rows: [['CTC result', '60'], ['Net profit/loss', '1373']] },
+      ],
+      colXs,
+    );
+    const { doc: back } = await ingestPdf(bytes);
+    const tables = back.blocks.filter((b): b is Extract<typeof back.blocks[number], { t: 'table' }> => b.t === 'table');
+    expect(tables).toHaveLength(1);
+    const cellText = (c: { t: string; v?: string }[]) => c.map((n) => ('v' in n ? n.v : '')).join('');
+    expect(tables[0]!.head.map(cellText)).toEqual(['', '2024']);
+    const rowLabels = tables[0]!.rows.map((r) => cellText(r[0]!));
+    expect(rowLabels).toEqual(['Total CTC', 'CTC result', 'Net profit/loss']);
+    // "CTC result" is a body row, never the head.
+    expect(tables[0]!.head.map(cellText)).not.toContain('CTC result');
+  });
+
+  it('does not join two same-shaped tables separated by a page-specific heading, even with a repeating letterhead also present', async () => {
+    // 2026 Revenue Estimation's actual shape: a repeating letterhead (should
+    // NOT block the join on its own, per the test above) alongside a
+    // section heading unique to each page (SHOULD block it). Headers differ
+    // between the two tables so headerRepeats alone would not explain a
+    // correct refusal to join — the heading is what has to do the work.
+    const colXs = [50, 250, 400];
+    const letterhead = { text: 'TEBIN CO', x: 50, y: 750 };
+    const bytes = await boxedTablePdf(
+      [
+        { above: [letterhead, { text: 'Section A', x: 50, y: 720 }], header: ['Item', 'ValueA'], rows: [['A', '1']] },
+        { above: [letterhead, { text: 'Section B', x: 50, y: 720 }], header: ['Item', 'ValueB'], rows: [['B', '2']] },
+      ],
+      colXs,
+    );
+    const { doc: back } = await ingestPdf(bytes);
+    const tables = back.blocks.filter((b) => b.t === 'table');
+    expect(tables).toHaveLength(2);
+  });
+
+  it('an ordinary long table that reprints its own column header on the continuation reads as two visible tables, not a silent merge', async () => {
+    // Attack case 1: a genuine continuation whose first row repeats the
+    // column header is ordinary in a long table (many word processors and
+    // spreadsheets do this on purpose, for readability). This reader has no
+    // way to tell that shape apart from 2026 Revenue Estimation's own two
+    // unrelated, identically-headed tables — the ambiguity is real, not a
+    // gap that a smarter rule would close. The outcome is NOT silent: every
+    // value is still present and in its own column, just split across two
+    // visible table blocks with the header printed twice, which is exactly
+    // the failure mode this heuristic is willing to accept in exchange for
+    // never silently fusing 2026 Revenue Estimation's two halves into one.
+    const colXs = [50, 250, 400];
+    const bytes = await boxedTablePdf(
+      [
+        { header: ['Item', 'Value'], rows: [['A', '1'], ['B', '2']] },
+        { header: ['Item', 'Value'], rows: [['C', '3'], ['D', '4']] },
+      ],
+      colXs,
+    );
+    const { doc: back } = await ingestPdf(bytes);
+    const tables = back.blocks.filter((b): b is Extract<typeof back.blocks[number], { t: 'table' }> => b.t === 'table');
+    expect(tables).toHaveLength(2);
+    const cellText = (c: { t: string; v?: string }[]) => c.map((n) => ('v' in n ? n.v : '')).join('');
+    // Nothing is lost: both fragments' data rows are present, correctly.
+    expect(tables[0]!.rows.map((r) => r.map(cellText))).toEqual([['A', '1'], ['B', '2']]);
+    expect(tables[1]!.rows.map((r) => r.map(cellText))).toEqual([['C', '3'], ['D', '4']]);
+  });
+
+  it('ignores a repeating page-number pattern between two table halves, joining them the same as a plain letterhead', async () => {
+    // Attack case 2a: a page number differs, digit for digit, on every
+    // page — exactly the shape chrome.ts's own findRepeated is built to
+    // recognise (it strips digits before comparing). RULING 22 reads that
+    // same observation, so a page number must not block a join any more
+    // than a static letterhead does.
+    const colXs = [50, 250, 400];
+    const bytes = await boxedTablePdf(
+      [
+        { above: [{ text: 'Page 1 of 2', x: 50, y: 750 }], header: ['Item', 'Value'], rows: [['A', '1']] },
+        { above: [{ text: 'Page 2 of 2', x: 50, y: 750 }], rows: [['B', '2']] },
+      ],
+      colXs,
+    );
+    const { doc: back } = await ingestPdf(bytes);
+    const tables = back.blocks.filter((b) => b.t === 'table');
+    expect(tables).toHaveLength(1);
+    expect(tables[0]!.t === 'table' ? tables[0].rows.length : 0).toBe(2);
+  });
+
+  it('does not join when a one-off footnote — never observed to repeat — sits between two table halves', async () => {
+    // Attack case 2b: a footnote that appears only once is NOT something
+    // `findRepeated` can ever call repeated (it requires presence on every
+    // page by definition), so it stays a genuine, visible reason not to
+    // join — the conservative, non-silent outcome: two tables, no value
+    // lost or misplaced, rather than guessing that a one-off note is safe
+    // to see through.
+    const colXs = [50, 250, 400];
+    const bytes = await boxedTablePdf(
+      [
+        { header: ['Item', 'Value'], rows: [['A', '1']] },
+        { above: [{ text: 'See appendix for detail.', x: 50, y: 750 }], rows: [['B', '2']] },
+      ],
+      colXs,
+    );
+    const { doc: back } = await ingestPdf(bytes);
+    const tables = back.blocks.filter((b) => b.t === 'table');
+    expect(tables).toHaveLength(2);
+  });
+
+  it('does not silently merge two independent tables with matching column counts but different column positions, even with nothing at all between them', async () => {
+    // Attack case 3: no letterhead, no heading, nothing between the two
+    // tables — the one shape `joinAnchor` has no block to stop on at all.
+    // Column count alone (2 columns each) would read this as a
+    // continuation; the tables' own drawn column x-positions do not agree
+    // (50/250/400 vs 50/300/500), which two fragments of one physically
+    // continuing table never do (measured on TEBIN P&L ACCOUNT: under
+    // 0.6pt of drift). Headers differ too, so this is not merely
+    // `headerRepeats` doing the work under another name.
+    const bytes = await boxedTablePdf(
+      [
+        { header: ['Item', 'Value'], rows: [['A', '1']], colXs: [50, 250, 400] },
+        { header: ['Name', 'Amount'], rows: [['B', '2']], colXs: [50, 300, 500] },
+      ],
+      [50, 250, 400],
+    );
+    const { doc: back } = await ingestPdf(bytes);
+    const tables = back.blocks.filter((b) => b.t === 'table');
+    expect(tables).toHaveLength(2);
+  });
+
+  it('joins a table spanning three pages, each separated by the same repeating letterhead', async () => {
+    // Attack case 4: `joinAnchor` walks back past however many pages'
+    // worth of repeated-text blocks it finds, not just one — this is what
+    // makes it work for a table split more than once, not merely twice.
+    const colXs = [50, 250, 400];
+    const letterhead = { text: 'TEBIN CO', x: 50, y: 750 };
+    const bytes = await boxedTablePdf(
+      [
+        { above: [letterhead], header: ['Item', 'Value'], rows: Array.from({ length: 10 }, (_, i) => [`Row ${i}`, String(i)]) },
+        { above: [letterhead], rows: Array.from({ length: 10 }, (_, i) => [`Row ${10 + i}`, String(10 + i)]) },
+        { above: [letterhead], rows: Array.from({ length: 10 }, (_, i) => [`Row ${20 + i}`, String(20 + i)]) },
+      ],
+      colXs,
+    );
+    const { doc: back } = await ingestPdf(bytes);
+    const tables = back.blocks.filter((b) => b.t === 'table');
+    expect(tables).toHaveLength(1);
+    expect(tables[0]!.t === 'table' ? tables[0].rows.length : 0).toBe(30);
+    const values = tables[0]!.t === 'table'
+      ? tables[0].rows.map((r) => r[1]!.map((n) => (n.t === 'text' ? n.v : '')).join(''))
+      : [];
+    expect(values).toEqual(Array.from({ length: 30 }, (_, i) => String(i)));
+  });
+
+  it('keeps a single-row, multi-column grid as a table rather than dropping its runs silently', async () => {
+    // Found while writing the join-signal attack tests above: a page whose
+    // grid has exactly one row (not the genuinely degenerate single-box
+    // case grid.ts itself already refuses) used to vanish entirely — its
+    // runs were claimed by tableFrom (so excluded from prose) but no table
+    // block was ever pushed to carry them.
+    const bytes = await boxedTablePdf([{ rows: [['Total', '4286']] }], [50, 250, 400]);
+    const { doc: back } = await ingestPdf(bytes);
+    const tables = back.blocks.filter((b): b is Extract<typeof back.blocks[number], { t: 'table' }> => b.t === 'table');
+    expect(tables).toHaveLength(1);
+    const cellText = (c: { t: string; v?: string }[]) => c.map((n) => ('v' in n ? n.v : '')).join('');
+    expect(tables[0]!.head.map(cellText)).toEqual(['Total', '4286']);
   });
 
   it('keeps prose that sits below a table on the same page, in reading order after it', async () => {
