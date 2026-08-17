@@ -1,11 +1,32 @@
-// A re-issued document gets its theme's letterhead drawn for it. Carrying the
-// source's own would print the address twice, so the source's has to be
-// recognised — without knowing what a letterhead says, because the reader has
-// no idea what any given company puts in one.
+// Page furniture is DECLARED, not inferred. See the design doc's
+// "Identifying page furniture" section (docs/superpowers/specs/2026-08-16-
+// pdf-ingest-design.md) for the full argument; the short version is that
+// three position-based rules were built here, in three earlier rounds, and
+// each was broken by an ordinary layout. The one that ended the argument: a
+// totals row at y=100 with body at y=500, and a footer at y=100 with body at
+// y=500, are the same geometry. Nothing on the page separates them. Only
+// meaning does, and this module has no access to meaning.
 //
-// The rule is position, in two passes. See the design document.
+// So it does two separable things instead of one guess. `findRepeated`
+// OBSERVES: every position that repeats, with its text and its y-range.
+// Observations can be trusted — they assert nothing about what a repeated
+// position IS. `splitChrome` ACTS: it removes exactly the runs above or
+// below a y its caller declared, and nothing else. No declaration, no
+// removal. `documentor` re-issues documents its operator already owns; the
+// operator knows their own letterhead and can say where it ends.
 
 import type { TextRun } from './geometry.js';
+
+/** A block whose position and text repeat across every page. An
+ *  observation, not a verdict — `findRepeated` never decides that a block
+ *  is furniture, only that it repeats. `texts` holds every distinct literal
+ *  text seen there (sorted); `yTop`/`yBottom` is the small range the raw
+ *  y-values collapsed into once merged within POSITION_TOL of one another. */
+export type RepeatedBlock = { texts: string[]; yTop: number; yBottom: number; pages: number };
+
+/** What the operator declared. Both keys optional; an absent key is simply
+ *  not applied, so an empty `{}` removes nothing. */
+export type ChromeRule = { dropAbovePt?: number; dropBelowPt?: number };
 
 export type ChromeSplit = { body: TextRun[][]; dropped: string[] };
 
@@ -13,32 +34,18 @@ export type ChromeSplit = { body: TextRun[][]; dropped: string[] };
  *  another, on either axis. A fixed 1pt grid sounds equivalent but is not:
  *  measured on this project's own output, a 0.5pt page rule puts one column
  *  at x=661 on one page and x=662 on the next, and rounding keeps those as
- *  two distinct positions instead of the one they visually are. Clustering
- *  nearby values and using their mean, instead of a grid cell, is what
- *  survives that. This is a measured number, not a chosen one. */
+ *  two distinct positions instead of the one they visually are. A measured
+ *  number, not a chosen one — the only tunable constant left in this
+ *  module, now that the rule it used to feed a furniture decision is gone. */
 const POSITION_TOL = 2;
 
-/** The fraction of a sheet, measured in from either edge, that page
- *  furniture lives in. A totals row sits roughly three quarters of the page
- *  away from the nearest edge; a real letterhead or footer sits within
- *  about a twentieth of it. Anywhere between roughly 8% and 40% draws the
- *  same line on every document this reader has been checked against — a
- *  constant with a wide safe range, not a value fitted to one layout. This
- *  and POSITION_TOL are the only two tunable numbers left in this module.
- *
- *  Do not read this as sufficient by itself. Two failed designs on the way
- *  to this rule are why it is not: a band-only test (rounds 1-2) mistakes a
- *  table's own repeating row for furniture, because a table's first column
- *  repeats position exactly as a letterhead does; a margin-only test on its
- *  own eats nothing on a landscape sheet whose short dimension makes an
- *  ordinary title sit inside the margin fraction, and, worse, it eats a
- *  candidate that happens to sit within this fraction of the edge even when
- *  it is genuinely body content sitting inside a band that reaches that far
- *  down the page (a dense table's last few rows, say). Only the CONJUNCTION
- *  of "outside the body band" and "inside this margin" survives every case
- *  this module has been run against; each half is load-bearing on its own
- *  fixtures, not decoration on the other's. */
-const MARGIN_FRACTION = 0.15;
+/** How many distinct dropped texts the removal report names before it
+ *  switches to a count. A 200-page document can carry hundreds of distinct
+ *  digit-varying page-number texts; printing all of them turns one
+ *  `dropped` line into a multi-kilobyte wall nobody reads, while the run
+ *  count — which is exact regardless of the cap — is what actually answers
+ *  "did this do what I asked." */
+const LISTING_CAP = 20;
 
 /** Groups a set of coordinates into clusters no more than TOL apart between
  *  neighbours (chained, not windowed from one fixed value — so 660, 661.5,
@@ -64,26 +71,24 @@ function clusterMeans(values: readonly number[], tol: number): Map<number, numbe
   return map;
 }
 
-export function splitChrome(pages: TextRun[][], heightPt: number): ChromeSplit {
-  if (!Number.isFinite(heightPt) || heightPt <= 0) {
-    // A bad height doesn't fail loudly on its own: a negative or zero value
-    // makes every margin distance <= 0, which beats every band comparison
-    // and turns every repeating position into furniture (a repeated column
-    // header vanishes silently); NaN loses every comparison instead, so
-    // nothing is ever dropped and a page full of furniture is reported
-    // clean. Both are exactly the silent-loss failure this reader exists to
-    // prevent, so this is refused up front instead.
-    throw new Error(`documentor: page height must be a finite positive number, got ${heightPt}`);
-  }
+/** Digits stripped from a text before grouping it into a block, so a page
+ *  number's "1 of 12" and "2 of 12" report as ONE repeated block instead of
+ *  two nearly-identical ones cluttering the advisory. This is the same
+ *  stripping three earlier rounds used to DECIDE furniture; here it only
+ *  groups a REPORT, and the cost of grouping something oddly is a slightly
+ *  confusing line of advisory text for a human to read before writing two
+ *  numbers into a config — not, as in every earlier design, a silently
+ *  deleted row. */
+function stripDigits(text: string): string {
+  return text.replace(/\d+/g, '');
+}
 
+export function findRepeated(pages: TextRun[][]): RepeatedBlock[] {
   if (pages.length < 2) {
-    // Nothing repeats, so nothing can be identified. Keeping everything is
-    // the honest outcome; saying so is what stops a doubled letterhead from
-    // being a surprise.
-    return {
-      body: pages.map((p) => [...p]),
-      dropped: ['page furniture was not looked for: a single page has no repetition to compare against, so everything on it was kept'],
-    };
+    // Nothing repeats, so there is nothing to observe. The caller (or a
+    // human reading `dropped`) is told this in words; findRepeated itself
+    // just reports no blocks.
+    return [];
   }
 
   const all = pages.flat();
@@ -91,29 +96,12 @@ export function splitChrome(pages: TextRun[][], heightPt: number): ChromeSplit {
   const yMeans = clusterMeans(all.map((r) => r.y), POSITION_TOL);
   const key = (r: TextRun): string => `${xMeans.get(r.x)}:${yMeans.get(r.y)}`;
 
-  // Pass one: a candidate is a position that repeats on every page and
-  // carries the same text there once its digits are stripped out — a static
-  // caption stays a candidate trivially (nothing to strip); a page number
-  // ("3 / 12" -> "2 / 12") becomes one because only the digits move.
-  //
-  // This is only ever a "might be furniture" signal. Two earlier rounds of
-  // this module tried to make pass one ALSO decide furniture from body, by
-  // further restricting which stripped texts count (no bare digits, no
-  // letters left in the template). Both restrictions were wrong the same
-  // way: a totals row's static "Total:" caption and a page footer caption
-  // are the same shape under any text-only rule, and no amount of
-  // pattern-matching on the text separates them, because the text genuinely
-  // does not. Deciding furniture is pass two's job, using geometry pass one
-  // does not have.
-  //
-  // The per-key work below is memoised: candidate() used to re-derive its
-  // answer, and re-spread its text array, on every call from every pass,
-  // which made the whole module quadratic in run count — 26s at 40k runs,
-  // and it did not finish at 101k. Each key's membership and text list are
-  // built with a single push per run, and each key's candidate verdict is
-  // computed once and cached.
+  // One pass, one push per run into each map — no re-spreading an
+  // accumulator array per run, which is what made an earlier version of
+  // this scan quadratic. Linear in run count, same shape as before.
   const presentOnPages = new Map<string, Set<number>>();
   const textsAtKey = new Map<string, string[]>();
+  const yValuesAtKey = new Map<string, number[]>();
   pages.forEach((page, pageIndex) => {
     for (const r of page) {
       const k = key(r);
@@ -129,73 +117,90 @@ export function splitChrome(pages: TextRun[][], heightPt: number): ChromeSplit {
         textsAtKey.set(k, texts);
       }
       texts.push(r.text);
+      let ys = yValuesAtKey.get(k);
+      if (!ys) {
+        ys = [];
+        yValuesAtKey.set(k, ys);
+      }
+      ys.push(r.y);
     }
   });
-  const candidateByKey = new Map<string, boolean>();
-  const candidate = (r: TextRun): boolean => {
-    const k = key(r);
-    const cached = candidateByKey.get(k);
-    if (cached !== undefined) return cached;
-    let result = presentOnPages.get(k)?.size === pages.length;
-    if (result) {
-      const texts = textsAtKey.get(k)!;
-      const stripped0 = texts[0]!.replace(/\d+/g, '');
-      result = texts.every((t) => t.replace(/\d+/g, '') === stripped0);
-    }
-    candidateByKey.set(k, result);
-    return result;
-  };
 
-  if (!all.some((r) => !candidate(r))) {
-    // Every run repeats both position and text on every page, so there is
-    // no non-candidate content anywhere to measure a band or a margin
-    // against — no honest way to tell furniture from body. Keeping
-    // everything, and saying so, is the same refusal-to-guess as the
-    // single-page case above.
+  const blocks: RepeatedBlock[] = [];
+  for (const [k, onPages] of presentOnPages) {
+    if (onPages.size !== pages.length) continue;
+    const texts = textsAtKey.get(k)!;
+    const stripped0 = stripDigits(texts[0]!);
+    if (!texts.every((t) => stripDigits(t) === stripped0)) continue;
+    const ys = yValuesAtKey.get(k)!;
+    blocks.push({
+      texts: [...new Set(texts)].sort(),
+      yTop: Math.max(...ys),
+      yBottom: Math.min(...ys),
+      pages: onPages.size,
+    });
+  }
+
+  // Deterministic order: top of the page first, ties broken by text, so the
+  // same document reports the same advisory byte-for-byte on every run —
+  // Map iteration order is insertion order, not a property to depend on.
+  blocks.sort((a, b) => b.yTop - a.yTop || a.texts.join(' ').localeCompare(b.texts.join(' ')));
+  return blocks;
+}
+
+function formatTextList(texts: ReadonlySet<string>): string {
+  const sorted = [...texts].sort();
+  if (sorted.length <= LISTING_CAP) return sorted.join(', ');
+  return `${sorted.slice(0, LISTING_CAP).join(', ')}, …and ${sorted.length - LISTING_CAP} more`;
+}
+
+function formatAdvisoryLine(b: RepeatedBlock): string {
+  const at = b.yTop === b.yBottom ? `y=${b.yTop}` : `y ${b.yBottom}-${b.yTop}`;
+  return `repeated across ${b.pages} page(s) at ${at}: ${b.texts.join(', ')} — dropAbovePt below ${b.yBottom} or dropBelowPt above ${b.yTop} would remove it`;
+}
+
+export function splitChrome(pages: TextRun[][], rule: ChromeRule): ChromeSplit {
+  // The declared rule is a per-run predicate; it needs no repetition and no
+  // second page to make sense, so it is applied unconditionally, before
+  // anything below asks whether there was anything to observe. Strictly
+  // greater / strictly less: a run sitting exactly ON a declared line is
+  // kept, on both sides. The operator gave a number, not a zone, and this
+  // is the property that makes a declared rule trustworthy — a run at
+  // exactly y=800 stays with dropAbovePt: 800, and only goes once the
+  // number reads 799 or lower.
+  const droppedTexts = new Set<string>();
+  let removed = 0;
+  const body = pages.map((page) =>
+    page.filter((r) => {
+      const above = rule.dropAbovePt !== undefined && r.y > rule.dropAbovePt;
+      const below = rule.dropBelowPt !== undefined && r.y < rule.dropBelowPt;
+      if (!above && !below) return true;
+      removed += 1;
+      droppedTexts.add(r.text);
+      return false;
+    }),
+  );
+
+  if (removed > 0) {
     return {
-      body: pages.map((p) => [...p]),
-      dropped: ['page furniture was not looked for: every run repeats both position and text on every page, so there was no body content left to tell furniture from, and everything was kept'],
+      body,
+      dropped: [`page furniture: ${removed} run(s) removed by the declared rule, across ${pages.length} page(s): ${formatTextList(droppedTexts)}`],
     };
   }
 
-  // Pass two: furniture is a candidate that BOTH lies outside the body band
-  // (the y-range spanned by that page's own non-candidate runs) AND sits
-  // within the page's outer margin (see MARGIN_FRACTION for why neither
-  // test alone is enough). The band is computed per page, not pooled across
-  // the document — pooling lets one page's outlier content decide another
-  // page's band, which is exactly the kind of cross-page leakage this
-  // reader exists to avoid. On the margin boundary itself, a tie is not
-  // furniture: the comparison below is strict, so a candidate exactly
-  // MARGIN_FRACTION of the page from its nearer edge is kept. This project
-  // treats keeping on a tie as correct — the module would rather under-
-  // detect furniture than lose real content on a coin flip.
-  const droppedTexts = new Set<string>();
-  const body: TextRun[][] = [];
-  let removed = 0;
-  for (const page of pages) {
-    const contentYs = page.filter((r) => !candidate(r)).map((r) => r.y);
-    const top = contentYs.length > 0 ? Math.max(...contentYs) : undefined;
-    const bottom = contentYs.length > 0 ? Math.min(...contentYs) : undefined;
-    const kept: TextRun[] = [];
-    for (const r of page) {
-      const inMargin = Math.min(r.y, heightPt - r.y) < MARGIN_FRACTION * heightPt;
-      const outsideBand = top !== undefined && bottom !== undefined && (r.y > top || r.y < bottom);
-      if (candidate(r) && inMargin && outsideBand) {
-        removed += 1;
-        droppedTexts.add(r.text);
-      } else {
-        kept.push(r);
-      }
-    }
-    body.push(kept);
+  // Nothing was removed — either no rule was declared, or the declared
+  // thresholds didn't reach anything in this particular document. Either
+  // way, the useful thing left to say is the advisory: what repetition (if
+  // any) exists for the operator to declare a rule against next.
+  if (pages.length < 2) {
+    return {
+      body,
+      dropped: ['page furniture was not looked for: a single page has no repetition to compare against, so everything on it was kept'],
+    };
   }
-
-  // Naming a category ("letterhead, footer, page numbers") claims knowledge
-  // this reader does not have; it never read the text to classify it that
-  // way. Listing what was actually dropped, deduplicated and sorted for a
-  // deterministic message, lets a reader check the claim against the page.
-  const dropped = removed > 0
-    ? [`page furniture: ${removed} run(s) removed across ${pages.length} pages: ${[...droppedTexts].sort().join(', ')}`]
-    : [];
-  return { body, dropped };
+  const blocks = findRepeated(pages);
+  if (blocks.length === 0) {
+    return { body, dropped: ['no repeated block was found across pages: nothing on this document looked like page furniture'] };
+  }
+  return { body, dropped: blocks.map(formatAdvisoryLine) };
 }
