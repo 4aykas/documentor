@@ -336,23 +336,40 @@ describe('findGrid', () => {
       .toBe(gA!.ys[gA!.ys.length - 1]! - gA!.ys[0]!);
   });
 
-  it('I2/R3: a tie between two same-size components picks the lowest original rectangle index, deterministically in either input order', () => {
-    // tableA and tableB are the same size (4 rects each) and far enough
-    // apart that they never touch, so choosing between them is a genuine
-    // tie. The `Case 2` test above only compares a y-span, which cannot
-    // distinguish "always picks table A" from "picks whichever the input
-    // happened to list first" — this test can, because table A and table
-    // B are DIFFERENT grids, not just different y-positions of the same
-    // shape. Swapping which one appears first in the input must swap
-    // which one wins, predictably: the tie-break is documented, tested
-    // behaviour, not an accident of Map iteration order.
+  it('I2/R3: a tie between two same-size components picks the geometrically topmost one, the SAME winner regardless of input order', () => {
+    // tableA and tableB are the same size (4 rects each), far enough apart
+    // that they never touch, and at different heights: tableA's bounding
+    // box is topmost (y1 = 740 vs tableB's 140). "Lowest original
+    // rectangle index" looked stable but wasn't — it is stable within one
+    // array, not under reordering, so it picked "whichever the input
+    // listed first" and swapped answers when the caller (or a future
+    // rectComponents refactor) changed order. Geometry is a property of
+    // the page, not of array order: BOTH orderings must return tableA's
+    // grid, unchanged.
     const tableA = boxed([50, 200, 400], [700, 720, 740]);
     const tableB = boxed([10, 90, 130], [100, 120, 140]);
     const gAFirst = findGrid([...tableA, ...tableB]);
     const gBFirst = findGrid([...tableB, ...tableA]);
     expect(gAFirst).toEqual(findGrid(tableA));
-    expect(gBFirst).toEqual(findGrid(tableB));
-    expect(gAFirst).not.toEqual(gBFirst);
+    expect(gBFirst).toEqual(findGrid(tableA));
+    expect(gAFirst).toEqual(gBFirst);
+  });
+
+  it('I2/R3: a tie on topmost y1 too breaks on leftmost x0, the SAME winner regardless of input order', () => {
+    // Two same-size boxed tables at the SAME y-range (tied on the primary
+    // "topmost" tie-break) but different x — a sits at x 50..400, b at x
+    // 550..900, the coordinator's own reviewed example. On the pre-fix
+    // index-based tie-break this measured findGrid([...a, ...b]).xs as
+    // [50, 200, 400] and findGrid([...b, ...a]).xs as [550, 700, 900] —
+    // order flips the answer. Leftmost x0 breaks the y1 tie instead, so
+    // both orderings pick `a` (x0 = 50, left of b's 550).
+    const a = boxed([50, 200, 400], [700, 720, 740]);
+    const b = boxed([550, 700, 900], [700, 720, 740]);
+    const gAFirst = findGrid([...a, ...b]);
+    const gBFirst = findGrid([...b, ...a]);
+    expect(gAFirst!.xs).toEqual([50, 200, 400]);
+    expect(gBFirst!.xs).toEqual([50, 200, 400]);
+    expect(gAFirst).toEqual(gBFirst);
   });
 
   it('Case 3: a stacked pair of same-width boxes elsewhere does not enlarge the table', () => {

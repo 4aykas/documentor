@@ -159,23 +159,18 @@ export function rectComponents(rects: readonly Rect[]): Rect[][] {
       }
     }
   }
-  // Grouped by root, then sorted EXPLICITLY by each group's own lowest
-  // original index — not left as an incidental property of Map insertion
-  // order or of which index union() happened to pick as a tree's root.
-  // findGrid's "largest component, ties broken by lowest original index"
-  // rule (see its own comment) depends on this ordering being real and
-  // documented, not a coincidence of iteration order that a future
-  // refactor of the union-find internals could silently break. Before this
-  // was made explicit, two same-size components could pick a different
-  // winner depending on which one the input happened to list first.
-  const groups = new Map<number, { rects: Rect[]; minIndex: number }>();
+  // Grouped by root. This module makes no promise about the ORDER
+  // components come back in — findGrid's own tie-break (see its comment)
+  // is deliberately geometric rather than index-based, precisely because
+  // "whichever came first" is a property of input order, not of the page.
+  const groups = new Map<number, Rect[]>();
   for (let i = 0; i < n; i++) {
     const root = find(i);
     let g = groups.get(root);
-    if (g === undefined) { g = { rects: [], minIndex: i }; groups.set(root, g); }
-    g.rects.push(distinct[i]!);
+    if (g === undefined) { g = []; groups.set(root, g); }
+    g.push(distinct[i]!);
   }
-  return [...groups.values()].sort((a, b) => a.minIndex - b.minIndex).map((g) => g.rects);
+  return [...groups.values()];
 }
 
 type Cluster = { mean: number; rects: Set<number> };
@@ -326,6 +321,20 @@ function findGridInComponent(component: readonly Rect[]): Grid | null {
   return { xs, ys: finalYs };
 }
 
+/** The corner of a rectangle set's own bounding box that this file's
+ *  tie-break cares about: the topmost y (the greatest y1, since y is
+ *  up-page) and the leftmost x (the smallest x0). Computed once per
+ *  component, not per comparison. */
+function topLeft(rects: readonly Rect[]): { y1: number; x0: number } {
+  let y1 = -Infinity;
+  let x0 = Infinity;
+  for (const r of rects) {
+    if (r.y1 > y1) y1 = r.y1;
+    if (r.x0 < x0) x0 = r.x0;
+  }
+  return { y1, x0 };
+}
+
 export function findGrid(rects: readonly Rect[]): Grid | null {
   const components = rectComponents(rects);
   if (components.length === 0) return null;
@@ -339,16 +348,32 @@ export function findGrid(rects: readonly Rect[]): Grid | null {
   // rectComponents itself and try every component in turn rather than
   // lean on this fallback.
   //
-  // I2/R3: on a tie, `reduce` keeps the accumulator — the component
-  // encountered EARLIER in `components` — rather than switching to `b`,
-  // which `rectComponents` now guarantees (by an explicit sort, not an
-  // incidental one) is the component whose lowest original rectangle index
-  // is smallest. That is a deliberate, documented, tested choice, not
-  // "whichever the input happened to list first": swap which of two
-  // same-size tables appears earlier in the input and the answer swaps
-  // with it, predictably, every time — see the dedicated test for this.
-  const largest = components.reduce((a, b) => (b.length > a.length ? b : a));
-  return findGridInComponent(largest);
+  // I2/R3: a tie needs a tie-break that is a property of the PAGE, not of
+  // which order its rectangles happened to be listed in. "Lowest original
+  // rectangle index" looked stable but wasn't — it is stable within one
+  // array, not under reordering, which is exactly what a caller handing
+  // rects in a different order (or `rectComponents` itself, which promises
+  // nothing about output order) can trip. Geometry doesn't have this
+  // problem: among tied components, the one whose bounding box is
+  // topmost (greatest y1) wins; a further tie goes to whichever is
+  // leftmost (smallest x0). Both are properties of what's actually drawn,
+  // unaffected by input order. If a document ever ties on both — two
+  // components with byte-identical bounding boxes — they are geometrically
+  // interchangeable for this purpose, and `a` (arbitrary, not meaningful)
+  // is kept rather than pretending a "correct" answer exists.
+  let best = components[0]!;
+  let bestBox = topLeft(best);
+  for (let i = 1; i < components.length; i++) {
+    const c = components[i]!;
+    if (c.length < best.length) continue;
+    if (c.length > best.length) { best = c; bestBox = topLeft(c); continue; }
+    const box = topLeft(c);
+    if (box.y1 > bestBox.y1 || (box.y1 === bestBox.y1 && box.x0 < bestBox.x0)) {
+      best = c;
+      bestBox = box;
+    }
+  }
+  return findGridInComponent(best);
 }
 
 export function tableFrom(grid: Grid, runs: readonly TextRun[]): GridTable {
