@@ -64,10 +64,29 @@ hide.
   footer, page numbers — identified and dropped, because the theme draws its
   own and carrying the source's would print it twice.
 
-**Out, and refused by name:** images, multi-column text, rotated text,
-tables with no drawn grid, forms, annotations. Each is reported the way
-`ingestDocx` reports a table it will not carry: what it was, how many, and
-where.
+**Out.** Images, multi-column text, rotated text, tables with no drawn grid
+or drawn only as disconnected rules, forms, annotations.
+
+This list was written as "refused by name, each reported the way `ingestDocx`
+reports a table it will not carry", and that was not true when it was
+measured at the end of the branch. What is actually true, corrected
+2026-08-17:
+
+- **Rotated text** is counted by `geometry.ts` and reported. As designed.
+- **A table with no drawn grid, or drawn only as disconnected rules,** is not
+  refused. Its text degrades to paragraphs — `documentor`'s own rendered PDF
+  read back gives exit 0 and about 180 loose lines where a table was. No text
+  is lost and the token gate passes, because every token is present; what is
+  lost is the structure. This is honest degradation rather than silent loss,
+  but it is not the refusal this section claimed, and a reader who expected
+  one would be surprised.
+- **Forms and annotations** have no detection code at all. They are simply
+  outside what this reader looks at.
+
+The gap worth closing first is the middle one: text that formed no grid
+should say so — "page 2: 180 lines carried as paragraphs, no drawn grid" —
+so a flattened table is a visible outcome rather than something a reader
+notices later by eye. That is a small change and it is not in this branch.
 
 Unruled tables are the one deliberate omission worth restating. Clustering
 text by x-position would read them, and that is exactly the guessing the
