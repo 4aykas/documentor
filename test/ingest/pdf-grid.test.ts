@@ -104,6 +104,46 @@ describe('findGrid', () => {
     expect(findGrid([box, { ...box }])).toBeNull();
   });
 
+  it('refuses when a single rectangle\'s own two edges land in one cluster — repetition needs a second rectangle', () => {
+    // Two independent, unrelated horizontal rules — a heading rule, a
+    // footer rule far below it — each ONE rectangle whose y0 and y1
+    // (0.5pt apart) fall inside a single EDGE_TOL cluster on their own.
+    // Counting raw edge VALUES per cluster sees "2" there and calls the
+    // y-axis repeated; counting DISTINCT rectangles correctly sees 1,
+    // refuses that axis, and refuses the whole grid with it — rather than
+    // reading the gap between an unrelated heading and footer as one
+    // giant row spanning the whole page.
+    const heading: Rect = { x0: 50, x1: 400, y0: 706, y1: 706.5 };
+    const footer: Rect = { x0: 50, x1: 400, y0: 600, y1: 600.5 };
+    expect(findGrid([heading, footer])).toBeNull();
+  });
+
+  it('does not let a stray rectangle elsewhere on the page enlarge the grid', () => {
+    // Ruling 17's motivating case: a real 2x2 boxed table plus one
+    // unrelated box (a logo) lower on the page. The logo repeats no edge
+    // with anything else, on either axis, so membership excludes it and
+    // the grid is exactly what it would be without the logo at all.
+    const table = boxed([200, 300, 400], [700, 720, 740]);
+    const logo: Rect = { x0: 40, y0: 500, x1: 120, y1: 560 };
+    const gAlone = findGrid(table);
+    const gWithLogo = findGrid([...table, logo]);
+    expect(gWithLogo).toEqual(gAlone);
+  });
+
+  it('does not let two unrelated stray rectangles close a bottom-ruled table\'s top by coincidence', () => {
+    // Two stray boxes, unrelated to each other's x AND to the table's,
+    // that happen to share a y-range (684..706) matching the table's own
+    // topmost gap. Without membership filtering, a rectangle spanning
+    // exactly that gap satisfies closedAtTop and suppresses the implied
+    // top, silently dropping the header a bottom-ruled table needs it for.
+    const table = [...rule(661.5), ...rule(684), ...rule(706.5)];
+    const stray1: Rect = { x0: 10, x1: 30, y0: 684, y1: 706 };
+    const stray2: Rect = { x0: 500, x1: 520, y0: 684, y1: 706 };
+    const g = findGrid([...table, stray1, stray2]);
+    expect(g).not.toBeNull();
+    expect(g!.ys).toEqual([661.75, 684.25, 706.75, 729.25]);
+  });
+
   it('keeps the outer edge of a fully-boxed column even though only one row touches it', () => {
     // A thin, single-column table: three rows, each its own full-width
     // rectangle. The outermost y (700, 760) is touched by only one row's
@@ -194,6 +234,18 @@ describe('tableFrom', () => {
     expect(t.usedRuns.has(outside)).toBe(false);
   });
 
+  it('does not let a stray rectangle claim prose that sits nowhere near the real table', () => {
+    // Same table-plus-logo construction as the findGrid version of this
+    // test, carried through to tableFrom: prose sitting where the logo's
+    // phantom column-and-row would have reached must stay unclaimed.
+    const table = boxed([200, 300, 400], [700, 720, 740]);
+    const logo: Rect = { x0: 40, y0: 500, x1: 120, y1: 560 };
+    const g = findGrid([...table, logo])!;
+    const prose = run('Prose between logo and table', 60, 520);
+    const t = tableFrom(g, [prose, run('A', 250, 710)]);
+    expect(t.usedRuns.has(prose)).toBe(false);
+  });
+
   it('puts a run sitting exactly on a shared boundary in the band above it', () => {
     // Bands are half-open [edges[i], edges[i+1]) so a value exactly on a
     // shared internal edge belongs to only one of the two bands it touches
@@ -224,6 +276,17 @@ describe('tableFrom', () => {
     const g = findGrid(drawn())!;
     const t = tableFrom(g, [run('rent', 130, 745), run('Office', 60, 745)]);
     expect(t.rows[0]![0]).toBe('Office rent');
+  });
+
+  it('filters a whitespace-only run out of a line, not just a literally-empty one', () => {
+    // geometry.ts never hands this module a whitespace-only run today (it
+    // drops those at the source), but tableFrom is exported and callable
+    // directly, and this file's own earlier tests already feed it
+    // whitespace deliberately. A filter on `t !== ''` lets '   ' through,
+    // leaving a run of extra spaces between the real words either side.
+    const g = findGrid(drawn())!;
+    const t = tableFrom(g, [run('A', 60, 745), run('   ', 130, 745), run('B', 190, 745)]);
+    expect(t.rows[0]![0]).toBe('A B');
   });
 
   it('trims the assembled cell text', () => {
