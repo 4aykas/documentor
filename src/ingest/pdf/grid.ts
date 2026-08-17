@@ -56,23 +56,55 @@ function distinctRects(rects: readonly Rect[]): Rect[] {
   return out;
 }
 
-/** Ruling 18: table structure is decided by geometry, not by which edges
- *  happen to repeat. Two rectangles that don't physically touch are not one
- *  drawn structure, no matter how many numbers they have in common — a page
- *  hundreds of points wide has plenty of room for an unrelated box to line
- *  up on one axis (a logo sharing a table's left margin, two independent
- *  tables sharing column x-positions, a stacked pair of same-width
- *  sidebars) by pure coincidence. Adjacency needs BOTH axes close at once:
- *  the gap between the rectangles' x-extents and the gap between their
- *  y-extents must each be within EDGE_TOL (zero or negative means overlap).
- *  Requiring only one axis is exactly what let a heading rule sharing a
- *  table's page margins, or two independent tables sharing column margins,
- *  merge into a table they were never part of. */
 function gap1D(a0: number, a1: number, b0: number, b1: number): number {
   return Math.max(a0, b0) - Math.min(a1, b1);
 }
+/** Whether one interval's edge sits within EDGE_TOL of the other's — either
+ *  edge of either interval, not just the "facing" pair. Two abutting table
+ *  cells satisfy this at their shared edge (one's x1 equals the other's
+ *  x0); two near-identical rectangles (a fill/stroke pair too different to
+ *  dedupe exactly) satisfy it at every edge, since the whole rectangle is
+ *  nearly the same. */
+function edgeClose(a0: number, a1: number, b0: number, b1: number): boolean {
+  return Math.abs(a0 - b0) <= EDGE_TOL || Math.abs(a0 - b1) <= EDGE_TOL
+    || Math.abs(a1 - b0) <= EDGE_TOL || Math.abs(a1 - b1) <= EDGE_TOL;
+}
+/** RULING 20: adjacency means ABUTMENT, not overlap. Ruling 18's test —
+ *  both axes' gaps within EDGE_TOL — treated containment as adjacency,
+ *  because a rectangle fully inside another has a negative (overlapping)
+ *  gap on BOTH axes, satisfying "<= EDGE_TOL" trivially. That is exactly
+ *  the bug measured on both motivating documents: each draws one full-page
+ *  background rectangle, which contains every cell, every logo fragment,
+ *  every stray mark — and under Ruling 18's test, "contains" counted as
+ *  "touches," gluing the entire page into ONE component. `rectComponents`
+ *  returned exactly one component on all four real pages checked; Ruling 18
+ *  was a no-op on every one of them.
+ *
+ *  A rectangle that merely ENCLOSES another is a backdrop, not a neighbour.
+ *  Real abutment needs an edge of one within EDGE_TOL of an edge of the
+ *  other — proving the two rectangles actually share a boundary line — AND
+ *  the two rectangles overlapping along the PERPENDICULAR axis, proving
+ *  that shared boundary is a real line segment and not two edges that
+ *  merely happen to have close coordinates while the rectangles sit
+ *  nowhere near each other. Side-by-side table cells abut this way (facing
+ *  x-edges close, y-ranges overlap because they're on the same row);
+ *  stacked cells abut the other way (facing y-edges close, x-ranges
+ *  overlap because they're in the same column). A page-wide background
+ *  shares no edge with a cell drawn well inside its margins, so it no
+ *  longer connects to anything. Two near-identical rectangles (the
+ *  commonest logo construction: a fill and a stroke a fraction of a point
+ *  apart, too different for `distinctRects` to collapse into one) abut EACH
+ *  OTHER — every edge of one is close to the corresponding edge of the
+ *  other, and the two nearly coincide — so they form their own small
+ *  component, correctly separate from the table, rather than dissolving
+ *  into nothing or gluing themselves to whatever else the background
+ *  happened to touch. */
 function adjacent(a: Rect, b: Rect): boolean {
-  return gap1D(a.x0, a.x1, b.x0, b.x1) <= EDGE_TOL && gap1D(a.y0, a.y1, b.y0, b.y1) <= EDGE_TOL;
+  const xEdgeClose = edgeClose(a.x0, a.x1, b.x0, b.x1);
+  const yEdgeClose = edgeClose(a.y0, a.y1, b.y0, b.y1);
+  const xOverlaps = gap1D(a.x0, a.x1, b.x0, b.x1) <= 0;
+  const yOverlaps = gap1D(a.y0, a.y1, b.y0, b.y1) <= 0;
+  return (xEdgeClose && yOverlaps) || (yEdgeClose && xOverlaps);
 }
 
 /** Splits a page's rectangles into connected components by physical
@@ -99,7 +131,25 @@ export function rectComponents(rects: readonly Rect[]): Rect[][] {
   const distinct = distinctRects(rects);
   const n = distinct.length;
   const parent = Array.from({ length: n }, (_, i) => i);
-  const find = (x: number): number => (parent[x] === x ? x : (parent[x] = find(parent[x]!)));
+  // Iterative, not recursive: a page's worth of connected rectangles is not
+  // bounded in this codebase's own terms (a totals row alone was measured
+  // at 100,000+ runs in chrome.ts), and a recursive find() blows the call
+  // stack around 9,000 connected rectangles (measured directly: 8,000
+  // returns in 90ms, 10,000 throws RangeError). findGrid's contract is
+  // `Grid | null` — it must never throw on input size, so this walks to the
+  // root in a loop, then walks again to compress every visited node onto
+  // it, instead of recursing on the way up.
+  const find = (x: number): number => {
+    let root = x;
+    while (parent[root] !== root) root = parent[root]!;
+    let cur = x;
+    while (parent[cur] !== root) {
+      const next = parent[cur]!;
+      parent[cur] = root;
+      cur = next;
+    }
+    return root;
+  };
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
       if (adjacent(distinct[i]!, distinct[j]!)) {
@@ -109,17 +159,23 @@ export function rectComponents(rects: readonly Rect[]): Rect[][] {
       }
     }
   }
-  // Grouped by root in ascending original-index order, so the result is
-  // deterministic and depends only on input order, never on Map/Set
-  // iteration quirks or which root union() happened to pick.
-  const groups = new Map<number, Rect[]>();
+  // Grouped by root, then sorted EXPLICITLY by each group's own lowest
+  // original index — not left as an incidental property of Map insertion
+  // order or of which index union() happened to pick as a tree's root.
+  // findGrid's "largest component, ties broken by lowest original index"
+  // rule (see its own comment) depends on this ordering being real and
+  // documented, not a coincidence of iteration order that a future
+  // refactor of the union-find internals could silently break. Before this
+  // was made explicit, two same-size components could pick a different
+  // winner depending on which one the input happened to list first.
+  const groups = new Map<number, { rects: Rect[]; minIndex: number }>();
   for (let i = 0; i < n; i++) {
     const root = find(i);
     let g = groups.get(root);
-    if (g === undefined) { g = []; groups.set(root, g); }
-    g.push(distinct[i]!);
+    if (g === undefined) { g = { rects: [], minIndex: i }; groups.set(root, g); }
+    g.rects.push(distinct[i]!);
   }
-  return [...groups.values()];
+  return [...groups.values()].sort((a, b) => a.minIndex - b.minIndex).map((g) => g.rects);
 }
 
 type Cluster = { mean: number; rects: Set<number> };
@@ -282,6 +338,15 @@ export function findGrid(rects: readonly Rect[]): Grid | null {
   // Task 4, which knows the document's own layout, is expected to call
   // rectComponents itself and try every component in turn rather than
   // lean on this fallback.
+  //
+  // I2/R3: on a tie, `reduce` keeps the accumulator — the component
+  // encountered EARLIER in `components` — rather than switching to `b`,
+  // which `rectComponents` now guarantees (by an explicit sort, not an
+  // incidental one) is the component whose lowest original rectangle index
+  // is smallest. That is a deliberate, documented, tested choice, not
+  // "whichever the input happened to list first": swap which of two
+  // same-size tables appears earlier in the input and the answer swaps
+  // with it, predictably, every time — see the dedicated test for this.
   const largest = components.reduce((a, b) => (b.length > a.length ? b : a));
   return findGridInComponent(largest);
 }

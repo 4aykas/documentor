@@ -198,6 +198,27 @@ describe('findGrid', () => {
     expect(ys[3]!).toBeCloseTo(ys[2]! + trueMedian, 5);
   });
 
+  it('R7: sorts three or more unequal gaps before taking the median, not just the two-gap case', () => {
+    // Four rule-shaped clusters with three UNEQUAL gaps between them
+    // (40, 10, 12 in the order the boundaries arise). The existing
+    // true-median test only has two gaps (even count); with three or
+    // more, `gaps[Math.floor(n/2)]` on the UNSORTED array (in the order
+    // the boundaries were computed, not sorted by size) picks index 1 —
+    // the SECOND gap encountered (10) — not the true middle value once
+    // sorted (12, from [10, 12, 40]). Read dynamically from the actual
+    // output so a bridge() perturbation of the outer clusters' means
+    // can't desync the expected numbers from the real ones.
+    const rowYs = [600, 640, 650, 662];
+    const g = findGrid([...rowYs.flatMap(rule), bridge(rowYs)]);
+    expect(g).not.toBeNull();
+    const ys = g!.ys;
+    const rawGaps = [ys[1]! - ys[0]!, ys[2]! - ys[1]!, ys[3]! - ys[2]!];
+    const sortedMedian = [...rawGaps].sort((a, b) => a - b)[1]!;
+    const unsortedPick = rawGaps[Math.floor(rawGaps.length / 2)]!;
+    expect(sortedMedian).not.toBe(unsortedPick);
+    expect(ys[4]!).toBeCloseTo(ys[3]! + sortedMedian, 5);
+  });
+
   it('documents the tall-header limitation: a header taller than the body rows falls outside the implied top', () => {
     // Equal-gap rule clusters, bridged into one connected structure by
     // bridge() — see the previous test's comment on why a bridge is used
@@ -228,14 +249,34 @@ describe('findGrid', () => {
     expect(g).toBeNull();
   });
 
-  it('refuses a connected component whose rectangles never repeat an edge on either axis', () => {
-    // One large box fully containing one small, unrelated box: they
-    // physically overlap (one connected component), but share no edge
-    // value at all, so both axes come back with zero boundaries. The
-    // degenerate check has to see this — not just the length-1 or
-    // length-0 cases above — regardless of where in findGrid it runs.
+  it('R5: refuses when one axis has a genuine repeat but the other never repeats an edge at all', () => {
+    // Two rectangles that ABUT (B sits directly on top of A, sharing the
+    // y=10 edge — one connected component under Ruling 20) but whose x
+    // values never repeat between them (0/100 from A, 20/60 from B, all
+    // more than EDGE_TOL apart): the y axis has a genuine 2-rectangle
+    // repeat at y=10 and computes real boundaries; the x axis has NONE.
+    // Without the `qualifying.size === 0` guard in boundaries(), x's own
+    // two individually-unqualified extreme clusters (0 and 100) would
+    // still get forced in, producing a bogus one-column, two-row grid
+    // instead of the correct refusal — this is the reviewer's own
+    // escaping fixture, confirmed to reach exactly that guard.
+    const a: Rect = { x0: 0, x1: 100, y0: 0, y1: 10 };
+    const b: Rect = { x0: 20, x1: 60, y0: 10, y1: 20 };
+    expect(findGrid([a, b])).toBeNull();
+  });
+
+  it('a page-wide background rectangle that merely CONTAINS a cell does not connect to it', () => {
+    // Ruling 20's own motivating case, at the unit level: one large box
+    // fully containing one small, unrelated box. Under Ruling 18's
+    // overlap-based adjacency these were one component (both axes'
+    // gaps negative, hence "touching"); under Ruling 20 they share no
+    // EDGE at all, so rectComponents now correctly reports two separate,
+    // single-rectangle components — the exact mechanism that stopped
+    // both motivating documents' page-wide background rectangles from
+    // gluing every mark on the page into one structure.
     const big: Rect = { x0: 0, x1: 100, y0: 0, y1: 100 };
     const small: Rect = { x0: 50, x1: 60, y0: 50, y1: 60 };
+    expect(rectComponents([big, small])).toHaveLength(2);
     expect(findGrid([big, small])).toBeNull();
   });
 
@@ -293,6 +334,25 @@ describe('findGrid', () => {
     // grid, never a grid whose y-extent spans both.
     expect(gCombined!.ys[gCombined!.ys.length - 1]! - gCombined!.ys[0]!)
       .toBe(gA!.ys[gA!.ys.length - 1]! - gA!.ys[0]!);
+  });
+
+  it('I2/R3: a tie between two same-size components picks the lowest original rectangle index, deterministically in either input order', () => {
+    // tableA and tableB are the same size (4 rects each) and far enough
+    // apart that they never touch, so choosing between them is a genuine
+    // tie. The `Case 2` test above only compares a y-span, which cannot
+    // distinguish "always picks table A" from "picks whichever the input
+    // happened to list first" — this test can, because table A and table
+    // B are DIFFERENT grids, not just different y-positions of the same
+    // shape. Swapping which one appears first in the input must swap
+    // which one wins, predictably: the tie-break is documented, tested
+    // behaviour, not an accident of Map iteration order.
+    const tableA = boxed([50, 200, 400], [700, 720, 740]);
+    const tableB = boxed([10, 90, 130], [100, 120, 140]);
+    const gAFirst = findGrid([...tableA, ...tableB]);
+    const gBFirst = findGrid([...tableB, ...tableA]);
+    expect(gAFirst).toEqual(findGrid(tableA));
+    expect(gBFirst).toEqual(findGrid(tableB));
+    expect(gAFirst).not.toEqual(gBFirst);
   });
 
   it('Case 3: a stacked pair of same-width boxes elsewhere does not enlarge the table', () => {
@@ -556,5 +616,38 @@ describe('rectComponents', () => {
     const groups = rectComponents([box, { ...box }]);
     expect(groups).toHaveLength(1);
     expect(groups[0]).toHaveLength(1);
+  });
+
+  it('connects two rectangles whose perpendicular ranges touch at a single point, not just genuinely overlap', () => {
+    // A touches B's shared x-edge (x=10), but their y-ranges only meet at
+    // the single point y=10 (A spans 0-10, B spans 10-20) rather than
+    // overlapping over a real span. The perpendicular-overlap check uses
+    // "gap <= 0", not "gap < 0": a degenerate zero-width overlap still
+    // counts as touching. Real table cells never present this exact shape
+    // (rows fully overlap, not just at a corner), but the check has to be
+    // right at the boundary it actually draws, not just in the common case.
+    const a: Rect = { x0: 0, x1: 10, y0: 0, y1: 10 };
+    const b: Rect = { x0: 10, x1: 20, y0: 10, y1: 20 };
+    expect(rectComponents([a, b])).toHaveLength(1);
+  });
+
+  it('C2: does not crash on a large connected component (recursion depth)', () => {
+    // A chain of 11,000 abutting rectangles, each touching the next — one
+    // more than the measured recursive find() crash threshold. A
+    // RECURSIVE find() throws `RangeError: Maximum call stack size
+    // exceeded` above roughly 9,000 connected rectangles (measured
+    // directly: 8,000 returns in 90ms, 10,000 throws). findGrid's contract
+    // is `Grid | null`; it must never throw on input size. This is a
+    // slower test than this file's usual (a few hundred ms), which is the
+    // point — it exercises the actual scale that broke the recursive
+    // version, not a token-sized stand-in for it.
+    const chain: Rect[] = [];
+    for (let i = 0; i < 11_000; i++) {
+      chain.push({ x0: 0, x1: 10, y0: i * 10, y1: i * 10 + 10 });
+    }
+    expect(() => rectComponents(chain)).not.toThrow();
+    const groups = rectComponents(chain);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toHaveLength(11_000);
   });
 });
