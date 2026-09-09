@@ -231,9 +231,23 @@ function blockOf(tok: Token, sink: Sink): void {
     case 'hr':
       sink.blocks.push({ t: 'rule' });
       return;
-    case 'html':
+    case 'html': {
+      // The one HTML comment this ingester understands, and it is here so the
+      // Markdown renderer's own output can be read back: render/md.ts writes
+      // exactly this for a `pagebreak` because Markdown has no syntax for one.
+      // Without this case the comment came back as `block html: ...` in
+      // `dropped`, which made a pagebreak the one block that could not survive
+      // ingest -> render -> ingest, and left a Markdown source with no way to
+      // say "new page" at all. Any other block-level HTML is still dropped by
+      // name: this recognises one spelling, it does not open the door to HTML.
+      const html = (tok as Tokens.HTML).text.trim();
+      if (/^<!--\s*pagebreak\s*-->$/.test(html)) {
+        sink.blocks.push({ t: 'pagebreak' });
+        return;
+      }
       sink.dropped.push(`block html: ${truncate((tok as Tokens.HTML).text)}`);
       return;
+    }
     default:
       if (!carriesNothing(tok)) sink.dropped.push(`${tok.type}: ${rawOf(tok)}`);
   }
@@ -244,7 +258,7 @@ function plain(nodes: Inline[]): string {
 }
 
 export function ingestMarkdown(
-  source: string, opts: { title?: string; subtitle?: string; date?: string; entity?: string } = {},
+  source: string, opts: { title?: string; subtitle?: string; date?: string; entity?: string; cover?: boolean } = {},
 ): Ingested {
   const sink: Sink = { blocks: [], dropped: [] };
   for (const tok of marked.lexer(source)) blockOf(tok, sink);
@@ -274,6 +288,7 @@ export function ingestMarkdown(
         ...(opts.subtitle === undefined ? {} : { subtitle: opts.subtitle }),
         ...(opts.date === undefined ? {} : { date: opts.date }),
         ...(opts.entity === undefined ? {} : { entity: opts.entity }),
+        ...(opts.cover === undefined ? {} : { cover: opts.cover }),
       },
       blocks: sink.blocks,
     },

@@ -65,6 +65,22 @@ describe('ingestMarkdown', () => {
     expect(dropped.join(' ')).toMatch(/html/i);
   });
 
+  it('reads the pagebreak comment the Markdown renderer writes', () => {
+    // render/md.ts has no Markdown syntax for a pagebreak and writes this
+    // comment instead; reading it back here is what lets a pagebreak survive
+    // ingest -> render -> ingest, and is the only way a hand-written Markdown
+    // source can ask for a new page.
+    const { doc, dropped } = ingestMarkdown('# T\n\na\n\n<!-- pagebreak -->\n\nb\n');
+    expect(doc.blocks.map((b) => b.t)).toEqual(['para', 'pagebreak', 'para']);
+    expect(dropped).toEqual([]);
+  });
+
+  it('still drops any other block-level comment by name', () => {
+    const { doc, dropped } = ingestMarkdown('# T\n\n<!-- a note to the editor -->\n');
+    expect(doc.blocks).toEqual([]);
+    expect(dropped.join(' ')).toMatch(/block html/i);
+  });
+
   it('always produces a document the validator accepts', () => {
     const { doc } = ingestMarkdown('# T\n\n| a |\n|---|\n| 1 |\n\n- x\n\n> q\n');
     expect(() => validateDoc(doc)).not.toThrow();

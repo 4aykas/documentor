@@ -94,12 +94,12 @@ function block(b: Block): string {
     case 'rule':
       return '---';
     case 'pagebreak':
-      // No Markdown syntax for this. The comment does NOT survive a round trip
-      // through the ingester: `ingestMarkdown` treats any block-level HTML
-      // (including a comment) as `block html: ...` and pushes it to `dropped`
-      // rather than reconstructing a `pagebreak` block. So a document
-      // containing a pagebreak is not idempotent through ingest→render; this
-      // is the best Markdown can do and is called out in the task report.
+      // No Markdown syntax for this, so it is written as a comment — and
+      // ingest/md.ts reads exactly this spelling back as a `pagebreak` again,
+      // which is what makes a pagebreak survive ingest→render→ingest and gives
+      // a hand-written Markdown source a way to say "new page" at all. Every
+      // other block-level HTML is still dropped by name there; this one
+      // spelling is the pair to this line, not an opening for HTML.
       return '<!-- pagebreak -->';
   }
 }
