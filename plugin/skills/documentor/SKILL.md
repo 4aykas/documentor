@@ -168,11 +168,15 @@ way it does.
 
 Every field is optional; a sidecar holding only `{"theme": "tebin"}` is valid.
 Fields this file accepts: `title`, `subtitle`, `date`, `entity`, `theme`,
-`to`, `plainNames`, `pdfChrome` — `to` is an array of format names,
-`plainNames` is a boolean, `pdfChrome` is an object (PDF input only — see
-"Reads" above, and its own two number fields there), and the rest are
-strings. An unknown key refuses the whole file by name, so do not invent
+`to`, `plainNames`, `pdfChrome`, `cover` — `to` is an array of format names,
+`plainNames` and `cover` are booleans, `pdfChrome` is an object (PDF input
+only — see "Reads" above, and its own two number fields there), and the rest
+are strings. An unknown key refuses the whole file by name, so do not invent
 field names.
+
+Setting cover to true opens the document with a cover page instead of the
+theme's ordinary first-page letterhead; the source's horizontal rules then
+lay that page out, exactly as they do for a proposal cover.
 
 **Show the sidecar's contents to the user before building.** The decisions
 must be visible — that is the point of the file existing. If the user is

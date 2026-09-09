@@ -596,7 +596,7 @@ export function readWorksheet(
 
 export async function ingestXlsx(
   bytes: Uint8Array | Buffer,
-  opts: { title?: string; subtitle?: string; date?: string; entity?: string } = {},
+  opts: { title?: string; subtitle?: string; date?: string; entity?: string; cover?: boolean } = {},
   // `limits` exists for exactly one caller: the proposal assembler's annex
   // path, where a deliverables register is a reference list that is searched,
   // not read, and long is its nature. Neither `build` nor a sidecar can reach
@@ -795,6 +795,7 @@ export async function ingestXlsx(
         ...(opts.subtitle !== undefined && opts.subtitle !== '' ? { subtitle: opts.subtitle } : {}),
         ...(opts.date !== undefined ? { date: opts.date } : {}),
         ...(opts.entity !== undefined ? { entity: opts.entity } : {}),
+        ...(opts.cover !== undefined ? { cover: opts.cover } : {}),
       },
       blocks: sink.blocks,
     },

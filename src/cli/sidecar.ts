@@ -32,6 +32,13 @@ export type SidecarData = {
   to?: string[];
   plainNames?: boolean;
   pdfChrome?: PdfChromeRule;
+  /** Opens the document with a cover page instead of the theme's ordinary
+   *  first-page letterhead — see ir/types.ts's `Meta.cover` for exactly what
+   *  the two renderers then draw. It lives here rather than on a flag for the
+   *  same reason `pdfChrome` does: whether a document opens with a cover is a
+   *  fact about that document, decided once, not retyped on every command
+   *  line that rebuilds it. */
+  cover?: boolean;
 };
 
 // Exported so anything that documents the sidecar format — the skill's
@@ -39,7 +46,7 @@ export type SidecarData = {
 // the field list from its one source of truth rather than a hand-copied set
 // that could drift the way README/--help already have (see
 // test/guardrails/docs-parity.test.ts's own module comment).
-export const SIDECAR_KEYS = new Set<string>(['title', 'subtitle', 'date', 'entity', 'theme', 'to', 'plainNames', 'pdfChrome']);
+export const SIDECAR_KEYS = new Set<string>(['title', 'subtitle', 'date', 'entity', 'theme', 'to', 'plainNames', 'pdfChrome', 'cover']);
 
 /** `<stem>.documentor.json`, beside the input — the design's own naming
  *  rule, spelled out once so automatic discovery here and any future writer
@@ -117,6 +124,10 @@ export async function readSidecar(path: string): Promise<SidecarData> {
     const to = obj['to'];
     if (!Array.isArray(to) || !to.every((v) => typeof v === 'string')) typeErr(path, 'to', 'an array of strings', to);
     data.to = to as string[];
+  }
+  if (obj['cover'] !== undefined) {
+    if (typeof obj['cover'] !== 'boolean') typeErr(path, 'cover', 'a boolean', obj['cover']);
+    data.cover = obj['cover'];
   }
   if (obj['plainNames'] !== undefined) {
     if (typeof obj['plainNames'] !== 'boolean') typeErr(path, 'plainNames', 'a boolean', obj['plainNames']);

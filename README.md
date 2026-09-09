@@ -264,6 +264,13 @@ remembering anything, and a year later the diff says why the document looks
 the way it does. That is the whole point: a decision that lives only in
 somebody's memory of a conversation is a decision already lost.
 
+`"cover": true` there opens the document with a cover page rather than the
+theme's ordinary first-page letterhead, and the source's `rule` blocks lay
+that page out — the same three zones a proposal cover uses, described under
+"Proposals" above. It is a sidecar key and not a flag for the same reason
+`pdfChrome` is: whether a document opens with a cover is a fact about the
+document, not about the invocation.
+
 A flag on the command line outranks the sidecar, which outranks whatever the
 document says about itself — the order in which each was deliberately decided.
 `--config <file>` names one explicitly, `--no-config` ignores it. An unknown

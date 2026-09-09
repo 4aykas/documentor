@@ -151,6 +151,9 @@ export async function resolveConfig(input: string, flags: ConfigFlags): Promise<
   // same way `to`/`plainNames` are read for every input but not every input
   // exercises them.
   const chrome = data.pdfChrome;
+  // No CLI flag either, and for the same reason: whether a document opens
+  // with a cover page is a property of that document, not of the invocation.
+  const cover = data.cover;
 
   // Validated here, once, rather than left to whichever `loadTheme` call a
   // caller happens to make afterward — a flag-supplied theme still relies
@@ -174,6 +177,7 @@ export async function resolveConfig(input: string, flags: ConfigFlags): Promise<
       ...(date === undefined ? {} : { date }),
       ...(entity === undefined ? {} : { entity }),
       ...(chrome === undefined ? {} : { chrome }),
+      ...(cover === undefined ? {} : { cover }),
     },
     theme,
     to: flags.to ?? data.to ?? [...DEFAULT_TO],

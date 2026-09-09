@@ -242,7 +242,7 @@ function joinAnchor(blocks: readonly Block[], repeatedTexts: ReadonlySet<string>
 
 export async function ingestPdf(
   bytes: Uint8Array | Buffer,
-  opts: { title?: string; subtitle?: string; date?: string; entity?: string; chrome?: ChromeRule } = {},
+  opts: { title?: string; subtitle?: string; date?: string; entity?: string; chrome?: ChromeRule; cover?: boolean } = {},
   limits: { maxPages?: number } = {},
 ): Promise<Ingested> {
   const maxPages = limits.maxPages ?? PDF_MAX_PAGES;
@@ -519,6 +519,7 @@ export async function ingestPdf(
     ...(opts.subtitle === undefined ? {} : { subtitle: opts.subtitle }),
     ...(opts.date === undefined ? {} : { date: opts.date }),
     ...(opts.entity === undefined ? {} : { entity: opts.entity }),
+    ...(opts.cover === undefined ? {} : { cover: opts.cover }),
   };
   // The token gate (design doc, "The token gate"). `sourceTokens` was built
   // page by page, above, from `body` — exactly what `splitChrome` returned
