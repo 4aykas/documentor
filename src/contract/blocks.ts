@@ -55,12 +55,19 @@ export function articleBlocks(data: ContractData): Block[] {
       level: 2,
       text: text(`${a.n} ${a.uk} · ${a.en}`),
     });
-    if (a.clauses.length > 0) {
+    // The lead-in leads: unnumbered text belongs above the numbered clauses,
+    // where the article put it, and it gets no number of its own because it
+    // has none to give.
+    const rows = [
+      ...(a.lead === undefined ? [] : [[text(a.lead.uk), text(a.lead.en)]]),
+      ...a.clauses.map((c) => [clauseCell(c.n, c.uk), clauseCell(c.n, c.en)]),
+    ];
+    if (rows.length > 0) {
       out.push({
         t: 'table',
         head: [text('Українська'), text('English')],
         align: [...BILINGUAL_ALIGN],
-        rows: a.clauses.map((c) => [clauseCell(c.n, c.uk), clauseCell(c.n, c.en)]),
+        rows,
       });
     }
   }

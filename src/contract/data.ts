@@ -90,11 +90,13 @@ export function readContractData(jsonText: string): { data: ContractData; warnin
       }
       const a = raw as Record<string, unknown>;
       for (const k of Object.keys(a)) {
-        if (!['n', 'uk', 'en', 'clauses'].includes(k)) errors.push(`${at}: unknown key ${JSON.stringify(k)}`);
+        if (!['n', 'uk', 'en', 'clauses', 'lead'].includes(k)) errors.push(`${at}: unknown key ${JSON.stringify(k)}`);
       }
       const n = str(a['n'], `${at}.n`);
       const uk = str(a['uk'], `${at}.uk`);
       const en = str(a['en'], `${at}.en`);
+
+      const lead = a['lead'] === undefined ? undefined : pair(a['lead'], `${at}.lead`);
 
       const clauses: ContractClause[] = [];
       const rawClauses = a['clauses'];
@@ -121,11 +123,11 @@ export function readContractData(jsonText: string): { data: ContractData; warnin
           });
         }
       }
-      if (clauses.length === 0) {
-        warnings.push(`${at} (${uk ?? '?'}) carries no clauses — deliberate, or clauses that have not been filled in yet?`);
+      if (clauses.length === 0 && lead === undefined) {
+        warnings.push(`${at} (${uk ?? '?'}) carries neither clauses nor lead text — deliberate, or content that has not been filled in yet?`);
       }
       if (n !== undefined && uk !== undefined && en !== undefined) {
-        articles.push({ n, uk, en, clauses });
+        articles.push({ n, uk, en, clauses, ...(lead === undefined ? {} : { lead }) });
       }
     });
 

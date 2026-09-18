@@ -26,6 +26,18 @@ export type ContractArticle = {
   n: string;
   uk: string;
   en: string;
+  /**
+   * Unnumbered text between the article's heading and its first numbered
+   * clause — the lead-in some articles open with, and the whole body of one
+   * like "Реквізити Сторін", whose content is the parties' requisites and
+   * carries no clause numbers at all.
+   *
+   * Its own field rather than a clause with a blank number: a clause number
+   * is what every cross-reference in the contract points at, so a clause
+   * without one is not a clause, and allowing an empty one would blunt the
+   * check that every clause sits under its own article.
+   */
+  lead?: { uk: string; en: string };
   clauses: ContractClause[];
 };
 
