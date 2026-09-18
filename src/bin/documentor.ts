@@ -3,6 +3,7 @@ import { FORMATS, runBuild } from '../cli/build.js';
 import { runDoctor } from '../cli/doctor.js';
 import { runInspect } from '../cli/inspect.js';
 import { runProposal } from '../cli/proposal.js';
+import { runContract } from '../cli/contract.js';
 
 // The --to list is derived from build.ts's own FORMATS, not copied, so this
 // text cannot go stale the way it did when docx was wired in but the string
@@ -12,6 +13,7 @@ const USAGE = `documentor — re-issue an existing document as a well-typeset on
   documentor inspect <file|dir> [--theme plain] [--json] [--recursive] [--title <s>] [--date <s>] [--entity <s>] [--config <file>] [--no-config]
   documentor build <file|dir> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>] [--title <s>] [--date <s>] [--entity <s>] [--plain-names] [--recursive] [--config <file>] [--no-config]
   documentor proposal <data.json> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>]
+  documentor contract <data.json> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>]
   documentor doctor
 
 inspect reads a document and reports what it understood, what it had to drop,
@@ -30,7 +32,11 @@ exist.
 
 proposal assembles a commercial offer from a data file and the template it
 names — every sentence comes from one of the two; a missing piece is an
-error, never invented text.`;
+error, never invented text.
+
+contract assembles a bilingual contract the same way, from its own data
+model: numbered articles and clauses printed in two languages at once, where
+neither column is the original and neither is the translation.`;
 
 /**
  * The exit code contract, documented in this one place because callers script
@@ -71,6 +77,7 @@ try {
   if (command === 'build') code = await runBuild(rest, io);
   else if (command === 'inspect') code = await runInspect(rest, io);
   else if (command === 'proposal') code = await runProposal(rest, io);
+  else if (command === 'contract') code = await runContract(rest, io);
   else if (command === 'doctor') code = await runDoctor(io);
   else if (command === undefined || command === '--help' || command === '-h') { io.log(USAGE); code = command === undefined ? 2 : 0; }
   else { io.err(`documentor: unknown command ${JSON.stringify(command)}\n\n${USAGE}`); code = 2; }

@@ -3,7 +3,18 @@
 // helpers. Anything needing logic lives in the assembler under tests, not in
 // a template where nothing checks it.
 
-import { ProposalError, type ProposalData } from './types.js';
+import { ProposalError } from './types.js';
+
+/**
+ * What the template language needs of a data file, and no more: somewhere to
+ * look a dotted field up, and a `sections` map for {{section:name}}.
+ *
+ * Structural rather than `ProposalData`, because the language itself is not
+ * about proposals — it is fields, presence blocks and directives over a JSON
+ * object. Contracts use the same three constructions over a different model
+ * (see src/contract/), and widening this was the whole cost of that.
+ */
+export type TemplateData = { sections: Record<string, string> };
 
 export type TplNode =
   | { t: 'text'; text: string }
@@ -82,7 +93,7 @@ export function parseTemplate(src: string): TplNode[] {
 
 /** Dotted lookup over the data. Absent, '' and [] all count as "absent" for a
  *  presence block; a real value that is an object or array is not printable. */
-function lookup(data: ProposalData, path: string): unknown {
+function lookup(data: TemplateData, path: string): unknown {
   let v: unknown = data;
   for (const part of path.split('.')) {
     if (typeof v !== 'object' || v === null) return undefined;
@@ -94,7 +105,7 @@ function lookup(data: ProposalData, path: string): unknown {
 const isAbsent = (v: unknown): boolean =>
   v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0);
 
-export function flattenTemplate(nodes: TplNode[], data: ProposalData): FlatItem[] {
+export function flattenTemplate(nodes: TplNode[], data: TemplateData): FlatItem[] {
   const errors: string[] = [];
   const out: FlatItem[] = [];
   const push = (text: string) => {

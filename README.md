@@ -206,6 +206,39 @@ is one, and both ship, so `documentor proposal` runs on the pair as installed. A
 company's own commercial terms and belongs outside a public repository, the
 way this repository keeps its own brand book out of git.
 
+### Bilingual contracts
+
+`documentor contract <data.json>` assembles a contract the same way, from its
+own data model. A contract is a different document from a proposal, not a
+proposal with different words: it has no team, no rates and no budget, and
+what it does have is a numbered clause structure printed in two languages at
+once. Forcing one model to carry both would mean inventing a team for a
+document that has none — exactly what `documentor proposal` refuses to let
+anyone do.
+
+The data file holds the parties, and articles each carrying their clauses,
+every one of them as a `{ uk, en }` pair. Both languages are required
+throughout: the two columns are equally authentic versions of the same
+obligation, not an original and a translation, and a bilingual contract
+printed with one column blank is not a tidier contract — it is a contract
+with a hole in it, and which half is missing is what nobody notices until it
+is signed. A dotted clause number that does not sit under its article's is a
+build error naming both, since every cross-reference to either would then be
+wrong.
+
+Articles arrive through `{{@articles}}` rather than a loop, because this
+template language has none by design. Each one prints as a heading of its own
+followed by its own two-column table — not as rows of a single table spanning
+the whole document, which repeats the language header on every page, flattens
+articles and clauses into one undifferentiated list, and lets a page break
+fall anywhere. `{{@parties}}` and `{{@signatures}}` print the other two
+bilingual blocks.
+
+`templates/contract-ua.example.md` and `templates/contract-ua.example.json`
+ship as a pair to copy from, so `documentor contract` runs on them as
+installed. Their prose is placeholder; a real contract's wording is the
+company's own and belongs outside a public repository.
+
 **On a cover page (`meta.cover: true`), a template's `rule` blocks lay out
 the page.** The first `rule` closes a bordered panel holding the title and
 everything above it; the last `rule` opens a foot holding everything below

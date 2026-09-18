@@ -1,0 +1,53 @@
+{
+  "template": "./contract-ua.example.md",
+  "number": "0001-EXAMPLE",
+  "date": "01.09.2026",
+  "place": { "uk": "м. Київ", "en": "Kyiv" },
+  "title": { "uk": "ДОГОВІР про надання послуг", "en": "CONTRACT for service rendering" },
+  "parties": [
+    {
+      "uk": "ФІЗИЧНА ОСОБА-ПІДПРИЄМЕЦЬ ПРІЗВИЩЕ ІМ'Я, ІПН 0000000000, зареєстрований за адресою: Україна, місто, вулиця, будинок. Іменований надалі «Виконавець», з однієї Сторони",
+      "en": "PRIVATE ENTREPRENEUR SURNAME NAME, TIN 0000000000, registered at the address: Ukraine, city, street, building. Indicated hereafter as \"Executer\", from one Side"
+    },
+    {
+      "uk": "ТОВАРИСТВО З ОБМЕЖЕНОЮ ВІДПОВІДАЛЬНІСТЮ «НАЗВА», в особі Директора, який діє на підставі Статуту, іменований надалі «Замовник», з іншої Сторони",
+      "en": "LIMITED LIABILITY COMPANY \"NAME\", represented by the Director, acting on the Basis of the Charter, hereinafter referred to as \"Client\", from other Side"
+    }
+  ],
+  "articles": [
+    {
+      "n": "1.",
+      "uk": "Предмет Договору",
+      "en": "The Subject of the Contract",
+      "clauses": [
+        {
+          "n": "1.1.",
+          "uk": "Виконавець зобов'язується надати Замовникові послуги, а Замовник зобов'язується прийняти та оплатити їх у порядку, встановленому умовами даного Договору.",
+          "en": "The Executer is obliged to render services for the Client, and the Client is obliged to accept them and to pay for them according to procedure specified in this Contract."
+        },
+        {
+          "n": "1.2.",
+          "uk": "Уточнений обсяг та вид послуг зазначається Сторонами у Завданні, що є невід'ємним додатком до даного Договору.",
+          "en": "The specified scope and type of services is indicated by the Parties in the Work Order, which is an integral annex to this Contract."
+        }
+      ]
+    },
+    {
+      "n": "2.",
+      "uk": "Вартість послуг та порядок розрахунків",
+      "en": "Cost of services and payment procedure",
+      "clauses": [
+        {
+          "n": "2.1.",
+          "uk": "Вартість послуг визначається у Завданні до даного Договору.",
+          "en": "The cost of services is determined in the Work Order to this Contract."
+        }
+      ]
+    }
+  ],
+  "signatures": [
+    { "uk": "Виконавець\n\n____________________", "en": "Executer\n\n____________________" },
+    { "uk": "Замовник\n\n____________________", "en": "Client\n\n____________________" }
+  ],
+  "sections": {}
+}
