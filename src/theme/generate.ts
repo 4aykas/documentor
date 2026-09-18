@@ -155,17 +155,20 @@ function token(tokens: Tokens, name: string): string {
 }
 
 /**
- * The letterhead, the page geometry and the type scale have no brand token
- * behind them — the 2017 brand book does not price them. They are the theme
- * author's, and `$generated.notFromBrand` says so in the file itself, the same
- * way the brand pack marks `ink` and `topbar` as not specified in the book.
+ * Which company a generated theme speaks for. TEBIN is three legal entities,
+ * and a document carries the letterhead and registration of the one that
+ * issued it — printing the Polish NIP above a Ukrainian instrument does not
+ * read as a typo, it says the wrong company signed it.
+ *
+ * The page geometry, the type scale and the letterhead lines themselves have
+ * no brand token behind them — the 2017 brand book does not price them. They
+ * are the theme author's, and `$generated.notFromBrand` says so in the file
+ * itself, the same way the brand pack marks `ink` and `topbar` as not
+ * specified in the book. Everything else — colours, logo, corner mark, font
+ * — comes from the one brand snapshot, so two entity themes cannot drift
+ * apart on anything the brand actually decides.
  */
-const LETTERHEAD = [
-  'TEBIN.PRO Sp. z o.o.',
-  'Plac Hołdu Pruskiego 9, 70-550 Szczecin, Poland',
-  'www.tebin.pro | info@tebin.pro',
-  'NIP: 9552562516 | REGON: 521434962',
-];
+export type ThemeEntity = { id: string; name: string; letterhead: string[] };
 
 export function buildTheme(args: {
   tokens: Tokens;
@@ -175,11 +178,12 @@ export function buildTheme(args: {
   cornerMarkPngBase64: string;
   sourceId: string;
   sourceVersion: string;
+  entity: ThemeEntity;
 }): unknown {
-  const { tokens } = args;
+  const { tokens, entity } = args;
   return {
-    id: 'tebin',
-    name: 'TEBIN',
+    id: entity.id,
+    name: entity.name,
     $generated: {
       by: 'npm run theme:tebin',
       source: args.sourceId,
@@ -236,7 +240,7 @@ export function buildTheme(args: {
     // old value) wraps "COMMERCIAL PROPOSAL" onto two lines, which is the
     // defect this re-measurement fixes.
     type: { bodyPt: 10, leading: 1.45, titlePt: 39, h1Pt: 18, h2Pt: 13, h3Pt: 11, smallPt: 8 },
-    letterhead: LETTERHEAD,
+    letterhead: entity.letterhead,
   };
 }
 

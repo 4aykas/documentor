@@ -124,6 +124,12 @@ describe('readTokens', () => {
   });
 });
 
+const ENTITY = {
+  id: 'an-entity',
+  name: 'An Entity',
+  letterhead: ['An Entity Ltd', 'Somewhere', 'REG: 000'],
+};
+
 describe('buildTheme', () => {
   const built = () =>
     buildTheme({
@@ -139,6 +145,11 @@ describe('buildTheme', () => {
         'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAAFElEQVR42mP8z8BQz0AEYBxVSF+FABJADveWkS7cAAAAAElFTkSuQmCC',
       sourceId: 'tebin-classic',
       sourceVersion: '1.0.0',
+      // A literal rather than one of the real entities: this file tests the
+      // generator, and what it owes an entity is to carry it through
+      // unchanged. Reusing a real letterhead here would let a generator that
+      // ignored the argument and kept its old hard-coded constant still pass.
+      entity: ENTITY,
     });
 
   it('maps every colour from a brand token, inventing none', () => {
@@ -158,7 +169,8 @@ describe('buildTheme', () => {
     const t = resolveTheme(built());
     expect(t.logo?.svg).toContain('c-brand');
     expect(t.logo?.png?.startsWith('data:image/png;base64,')).toBe(true);
-    expect(t.letterhead[0]).toBe('TEBIN.PRO Sp. z o.o.');
+    expect(t.letterhead).toEqual(ENTITY.letterhead);
+    expect(t.id).toBe(ENTITY.id);
   });
 
   it('records which fields the brand did not decide', () => {

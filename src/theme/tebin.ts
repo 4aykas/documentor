@@ -1,6 +1,6 @@
-// What themes/tebin/theme.json is made of, in one place.
+// What every themes/tebin*/theme.json is made of, in one place.
 //
-// The script that writes the file and the test that proves the file was not
+// The script that writes the files and the test that proves they were not
 // hand-edited both call this. They used to each spell the input list out for
 // themselves, which is precisely the drift the test exists to catch, running
 // inside the test: a change to the generator's inputs left the test asserting
@@ -9,7 +9,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { buildTheme, readTokens, themeJson } from './generate.js';
+import { buildTheme, readTokens, themeJson, type ThemeEntity } from './generate.js';
 import { rasteriseSvg } from './rasterise.js';
 
 /**
@@ -19,8 +19,47 @@ import { rasteriseSvg } from './rasterise.js';
  */
 export const CORNER_MARK_PX = 512;
 
-/** The generated theme, as the exact JSON text that belongs on disk. */
-export async function tebinThemeJson(brandDir: string): Promise<string> {
+/**
+ * One theme per TEBIN legal entity, because a generated document carries the
+ * letterhead and registration of **the entity that issued it** — the rule
+ * expense documents already follow, and the one a single hard-coded
+ * letterhead quietly broke: a Ukraine-scope policy printed the Polish
+ * company's NIP above text that did not apply to it.
+ *
+ * Only `letterhead`, `id` and `name` differ. Everything the brand decides —
+ * colours, logo, corner mark, document face — comes from the same snapshot
+ * for all of them, so adding an entity cannot fork the brand.
+ *
+ * The Ukrainian lines are transcribed verbatim from the company's own
+ * letterhead as it prints in `TEBIN.PRO_letter.docx`; they are not
+ * translations of the Polish ones, and translating them would be inventing a
+ * registration.
+ */
+export const TEBIN_ENTITIES: ThemeEntity[] = [
+  {
+    id: 'tebin',
+    name: 'TEBIN',
+    letterhead: [
+      'TEBIN.PRO Sp. z o.o.',
+      'Plac Hołdu Pruskiego 9, 70-550 Szczecin, Poland',
+      'www.tebin.pro | info@tebin.pro',
+      'NIP: 9552562516 | REGON: 521434962',
+    ],
+  },
+  {
+    id: 'tebin-ua',
+    name: 'TEBIN (Україна)',
+    letterhead: [
+      'ТОВ «ТЕБІН.ПРО»',
+      'Ярославська 58, Київ 04071, Україна',
+      '+380 95 283 93 92 | www.tebin.pro | info@tebin.pro',
+      'ЄДРПОУ: 43655986 | ІНН: 436559826565',
+    ],
+  },
+];
+
+/** One entity's generated theme, as the exact JSON text that belongs on disk. */
+export async function tebinThemeJson(brandDir: string, entity: ThemeEntity): Promise<string> {
   const [dtcg, logoSvg, logoPng, cornerMarkSvg] = await Promise.all([
     readFile(join(brandDir, 'tokens.dtcg.json'), 'utf8'),
     readFile(join(brandDir, 'logo-full.svg'), 'utf8'),
@@ -50,6 +89,7 @@ export async function tebinThemeJson(brandDir: string): Promise<string> {
       cornerMarkPngBase64: cornerMarkPng.toString('base64'),
       sourceId: 'tebin-classic',
       sourceVersion: '1.0.0',
+      entity,
     }),
   );
 }
