@@ -22,7 +22,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      # playwright-core, not playwright: the repository depends only on
+      # playwright-core, so `npx playwright` fetched whatever release is newest
+      # and installed a Chromium build this pinned version cannot find.
+      - run: npx playwright-core install --with-deps chromium
       - run: npm run typecheck
       # Built before the tests so test/guardrails/dist-smoke.test.ts runs
       # rather than skipping — it is the only check that touches the artefact
