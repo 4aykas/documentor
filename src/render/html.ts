@@ -331,10 +331,11 @@ function firstPageHeader(doc: Doc, theme: Theme): string {
  * language and the index reads the same in all of them.
  *
  * The title band below keeps the same four columns, so the grid holds all
- * the way down the head instead of stopping at its first row. The corner mark
- * stands in column 01, straight under the logo, the two of them one vertical
- * axis; the title and subtitle hang from column 02's edge, at a size between
- * h1 and a cover's, and a hairline under them spans 02–04 only. No tick row:
+ * the way down the head instead of stopping at its first row: the title and
+ * subtitle hang from column 02's edge, at a size between h1 and a cover's,
+ * and a hairline under them spans 02–04 only. The corner mark stands at the
+ * band's right edge, level with the title's first line, answering the logo
+ * across the page. No tick row:
  * those rules already divide the head from the body.
  */
 function gridMasthead(doc: Doc, theme: Theme): string {
@@ -375,8 +376,9 @@ function mastheadRules(theme: Theme): string {
 .mg-line{ color: var(--muted); }
 .mast-grid .logo{ margin-top: 1pt; }
 .mg-title{ margin: ${GRID_TITLE_BEFORE_PT}pt 0 ${GRID_TITLE_AFTER_PT}pt; }
-.mg-mark{ grid-column: 1; }
-.mg-text{ grid-column: 2 / 5; border-bottom: ${MARK_LINE_PT}pt solid var(--ink); padding-bottom: 16pt; }
+.mg-title{ position: relative; }
+.mg-mark{ position: absolute; right: 0; top: 0; }
+.mg-text{ grid-column: 2 / 5; border-bottom: ${MARK_LINE_PT}pt solid var(--ink); padding: 0 ${markPt + 14}pt 16pt 0; }
 .mg-title .doc-title{ font-size: ${titlePt}pt; line-height: 1.04; letter-spacing: -0.028em; margin: 0; }
 .mg-title .doc-subtitle{ margin: 10pt 0 0; font-size: ${ty.bodyPt + 1.5}pt; }
 .corner-mark-grid{ height: ${markPt}pt; margin-top: ${markDropPt}pt; }

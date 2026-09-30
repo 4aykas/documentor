@@ -43,7 +43,7 @@ export type ConfigFlags = {
 };
 
 export type ResolvedConfig = {
-  ingestOpts: { title?: string; subtitle?: string; date?: string; entity?: string; chrome?: PdfChromeRule };
+  ingestOpts: { title?: string; subtitle?: string; date?: string; entity?: string; reference?: string; chrome?: PdfChromeRule };
   theme: string;
   to: string[];
   plainNames: boolean;
@@ -141,6 +141,7 @@ export async function resolveConfig(input: string, flags: ConfigFlags): Promise<
   const subtitle = data.subtitle; // no CLI flag exists for subtitle at all
   const date = flags.date ?? data.date;
   const entity = flags.entity ?? data.entity;
+  const reference = data.reference; // a fact about one document, so no flag, like subtitle
   const theme = flags.theme ?? data.theme ?? DEFAULT_THEME;
   // No CLI flag, unlike title/date/entity: the design's own words for this
   // are "write two numbers into a config", and a per-document geometric fact
@@ -176,6 +177,7 @@ export async function resolveConfig(input: string, flags: ConfigFlags): Promise<
       ...(subtitle === undefined ? {} : { subtitle }),
       ...(date === undefined ? {} : { date }),
       ...(entity === undefined ? {} : { entity }),
+      ...(reference === undefined ? {} : { reference }),
       ...(chrome === undefined ? {} : { chrome }),
       ...(cover === undefined ? {} : { cover }),
     },

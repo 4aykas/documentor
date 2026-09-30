@@ -297,6 +297,10 @@ remembering anything, and a year later the diff says why the document looks
 the way it does. That is the whole point: a decision that lives only in
 somebody's memory of a conversation is a decision already lost.
 
+`"reference": "TN-2026-014"` there gives the document its own number. It
+prints beside the letterhead with the entity and the date, between the two,
+and appears only when the sidecar sets it.
+
 `"cover": true` there opens the document with a cover page rather than the
 theme's ordinary first-page letterhead, and the source's `rule` blocks lay
 that page out — the same three zones a proposal cover uses, described under

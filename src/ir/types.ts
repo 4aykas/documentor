@@ -44,6 +44,10 @@ export type Meta = {
   // not a locale-shifted or re-parsed version of it.
   date?: string;
   entity?: string;
+  // The document's own number ("TN-2026-014"), verbatim like the date. Only
+  // a sidecar supplies it; it prints beside the letterhead with entity and
+  // date (see render/letterhead.ts).
+  reference?: string;
   lang: string;    // BCP 47; drives hyphenation and quotation marks
   // Absent (or false) is an ordinary document: the theme's usual first-page
   // letterhead — logo, letterhead lines, this document's own entity/date

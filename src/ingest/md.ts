@@ -258,7 +258,7 @@ function plain(nodes: Inline[]): string {
 }
 
 export function ingestMarkdown(
-  source: string, opts: { title?: string; subtitle?: string; date?: string; entity?: string; cover?: boolean } = {},
+  source: string, opts: { title?: string; subtitle?: string; date?: string; entity?: string; reference?: string; cover?: boolean } = {},
 ): Ingested {
   const sink: Sink = { blocks: [], dropped: [] };
   for (const tok of marked.lexer(source)) blockOf(tok, sink);
@@ -288,6 +288,7 @@ export function ingestMarkdown(
         ...(opts.subtitle === undefined ? {} : { subtitle: opts.subtitle }),
         ...(opts.date === undefined ? {} : { date: opts.date }),
         ...(opts.entity === undefined ? {} : { entity: opts.entity }),
+        ...(opts.reference === undefined ? {} : { reference: opts.reference }),
         ...(opts.cover === undefined ? {} : { cover: opts.cover }),
       },
       blocks: sink.blocks,

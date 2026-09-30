@@ -912,7 +912,7 @@ type ListGroup = { ordered: boolean; depth: number; numId: string; start: number
 
 export async function ingestDocx(
   bytes: Uint8Array | Buffer,
-  opts: { title?: string; subtitle?: string; date?: string; entity?: string; cover?: boolean } = {},
+  opts: { title?: string; subtitle?: string; date?: string; entity?: string; reference?: string; cover?: boolean } = {},
 ): Promise<Ingested> {
   const zip = await JSZip.loadAsync(bytes);
   const documentFile = zip.file('word/document.xml');
@@ -1059,6 +1059,7 @@ export async function ingestDocx(
         ...(finalSubtitle !== undefined && finalSubtitle !== '' ? { subtitle: finalSubtitle } : {}),
         ...(date !== undefined ? { date } : {}),
         ...(opts.entity !== undefined ? { entity: opts.entity } : {}),
+        ...(opts.reference !== undefined ? { reference: opts.reference } : {}),
         ...(opts.cover !== undefined ? { cover: opts.cover } : {}),
       },
       blocks: sink.blocks,

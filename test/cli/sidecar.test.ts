@@ -222,6 +222,24 @@ describe('precedence: --flag > sidecar > the document\'s own metadata', () => {
     expect(text.split('\n')[0]).toBe('# From The Body');
   });
 
+  it('reference: the sidecar alone supplies it, it reaches the letterhead, and a non-string is refused', async () => {
+    const { file } = await fixture('# Report\n\nHello.\n');
+    await sidecarFor(file, { reference: 'TN-2026-014', date: '30.09.2026' });
+    const { docxPart } = await import('../helpers/docx-parts.js');
+    const out = await mkdtemp(join(tmpdir(), 'documentor-sidecar-reference-'));
+    const { io } = collect();
+    expect(await runBuild([file, '--to', 'docx', '--out', out], io)).toBe(0);
+    const header = await docxPart(await readFile(join(out, 'report.plain.docx')), 'word/header2.xml');
+    expect(header.indexOf('TN-2026-014')).toBeGreaterThan(-1);
+    expect(header.indexOf('TN-2026-014')).toBeLessThan(header.indexOf('30.09.2026'));
+
+    const bad = await fixture('# Report\n');
+    await sidecarFor(bad.file, { reference: 14 });
+    const { io: io2, err } = collect();
+    expect(await runBuild([bad.file, '--to', 'docx', '--out', out], io2)).not.toBe(0);
+    expect(err.join('\n')).toMatch(/reference/);
+  });
+
   it('entity: has no document source at all — the sidecar alone supplies it, and a flag overrides the sidecar', async () => {
     const { file } = await fixture('# Report\n\nHello.\n');
     await sidecarFor(file, { entity: 'From Sidecar Sp. z o.o.' });

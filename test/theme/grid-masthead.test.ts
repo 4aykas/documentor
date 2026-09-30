@@ -32,8 +32,15 @@ describe('the grid masthead columns', () => {
       { text: 'Poland', strong: false },
     ]);
     expect(cols[1]!.lines.map((l) => l.text)).toEqual(['www.tebin.pro', 'info@tebin.pro', 'NIP: 9552562516', 'REGON: 521434962']);
-    expect(cols[2]!.lines).toEqual([
-      { text: 'TEBIN.PRO Sp. z o.o.', strong: false },
+    // The entity repeats the issuer in column 02, so only the date is left.
+    expect(cols[2]!.lines).toEqual([{ text: '30.09.2026', strong: true }]);
+  });
+
+  it('prints the document number above the date, and an entity only when it is someone else', () => {
+    const [, , own] = mastheadColumns(TEBIN_PL, docWith({ entity: 'Client GmbH', reference: 'TN-2026-014', date: '30.09.2026' }));
+    expect(own!.lines).toEqual([
+      { text: 'Client GmbH', strong: false },
+      { text: 'TN-2026-014', strong: false },
       { text: '30.09.2026', strong: true },
     ]);
   });

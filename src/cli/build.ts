@@ -99,7 +99,7 @@ async function renderTo(
 // through a sidecar (see config.ts's own comment on why that still gives it
 // the right precedence over the document's own DocSubtitle with no extra
 // code here).
-export type IngestOpts = { title?: string; subtitle?: string; date?: string; entity?: string; chrome?: PdfChromeRule; cover?: boolean };
+export type IngestOpts = { title?: string; subtitle?: string; date?: string; entity?: string; reference?: string; chrome?: PdfChromeRule; cover?: boolean };
 
 /**
  * One spot for "which ingester, read how". Both ingesters return the same

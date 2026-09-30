@@ -132,6 +132,7 @@ dialogue instead of decisions.
 | What date should the header carry? | No `date` came back from inspect at all (nothing in the source, no scan hit) | `date` |
 | What entity/letterhead line? | Only if a theme with a letterhead was chosen (e.g. `tebin`) — `entity` has no source inside any document, so under `plain` (no letterhead) asking is noise | `entity` |
 | A subtitle line? | Only if the user is already choosing a title/theme and a themed letterhead is in play — optional, skip silently if declined | `subtitle` |
+| A document number? | Only if a theme with a letterhead is in play and the user numbers their documents (e.g. "TN-2026-014") — optional, skip silently if declined | `reference` |
 
 **Do** raise a wide-table warning with the user — nothing downstream handles
 it. `inspect` only warns; no renderer in this project shrinks a table's
@@ -167,7 +168,7 @@ way it does.
 ```
 
 Every field is optional; a sidecar holding only `{"theme": "tebin"}` is valid.
-Fields this file accepts: `title`, `subtitle`, `date`, `entity`, `theme`,
+Fields this file accepts: `title`, `subtitle`, `date`, `entity`, `reference`, `theme`,
 `to`, `plainNames`, `pdfChrome`, `cover` — `to` is an array of format names,
 `plainNames` and `cover` are booleans, `pdfChrome` is an object (PDF input
 only — see "Reads" above, and its own two number fields there), and the rest

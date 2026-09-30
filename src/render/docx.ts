@@ -1317,8 +1317,8 @@ function firstPageHeader(doc: Doc, theme: Theme): Header {
  * someone types above it.
  */
 /**
- * The corner mark in column 01 of a grid masthead's title band (html.ts's
- * .corner-mark-grid). Anchored to the title paragraph rather than the page,
+ * The corner mark at the right edge of a grid masthead's title band
+ * (html.ts's .corner-mark-grid). Anchored to the title paragraph rather than the page,
  * so it travels with the title: an edit above the title moves both together,
  * which is the only reason the mark could not live in the header.
  */
@@ -1334,7 +1334,7 @@ function gridTitleMark(theme: Theme): ImageRun[] {
     type: 'png',
     transformation: { width: px96((heightPt * size.w) / size.h), height: px96(heightPt) },
     floating: {
-      horizontalPosition: { relative: HorizontalPositionRelativeFrom.MARGIN, offset: 0 },
+      horizontalPosition: { relative: HorizontalPositionRelativeFrom.MARGIN, align: HorizontalPositionAlign.RIGHT },
       // Word measures from the top of the paragraph's space-before, not from
       // its first line, so the title's own 46pt is part of the drop.
       verticalPosition: { relative: VerticalPositionRelativeFrom.PARAGRAPH, offset: emu(GRID_TITLE_BEFORE_PT + dropPt) },

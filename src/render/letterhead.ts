@@ -41,15 +41,16 @@ export const LETTERHEAD_ENTITY_DATE_GAP_PT = 5;
 
 /**
  * The document's own entity and date, in the order they print beside the
- * letterhead — entity first, date second — with an unset or empty one
- * dropped rather than printed as a blank line. Both answer the same two
- * questions a letterhead does, who and when, which is why they sit in its
+ * letterhead — entity, then the document's own reference number, then the
+ * date — with an unset or empty one dropped rather than printed as a blank
+ * line. They answer the questions a letterhead does, who, which and when,
+ * which is why they sit in its
  * column instead of competing with the title; and because an absent one is
  * dropped rather than left as a gap, a document that sets neither renders
  * byte-identical to one rendered before either field existed.
  */
 export function letterheadDocLines(doc: Doc): string[] {
-  return [doc.meta.entity, doc.meta.date].filter((v): v is string => v !== undefined && v !== '');
+  return [doc.meta.entity, doc.meta.reference, doc.meta.date].filter((v): v is string => v !== undefined && v !== '');
 }
 
 /** One column of a grid masthead: its printed index and its lines. */
@@ -67,7 +68,7 @@ export type MastheadColumn = { index: string; lines: { text: string; strong: boo
  * column; the contact lines are split at each "|" into one item per line,
  * which is what a grid column is narrow enough to need, and the address at
  * each comma, so a postcode is never broken at its hyphen; the document's
- * own entity and date take the last. A column with nothing in it is dropped and
+ * own entity (when it is not the issuer again) and date take the last. A column with nothing in it is dropped and
  * the indexes close up, so no document prints a numbered empty cell.
  */
 export function mastheadColumns(letterhead: string[], doc: Doc): MastheadColumn[] {
@@ -79,9 +80,12 @@ export function mastheadColumns(letterhead: string[], doc: Doc): MastheadColumn[
     ...items([address], /,/).map((text) => ({ text, strong: false })),
   ];
   const contact = items(rest, /\|/).map((text) => ({ text, strong: false }));
-  // The date is what a reader looks for in this column, so it is the one set strong.
-  const ownLines = letterheadDocLines(doc);
-  const own = ownLines.map((text, i) => ({ text, strong: doc.meta.date !== undefined && i === ownLines.length - 1 }));
+  // The date is what a reader looks for in this column, so it is the one set
+  // strong. An entity that only repeats the issuer in column 02 is left out:
+  // said twice in one row it reads as a mistake, not as information.
+  const same = (a: string, b: string | undefined) => a.trim().toLowerCase() === (b ?? '').trim().toLowerCase();
+  const ownLines = letterheadDocLines(doc).filter((l) => !(l === doc.meta.entity && same(l, name)));
+  const own = ownLines.map((text, i) => ({ text, strong: doc.meta.date !== undefined && doc.meta.date !== '' && i === ownLines.length - 1 }));
   return [issuer, contact, own]
     .filter((lines) => lines.length > 0)
     .map((lines, i) => ({ index: String(i + 2).padStart(2, '0'), lines }));

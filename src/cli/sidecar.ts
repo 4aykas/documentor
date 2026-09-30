@@ -28,6 +28,7 @@ export type SidecarData = {
   subtitle?: string;
   date?: string;
   entity?: string;
+  reference?: string;
   theme?: string;
   to?: string[];
   plainNames?: boolean;
@@ -46,7 +47,7 @@ export type SidecarData = {
 // the field list from its one source of truth rather than a hand-copied set
 // that could drift the way README/--help already have (see
 // test/guardrails/docs-parity.test.ts's own module comment).
-export const SIDECAR_KEYS = new Set<string>(['title', 'subtitle', 'date', 'entity', 'theme', 'to', 'plainNames', 'pdfChrome', 'cover']);
+export const SIDECAR_KEYS = new Set<string>(['title', 'subtitle', 'date', 'entity', 'reference', 'theme', 'to', 'plainNames', 'pdfChrome', 'cover']);
 
 /** `<stem>.documentor.json`, beside the input — the design's own naming
  *  rule, spelled out once so automatic discovery here and any future writer
@@ -115,6 +116,10 @@ export async function readSidecar(path: string): Promise<SidecarData> {
   if (obj['entity'] !== undefined) {
     if (typeof obj['entity'] !== 'string') typeErr(path, 'entity', 'a string', obj['entity']);
     data.entity = obj['entity'];
+  }
+  if (obj['reference'] !== undefined) {
+    if (typeof obj['reference'] !== 'string') typeErr(path, 'reference', 'a string', obj['reference']);
+    data.reference = obj['reference'];
   }
   if (obj['theme'] !== undefined) {
     if (typeof obj['theme'] !== 'string') typeErr(path, 'theme', 'a string', obj['theme']);

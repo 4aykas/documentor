@@ -122,6 +122,7 @@ export type DocInspection =
       subtitle?: string;
       date?: string;
       entity?: string;
+      reference?: string;
       /** The sidecar's basename, present only when one was actually found
        *  and used for this document — never for "no sidecar" or
        *  `--no-config`. Per the design's own rule ("a sidecar that was used
@@ -303,6 +304,7 @@ async function inspectCore(
     ...(doc.meta.subtitle === undefined ? {} : { subtitle: doc.meta.subtitle }),
     ...(doc.meta.date === undefined ? {} : { date: doc.meta.date }),
     ...(doc.meta.entity === undefined ? {} : { entity: doc.meta.entity }),
+    ...(doc.meta.reference === undefined ? {} : { reference: doc.meta.reference }),
     ...config,
     counts: countBlocks(doc.blocks),
     dropped,
@@ -333,6 +335,7 @@ function renderUnderstood(d: Extract<DocInspection, { status: 'ok' }>): string {
   if (d.subtitle !== undefined) parts.push(`subtitle "${d.subtitle}"`);
   if (d.date !== undefined) parts.push(`date "${d.date}"`);
   if (d.entity !== undefined) parts.push(`entity "${d.entity}"`);
+  if (d.reference !== undefined) parts.push(`reference "${d.reference}"`);
   for (const { key, one, many } of COUNT_LABELS) {
     const n = d.counts[key];
     if (n > 0) parts.push(`${n} ${n === 1 ? one : many}`);
