@@ -19,12 +19,12 @@ documentor build report.md --to docx
 
 ## Getting it
 
-Check "Requirements" below first. documentor isn't on npm yet, so install
-it from the repository. npm builds it during the install, so there is no separate
-build step:
+Check "Requirements" below first. documentor isn't on npm yet. Each version
+tag publishes a ready-built package on the repository's Releases page, and
+this installs the newest one:
 
 ```bash
-npm install -g github:4aykas/documentor
+npm install -g https://github.com/4aykas/documentor/releases/latest/download/tebin-documentor.tgz
 documentor setup      # the Chromium build this copy launches, once
 documentor doctor     # checks everything a build needs, names any fix
 ```
@@ -35,6 +35,12 @@ newest. That build is not the one documentor's pinned `playwright-core`
 looks for, so doctor then reports a browser that "does not exist".
 
 To update, run the same `npm install -g` line again, then `documentor setup`.
+
+Don't use `npm install -g github:4aykas/documentor`. npm builds a git
+dependency in a clone with its global flag still set, so TypeScript never
+reaches that clone and the build fails with `'tsc' is not recognized`. The
+release package is already built. A local, non-global
+`npm install github:4aykas/documentor` inside a project does work.
 
 **In Claude Code**, the skill that drives the CLI installs from this
 repository too:
@@ -459,7 +465,6 @@ when someone edits above them. The default is `"band"`.
 | What | Needed for | How to get it |
 |:--|:--|:--|
 | **Node.js 22 or newer** | Everything | [nodejs.org](https://nodejs.org), the LTS installer. It includes npm. |
-| **Git** | Installing from GitHub (`npm install -g github:…`) | [git-scm.com](https://git-scm.com). Not needed once installed. |
 | **Internet access** | The install, and `documentor setup` once (about 150 MB of Chromium) | After that, builds run offline. |
 | **Chromium** | Every PDF, and reading a PDF | `documentor setup`. On Linux, `documentor setup --with-deps` also installs the system libraries Chromium needs. |
 | **Manrope and JetBrains Mono** | Only `.docx` files from `schweiz`, `tebin-schweiz` and `tebin-ua-schweiz`, opened in Word | Free on [fonts.google.com](https://fonts.google.com). Install them on each machine that opens those Word files. PDFs don't need them. |

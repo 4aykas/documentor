@@ -89,13 +89,15 @@ The skill drives a command-line tool; the plugin does not install it. If
 `documentor` is not found, install it and its browser, then check:
 
 ```
-npm install -g github:4aykas/documentor
+npm install -g https://github.com/4aykas/documentor/releases/latest/download/tebin-documentor.tgz
 documentor setup
 documentor doctor
 ```
 
-`documentor setup` installs the exact Chromium build this copy launches. Do
-not substitute `npx playwright install chromium`: it installs the build for
+Install from that release URL, not `npm install -g github:4aykas/documentor`:
+a global install from git fails its own build step. `documentor setup`
+installs the exact Chromium build this copy launches. Do not substitute
+`npx playwright install chromium`: it installs the build for
 whatever playwright release is newest, and doctor then reports a browser
 that does not exist. Node 22 or newer is required; doctor names anything
 else that is missing and the command that fixes it.

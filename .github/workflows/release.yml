@@ -1,0 +1,37 @@
+name: Release
+
+# A version tag publishes the package as a GitHub Release asset, built here.
+#
+# This is how a colleague installs documentor, because installing straight
+# from git globally cannot work: `npm install -g github:4aykas/documentor`
+# runs the build in a clone with npm's global flag still set, so the nested
+# install that should fetch TypeScript installs nothing into the clone, and
+# `tsc` is not found. A tarball needs no build on the installing machine at
+# all. The asset keeps one name across versions so that
+# releases/latest/download/tebin-documentor.tgz always means the newest.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # The tag must name the version package.json ships, or "latest" would
+      # hand out a tarball that calls itself something else.
+      - run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+      - run: npm run typecheck
+      - run: npm pack && mv tebin-documentor-*.tgz tebin-documentor.tgz
+      - run: gh release create "$GITHUB_REF_NAME" tebin-documentor.tgz --title "documentor $GITHUB_REF_NAME" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
