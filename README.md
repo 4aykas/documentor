@@ -338,6 +338,41 @@ documentor build report.md --theme ./my-brand/theme.json
 
 See `themes/plain/theme.json` for the shape.
 
+### A theme modelled on a design you like
+
+`schweiz` is modelled on a Swiss agency's site. It uses black type, heavy
+geometric headings, and small uppercase monospace labels. It was made in two
+steps, and any other theme is made the same way:
+
+```bash
+documentor theme capture https://www.rosarot.ch/agentur --name schweiz
+```
+
+The first step measures the page in the same Chromium that prints the PDFs.
+It records the faces the page actually paints, with their sizes, weights and
+colours, weighted by how much text each carries, and writes that record to
+`.input/captures/schweiz/` together with a screenshot. It writes no theme.
+In the second step a person reads the capture beside the screenshot and
+writes `themes/<id>/theme.json`. The most frequent colour on a page is
+usually its body text, not its brand, so this step is not automated.
+
+A theme can give three roles a face of their own:
+
+```json
+"font": {
+  "document": "Manrope", "embed": "manrope",
+  "heading": { "document": "Manrope", "embed": "manrope", "weight": 800 },
+  "label": { "document": "JetBrains Mono", "embed": "jetbrains-mono", "uppercase": true }
+}
+```
+
+`label` covers the letterhead lines, table header cells and the running
+header. A site's own faces are almost always commercial, so `embed` names a
+free face that reads the same way: `arimo`, `manrope` or `jetbrains-mono`,
+each inlined into the PDF with Latin and Cyrillic. Word embeds no fonts. A
+`.docx` names the same families and looks right only where they are
+installed; anywhere else Word substitutes its own.
+
 ### Refreshing the TEBIN brand theme
 
 `themes/tebin/theme.json` is generated, not hand-edited. Its only input is
@@ -348,8 +383,20 @@ commit whose diff shows what moved. To pull in a brand change:
 1. Replace the files under `brand/tebin/` from the same source (see
    `brand/tebin/SOURCE.md` for what that source is and what each file is for).
 2. Run `npm run theme:tebin`.
-3. Commit `brand/tebin/` and the regenerated `themes/tebin/theme.json`
+3. Commit `brand/tebin/` and the regenerated `themes/tebin*/theme.json`
    together.
+
+The same run writes `tebin-schweiz` and `tebin-ua-schweiz`. These set TEBIN
+in the `schweiz` manner: Manrope, uppercase monospace labels and black
+hairlines. The wordmark and the corner glyph are traced in a red hairline
+instead of filled. The outline is computed from the vendored vectors: the
+glyph's two bars become one L. On a cover it sits on the panel's corner, so
+the frame turns red where it meets the mark. A theme can ask for that kind of
+drawing in two places. A mark's paths can use the classes `c-line`,
+`c-line-muted` and `c-line-ink`, which stroke in the brand, muted and ink
+colours at one hairline weight at any size (see `src/render/line-mark.ts`).
+`"coverStatement": "line"` sets the cover's statement off with a hairline
+instead of a tinted fill.
 
 ## Requirements
 

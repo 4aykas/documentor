@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FORMATS, READABLE_EXTS, parseArgs } from '../../src/cli/build.js';
 import { parseInspectArgs } from '../../src/cli/inspect.js';
+import { parseThemeArgs } from '../../src/cli/theme.js';
 
 // Guardrail for a defect this project has shipped three times in one week:
 // documentation that outlived the code it described (README claiming .docx
@@ -190,10 +191,11 @@ describe('every FORMATS/READABLE_EXTS member has a matching column/row in the RE
 // What this depends on: the literal token "--word-with-dashes" appearing
 // anywhere in the source text (README prose, code fences, or --help output).
 // Nothing about surrounding sentences matters — only the exact spelling of
-// each flag token. A flag is "accepted" if parseArgs or parseInspectArgs
-// does not throw "unknown option <flag>" for it; both parsers are checked
-// because README and --help between them describe both `build` and
-// `inspect`, and a flag need only belong to one to be legitimate.
+// each flag token. A flag is "accepted" if parseArgs, parseInspectArgs or
+// parseThemeArgs does not throw "unknown option <flag>" for it; all three
+// parsers are checked because README and --help between them describe
+// `build`, `inspect` and `theme capture`, and a flag need only belong to one
+// to be legitimate.
 //
 // Deliberately not checked, and left as known future scope rather than
 // silent: the reverse direction, a flag a parser accepts that appears in
@@ -225,12 +227,12 @@ function isKnownOption(parse: (argv: string[]) => unknown, flag: string): boolea
 
 function assertFlagsKnown(source: string, flags: readonly string[]): void {
   const unknown = flags.filter(
-    (f) => !isKnownOption(parseArgs, f) && !isKnownOption(parseInspectArgs, f),
+    (f) => !isKnownOption(parseArgs, f) && !isKnownOption(parseInspectArgs, f) && !isKnownOption(parseThemeArgs, f),
   );
   expect(
     unknown,
-    `${source} mentions ${unknown.join(', ')}, but neither build's parseArgs nor inspect's `
-    + `parseInspectArgs accepts ${unknown.length === 1 ? 'it' : 'them'} — the flag was renamed or `
+    `${source} mentions ${unknown.join(', ')}, but neither build's parseArgs, inspect's `
+    + `parseInspectArgs nor theme's parseThemeArgs accepts ${unknown.length === 1 ? 'it' : 'them'} — the flag was renamed or `
     + `removed in code and the docs were not updated to match`,
   ).toEqual([]);
 }

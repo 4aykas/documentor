@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { READABLE_EXTS, parseArgs } from '../../src/cli/build.js';
 import { parseInspectArgs } from '../../src/cli/inspect.js';
+import { parseThemeArgs } from '../../src/cli/theme.js';
 import { SIDECAR_KEYS } from '../../src/cli/sidecar.js';
 
 // Guardrail for the Claude Code skill, in the spirit of
@@ -97,6 +98,9 @@ const buildOwnedFlags = new Set([
   ...flagsAfter('Other flags: `--theme'),
 ]);
 
+// And the theme-from-a-design flow's capture line, owned by `theme`.
+const themeOwnedFlags = new Set(flagsAfter('documentor theme capture <url> --name <id>'));
+
 describe('SKILL.md flags are checked against the parser that should own them', () => {
   it('every flag the skill shows on a `documentor inspect …` line is accepted by inspect', () => {
     const rejected = [...inspectOwnedFlags].filter((f) => !isKnownOption(parseInspectArgs, f));
@@ -119,6 +123,15 @@ describe('SKILL.md flags are checked against the parser that should own them', (
     ).toEqual([]);
   });
 
+  it('every flag the skill shows on a `documentor theme capture …` line is accepted by theme', () => {
+    const rejected = [...themeOwnedFlags].filter((f) => !isKnownOption(parseThemeArgs, f));
+    expect(
+      rejected,
+      `SKILL.md names ${rejected.join(', ')} as flag(s) \`theme capture\` accepts, but theme's own `
+      + `parseThemeArgs rejects ${rejected.length === 1 ? 'it' : 'them'} — the skill was not updated`,
+    ).toEqual([]);
+  });
+
   // Belt-and-braces for anything the two extractions above did not claim —
   // a flag token that shows up somewhere in SKILL.md outside either
   // "flags it accepts" sentence or fence. None exist as of this writing
@@ -127,7 +140,7 @@ describe('SKILL.md flags are checked against the parser that should own them', (
   // this checks it the stricter way — against both parsers — rather than
   // silently reintroducing the OR-across-both gap this file exists to close.
   it('any flag not claimed by an inspect/build anchor is still checked, against both parsers', () => {
-    const claimed = new Set([...inspectOwnedFlags, ...buildOwnedFlags]);
+    const claimed = new Set([...inspectOwnedFlags, ...buildOwnedFlags, ...themeOwnedFlags]);
     const unclaimed = extractFlags(SKILL).filter((f) => !claimed.has(f));
     const unknown = unclaimed.filter(
       (f) => !isKnownOption(parseArgs, f) || !isKnownOption(parseInspectArgs, f),

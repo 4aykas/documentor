@@ -227,6 +227,38 @@ On a cover template (`meta.cover: true`), `rule` blocks lay out the page: the
 first closes a bordered panel, the last opens a foot, two or more give you
 both — see the Word limit above for where the foot stops pinning.
 
+## The theme-from-a-design flow
+
+When the user points at a web page whose design they like and wants their
+documents to look like it:
+
+1. Capture it:
+
+   ```bash
+   documentor theme capture <url> --name <id>
+   ```
+
+   This writes `.input/captures/<id>/capture.json` and `screenshot.png`,
+   both kept out of git. The capture measures what the page actually painted: its fonts, their
+   sizes and weights, text colours and fills, each weighted by how much of
+   the page it covers. It decides nothing.
+2. Read `capture.json` **and look at the screenshot**. The numbers say which
+   faces and colours exist, and the screenshot says what they do. A pink that
+   covers 0.1% of the page may still be the brand, and black text that
+   covers 60% is not.
+3. Write `themes/<id>/theme.json` by hand. Record where it came from under
+   `$source`, as `themes/schweiz/theme.json` does. The site's own faces are
+   nearly always commercial, so map each role (`font.embed` for the body,
+   `font.heading`, `font.label`) to a face `documentor` can inline. See
+   `FACES` in `src/render/fonts.ts`. A face added there must be OFL, ship
+   through `@fontsource`, and **carry Cyrillic**. Never vendor the site's
+   fonts, logo or artwork.
+4. Build a real document with it (`--theme <id> --to pdf,docx`), look at
+   the PDF, and show it to the user before calling the theme done.
+
+Word embeds no fonts, so a `.docx` in such a theme only looks right where
+the named faces are installed. Say so when handing over a Word file.
+
 ## What this skill is not
 
 A second execution path. It never re-implements ingesting, rendering,
