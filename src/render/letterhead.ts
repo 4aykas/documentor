@@ -8,6 +8,17 @@
 // what stops it drifting again.
 
 import type { Doc } from '../ir/types.js';
+import type { Theme } from '../theme/types.js';
+
+/** The title size under a grid masthead: between an ordinary h1 and a
+ *  cover's title. One number for both renderers. */
+export function gridTitlePt(type: Theme['type']): number {
+  return Math.round((type.h1Pt + type.titlePt) / 2);
+}
+
+/** The space above a grid masthead's title, and below its subtitle. */
+export const GRID_TITLE_BEFORE_PT = 46;
+export const GRID_TITLE_AFTER_PT = 26;
 
 /**
  * The gap above the first line of the document's own entity/date column —
@@ -29,4 +40,39 @@ export const LETTERHEAD_ENTITY_DATE_GAP_PT = 5;
  */
 export function letterheadDocLines(doc: Doc): string[] {
   return [doc.meta.entity, doc.meta.date].filter((v): v is string => v !== undefined && v !== '');
+}
+
+/** One column of a grid masthead: its printed index and its lines. */
+export type MastheadColumn = { index: string; lines: { text: string; strong: boolean }[] };
+
+/**
+ * The text columns of a `masthead: 'grid'` letterhead, in print order, after
+ * the logo's own column 01. Shared for the same reason as the rest of this
+ * module: the PDF and the Word copy must put the same line in the same
+ * column.
+ *
+ * The theme's letterhead is read as the convention every TEBIN entity
+ * already follows: the name, then the address, then contact and registry
+ * lines whose items are joined by " | ". Name and address form the issuer's
+ * column; the contact lines are split at each "|" into one item per line,
+ * which is what a grid column is narrow enough to need, and the address at
+ * each comma, so a postcode is never broken at its hyphen; the document's
+ * own entity and date take the last. A column with nothing in it is dropped and
+ * the indexes close up, so no document prints a numbered empty cell.
+ */
+export function mastheadColumns(letterhead: string[], doc: Doc): MastheadColumn[] {
+  const [name, address, ...rest] = letterhead;
+  const items = (lines: (string | undefined)[], sep: RegExp) =>
+    lines.flatMap((l) => (l ?? '').split(sep)).map((t) => t.trim()).filter((t) => t !== '');
+  const issuer = [
+    ...items([name], /$^/).map((text) => ({ text, strong: true })),
+    ...items([address], /,/).map((text) => ({ text, strong: false })),
+  ];
+  const contact = items(rest, /\|/).map((text) => ({ text, strong: false }));
+  // The date is what a reader looks for in this column, so it is the one set strong.
+  const ownLines = letterheadDocLines(doc);
+  const own = ownLines.map((text, i) => ({ text, strong: doc.meta.date !== undefined && i === ownLines.length - 1 }));
+  return [issuer, contact, own]
+    .filter((lines) => lines.length > 0)
+    .map((lines, i) => ({ index: String(i + 2).padStart(2, '0'), lines }));
 }

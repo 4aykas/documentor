@@ -100,6 +100,15 @@ export type Theme = {
    * before this existed.
    */
   coverStatement: 'tint' | 'line';
+  /**
+   * How an ordinary document's first page opens. 'band' is the logo on the
+   * left, the letterhead ranged right, and the brand tick over a hairline
+   * beneath — what every theme drew before this existed, and the default.
+   * 'grid' sets the letterhead as numbered columns under a hairline, logo in
+   * the first, and gives the title the page's width with the corner mark
+   * standing beside it (see html.ts's gridMasthead). A cover draws neither.
+   */
+  masthead: 'band' | 'grid';
 };
 
 export const PT_TO_MM = 0.352778;

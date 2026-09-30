@@ -14,7 +14,8 @@
       "letterhead",
       "logo.heightPt",
       "cornerMark.heightPt",
-      "coverStatement"
+      "coverStatement",
+      "masthead"
     ]
   },
   "colors": {
@@ -68,5 +69,6 @@
     "www.tebin.pro | info@tebin.pro",
     "NIP: 9552562516 | REGON: 521434962"
   ],
-  "coverStatement": "line"
+  "coverStatement": "line",
+  "masthead": "grid"
 }

@@ -19,7 +19,7 @@ import type { Block, Doc, Inline } from '../ir/types.js';
 import { PAGE_PT, type Theme } from '../theme/types.js';
 import { PANEL_BORDER_PT, coverStatementPt, partitionCoverBlocks, ruleIndexes, splitAtFirstPagebreak } from './cover-zones.js';
 import { columnWidthsDxa, fitsWidth, isKeyValue } from './table-width.js';
-import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
+import { GRID_TITLE_AFTER_PT, GRID_TITLE_BEFORE_PT, gridTitlePt, LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines, mastheadColumns } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
 import { normalizeDocx } from './normalize-docx.js';
 import { mixToWhite, readableOn, SCALE_STEPS, STATEMENT_TINT, stepOf, weekLabel } from './tint.js';
@@ -87,10 +87,16 @@ function styles(theme: Theme) {
       // html.ts's `.doc-title` comment: a theme applies to every document, so
       // this style must not carry the theme's cover values, or a re-issued
       // report or a memo would inherit a 39pt grey title it never asked for.
-      para('DocTitle', 'Doc Title', hd({ size: halfPt(ty.h1Pt), bold: true, color: hex(c.ink) }), {
-        // html.ts: `.doc-title{ margin: 22pt 0 0; }`
-        spacing: { before: dxa(22), after: 0 },
-      }),
+      theme.masthead === 'grid'
+        // html.ts's `.mg-title .doc-title`: the grid masthead's title, larger
+        // and further down, a choice of that masthead rather than a cover value.
+        ? para('DocTitle', 'Doc Title', hd({ size: halfPt(gridTitlePt(ty)), bold: true, color: hex(c.ink) }), {
+            spacing: { before: dxa(GRID_TITLE_BEFORE_PT), after: 0, line: 250 },
+          })
+        : para('DocTitle', 'Doc Title', hd({ size: halfPt(ty.h1Pt), bold: true, color: hex(c.ink) }), {
+            // html.ts: `.doc-title{ margin: 22pt 0 0; }`
+            spacing: { before: dxa(22), after: 0 },
+          }),
       // Used instead of DocTitle only when `doc.meta.cover === true` (see
       // renderDocx below) — the theme's cover size and colour, see html.ts's
       // `.doc-title--cover` comment: it defaults to the theme's own ink, and
@@ -150,6 +156,16 @@ function styles(theme: Theme) {
       para('DocLetterheadName', 'Doc Letterhead Name', lb({ size: halfPt(ty.smallPt + 0.5), bold: true, color: hex(c.muted) }), { alignment: AlignmentType.RIGHT, spacing: { after: 0 } }),
       para('DocLetterheadLine', 'Doc Letterhead Line', lb({ size: halfPt(ty.smallPt - 0.5), color: hex(c.muted) }), { alignment: AlignmentType.RIGHT, spacing: { after: 0 } }),
       para('DocRunningHeader', 'Doc Running Header', lb({ size: halfPt(ty.smallPt - 1), color: hex(c.muted) }), { spacing: { after: 0 } }),
+      // The grid masthead's three kinds of line (html.ts's .mg-idx, .mg-strong,
+      // .mg-line), only for a theme that draws one, so no other theme's
+      // styles part changes by a byte.
+      ...(theme.masthead === 'grid'
+        ? [
+            para('DocMastIndex', 'Doc Masthead Index', lb({ size: halfPt(ty.smallPt - 1), color: hex(c.brandOnLight) }), { spacing: { after: dxa(7) } }),
+            para('DocMastStrong', 'Doc Masthead Strong', lb({ size: halfPt(ty.smallPt - 1), bold: true, color: hex(c.ink) }), { spacing: { after: 0 } }),
+            para('DocMastLine', 'Doc Masthead Line', lb({ size: halfPt(ty.smallPt - 1), color: hex(c.muted) }), { spacing: { after: 0 } }),
+          ]
+        : []),
     ],
   };
 }
@@ -1236,6 +1252,7 @@ function sectionsFor(
  */
 function firstPageHeader(doc: Doc, theme: Theme): Header {
   if (doc.meta.cover === true) return new Header({ children: [] });
+  if (theme.masthead === 'grid') return gridMastheadHeader(doc, theme);
 
   const total = columnDxa(theme);
   const logoWidth = dxa(120);
@@ -1279,6 +1296,58 @@ function firstPageHeader(doc: Doc, theme: Theme): Header {
       }),
       tickRow(theme),
     ],
+  });
+}
+
+/**
+ * html.ts's gridMasthead in Word's terms: four equal columns, each under its
+ * own length of hairline, with narrow borderless columns between them so the
+ * gutters break the rule the way the stylesheet's column-gap does. The corner
+ * mark beside the title is not drawn here: it belongs to the title, which
+ * lives in the body, and an anchored picture there would move with whatever
+ * someone types above it.
+ */
+function gridMastheadHeader(doc: Doc, theme: Theme): Header {
+  const total = columnDxa(theme);
+  const gap = dxa(10);
+  const col = Math.floor((total - 3 * gap) / 4);
+  const rule = { style: BorderStyle.SINGLE, size: eighthPt(0.75), color: hex(theme.colors.ink) };
+  const text = (style: string, t: string) => new Paragraph({ style, children: [new TextRun({ text: t })] });
+  const png = theme.logo?.png;
+  const mark: ParagraphChild[] = [];
+  if (png) {
+    const bytes = Buffer.from(png.slice(png.indexOf(',') + 1), 'base64');
+    const size = pngSize(bytes);
+    if (size === null) throw new Error('theme.logo.png is not a usable PNG (bad signature, too few bytes, or a zero dimension)');
+    const heightPt = theme.logo!.heightPt;
+    mark.push(new ImageRun({ data: bytes, type: 'png', transformation: { width: px96((heightPt * size.w) / size.h), height: px96(heightPt) } }));
+  }
+  const columns: Paragraph[][] = [
+    [text('DocMastIndex', '01'), new Paragraph({ children: mark })],
+    ...mastheadColumns(theme.letterhead, doc).map((c) => [
+      text('DocMastIndex', c.index),
+      ...c.lines.map((l) => text(l.strong ? 'DocMastStrong' : 'DocMastLine', l.text)),
+    ]),
+  ];
+  while (columns.length < 4) columns.push([new Paragraph({ children: [] })]);
+  const cells: TableCell[] = [];
+  columns.slice(0, 4).forEach((children, i) => {
+    if (i > 0) cells.push(new TableCell({ width: { size: gap, type: WidthType.DXA }, borders: NO_BORDERS, children: [new Paragraph({ children: [] })] }));
+    cells.push(new TableCell({
+      width: { size: col, type: WidthType.DXA },
+      borders: { ...NO_BORDERS, top: rule },
+      margins: { top: dxa(5), left: 0, right: 0 },
+      children,
+    }));
+  });
+  return new Header({
+    children: [new Table({
+      layout: TableLayoutType.FIXED,
+      width: { size: total, type: WidthType.DXA },
+      columnWidths: [col, gap, col, gap, col, gap, col],
+      borders: NO_BORDERS,
+      rows: [new TableRow({ children: cells })],
+    })],
   });
 }
 

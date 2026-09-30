@@ -67,7 +67,7 @@ describe('the tebin-schweiz theme', () => {
 
   it('strokes its marks through the line classes, which only it gets', async () => {
     const html = await buildHtml(doc, await loadTheme('tebin-schweiz'));
-    expect(html).toMatch(/\.logo \.c-line, \.corner-mark-panel \.c-line\{ fill: #FFFFFF; stroke: var\(--brand\);/);
+    expect(html).toMatch(/\.logo \.c-line, \.corner-mark-panel \.c-line, \.corner-mark-grid \.c-line\{ fill: #FFFFFF; stroke: var\(--brand\);/);
     expect(html).toMatch(/vector-effect: non-scaling-stroke/);
     const classic = await buildHtml(doc, await loadTheme('tebin'));
     expect(classic).not.toMatch(/c-line/);

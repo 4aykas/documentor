@@ -221,6 +221,11 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
       if (v !== 'tint' && v !== 'line') bad('coverStatement', `expected "tint" or "line", got ${JSON.stringify(v)}`);
       return v;
     })(),
+    masthead: (() => {
+      const v = t['masthead'] ?? 'band';
+      if (v !== 'band' && v !== 'grid') bad('masthead', `expected "band" or "grid", got ${JSON.stringify(v)}`);
+      return v;
+    })(),
   };
 }
 

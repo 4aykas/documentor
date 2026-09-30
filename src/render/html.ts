@@ -7,7 +7,7 @@ import { PAGE_PT, toMm, type Theme } from '../theme/types.js';
 import { PANEL_BORDER_PT, coverStatementPt, partitionCoverBlocks, ruleIndexes, splitAtFirstPagebreak } from './cover-zones.js';
 import { familyStack, themeFaceCss } from './fonts.js';
 import { lineRules, MARK_LINE_PT, usesLines } from './line-mark.js';
-import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
+import { GRID_TITLE_AFTER_PT, GRID_TITLE_BEFORE_PT, gridTitlePt, LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines, mastheadColumns } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
 import { SCALE_STEPS, STATEMENT_TINT, mixToWhite, readableOn, stepOf, weekLabel } from './tint.js';
 import { columnWidthsDxa, dxa, fitsWidth, isKeyValue } from './table-width.js';
@@ -293,6 +293,7 @@ function coverMain(doc: Doc, theme: Theme): string {
 }
 
 function firstPageHeader(doc: Doc, theme: Theme): string {
+  if (theme.masthead === 'grid') return gridMasthead(doc, theme);
   // buildHtml only calls this for an ordinary document — a cover
   // (`meta.cover === true`) skips it entirely and draws its own layout via
   // coverMain instead, so what follows is unconditionally the theme's
@@ -319,6 +320,63 @@ function firstPageHeader(doc: Doc, theme: Theme): string {
   return `${chrome}<h1 class="doc-title">${escapeHtml(doc.meta.title)}</h1>${
     doc.meta.subtitle ? `<p class="doc-subtitle">${escapeHtml(doc.meta.subtitle)}</p>` : ''
   }`;
+}
+
+/**
+ * The `masthead: 'grid'` opening (see Theme['masthead']). The letterhead is
+ * set as a row of equal columns, each under its own length of hairline so the
+ * gutters break the rule, and each numbered: 01 holds the logo, the rest are
+ * whatever mastheadColumns gives (issuer, contact, this document). Numbers
+ * rather than captions, because a caption would have to be in the document's
+ * language and the index reads the same in all of them.
+ *
+ * Below it the title gets the page's width at a size between h1 and a
+ * cover's, tight, with the corner mark standing to its right at the height of
+ * its first line — the one asymmetric thing on the page. No tick row: the
+ * column rules above already divide the head from the body.
+ */
+function gridMasthead(doc: Doc, theme: Theme): string {
+  const logo = theme.logo
+    ? `<div class="logo" style="height: ${theme.logo.heightPt}pt">${theme.logo.svg}</div>`
+    : '';
+  const cols = mastheadColumns(theme.letterhead, doc)
+    .map((c) => `<div class="mg-col"><div class="mg-idx">${c.index}</div>${
+      c.lines.map((l) => `<div class="${l.strong ? 'mg-strong' : 'mg-line'}">${escapeHtml(l.text)}</div>`).join('')
+    }</div>`)
+    .join('');
+  const mark = theme.cornerMark ? `<div class="corner-mark-grid">${theme.cornerMark.svg}</div>` : '';
+  return `<header class="mast-grid"><div class="mg-col"><div class="mg-idx">01</div>${logo}</div>${cols}</header>
+<div class="mg-title">${mark}<h1 class="doc-title">${escapeHtml(doc.meta.title)}</h1>${
+    doc.meta.subtitle ? `<p class="doc-subtitle">${escapeHtml(doc.meta.subtitle)}</p>` : ''
+  }</div>`;
+}
+
+/** The grid masthead's rules, only for a theme that asks for it — so no other
+ *  theme's stylesheet changes by a byte. */
+function mastheadRules(theme: Theme): string {
+  if (theme.masthead !== 'grid') return '';
+  const ty = theme.type;
+  const label = theme.font.label ?? theme.font;
+  const caps = theme.font.label?.uppercase ? ' text-transform: uppercase; letter-spacing: 0.04em;' : '';
+  const titlePt = gridTitlePt(ty);
+  const markPt = Math.round(titlePt * 0.82);
+  return `
+.mast-grid{ display: grid; grid-template-columns: repeat(4, 1fr); column-gap: 10pt; }
+.mg-col{ border-top: ${MARK_LINE_PT}pt solid var(--ink); padding-top: 5pt; min-width: 0; }
+.mg-idx{ color: var(--brand); margin-bottom: 7pt; }
+.mg-idx,.mg-strong,.mg-line{ font-family: ${familyStack(label, 'monospace')};${caps} font-size: ${ty.smallPt - 1}pt; line-height: 1.45; overflow-wrap: break-word; }
+.mg-strong{ color: var(--ink); font-weight: 700; }
+.mg-line{ color: var(--muted); }
+.mast-grid .logo{ margin-top: 1pt; }
+.mg-title{ margin: ${GRID_TITLE_BEFORE_PT}pt 0 ${GRID_TITLE_AFTER_PT}pt; }
+.mg-title::after{ content: ""; display: block; clear: both; }
+.mg-title .doc-title{ font-size: ${titlePt}pt; line-height: 1.04; letter-spacing: -0.028em; margin: 0; max-width: 82%; }
+.mg-title .doc-subtitle{ margin-top: 8pt; font-size: ${ty.bodyPt + 1.5}pt; }
+.corner-mark-grid{ float: right; height: ${markPt}pt; margin: ${(titlePt - markPt) / 2}pt 0 0 12pt; }
+.corner-mark-grid svg{ height: 100%; width: auto; display: block; }
+.corner-mark-grid .c-brand{ fill: var(--brand); }
+.corner-mark-grid .c-muted{ fill: var(--muted); }
+.corner-mark-grid .c-ink{ fill: var(--ink); }`;
 }
 
 /**
@@ -349,7 +407,9 @@ function faceRules(theme: Theme): string {
  *  stylesheet changes by a byte. */
 function markLineRules(theme: Theme): string {
   const out: string[] = [];
-  if (usesLines(theme.logo?.svg) || usesLines(theme.cornerMark?.svg)) out.push(lineRules(['.logo', '.corner-mark-panel']));
+  if (usesLines(theme.logo?.svg) || usesLines(theme.cornerMark?.svg)) {
+    out.push(lineRules(['.logo', '.corner-mark-panel', ...(theme.masthead === 'grid' ? ['.corner-mark-grid'] : [])]));
+  }
   // The statement band in line (see Theme['coverStatement']): the fill goes,
   // and the thick bar becomes the same hairline the marks are drawn in.
   if (theme.coverStatement === 'line') {
@@ -587,7 +647,7 @@ body{ position: relative; }
 .corner-mark-panel svg{ height: 100%; width: auto; display: block; }
 .corner-mark-panel .c-brand{ fill: var(--brand); }
 .corner-mark-panel .c-muted{ fill: var(--muted); }
-.corner-mark-panel .c-ink{ fill: var(--ink); }${faceRules(theme)}${markLineRules(theme)}`;
+.corner-mark-panel .c-ink{ fill: var(--ink); }${faceRules(theme)}${markLineRules(theme)}${mastheadRules(theme)}`;
 
   const cover = doc.meta.cover === true;
   const headerHtml = cover ? '' : firstPageHeader(doc, theme);

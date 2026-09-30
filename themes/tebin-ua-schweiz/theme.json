@@ -14,7 +14,8 @@
       "letterhead",
       "logo.heightPt",
       "cornerMark.heightPt",
-      "coverStatement"
+      "coverStatement",
+      "masthead"
     ]
   },
   "colors": {
@@ -68,5 +69,6 @@
     "+380 95 283 93 92 | www.tebin.pro | info@tebin.pro",
     "ЄДРПОУ: 43655986 | ІНН: 436559826565"
   ],
-  "coverStatement": "line"
+  "coverStatement": "line",
+  "masthead": "grid"
 }

@@ -250,7 +250,7 @@ export async function tebinSchweizThemeJson(brandDir: string, entity: ThemeEntit
       source: 'tebin-classic',
       version: '1.0.0',
       variant: 'schweiz',
-      notFromBrand: ['colors.muted', 'font', 'page', 'type', 'letterhead', 'logo.heightPt', 'cornerMark.heightPt', 'coverStatement'],
+      notFromBrand: ['colors.muted', 'font', 'page', 'type', 'letterhead', 'logo.heightPt', 'cornerMark.heightPt', 'coverStatement', 'masthead'],
     },
     colors: { brandOnLight: brand, brandOnDark: null, ink, muted, rule: ink, title: ink },
     font: {
@@ -267,6 +267,9 @@ export async function tebinSchweizThemeJson(brandDir: string, entity: ThemeEntit
     // A tinted fill behind the cover's statement would be the one filled
     // shape on a page that otherwise draws only lines.
     coverStatement: 'line',
+    // The letterhead as a numbered grid rather than the classic band: the
+    // Swiss variant owes nothing to the classic layout but the brand itself.
+    masthead: 'grid',
   });
 }
 

@@ -398,6 +398,25 @@ colours at one hairline weight at any size (see `src/render/line-mark.ts`).
 `"coverStatement": "line"` sets the cover's statement off with a hairline
 instead of a tinted fill.
 
+`"masthead": "grid"` gives an ordinary document's first page a different head.
+The Swiss TEBIN themes ask for it. Instead of the classic band (logo left,
+letterhead ranged right, brand tick below), the letterhead is set as four
+equal columns, each numbered and each under its own length of hairline, so
+the gutters break the rule:
+
+1. The logo.
+2. The issuer: name, then the address split at each comma.
+3. The contact and registry lines, split at each `|`.
+4. The document's own entity and date, with the date set strong.
+
+An empty column is dropped and the numbers close up. Numbers stand in for
+captions because a caption would have to be translated, and a number reads
+the same in every language. The title below gets the page's width, set
+between h1 and cover size, and the corner mark stands to its right. Word
+draws the same columns in its first-page header. The mark beside the title is
+PDF-only, because in Word the title lives in the editable body. The default
+is `"band"`.
+
 ## Requirements
 
 Node 22+ and Chromium — the two the install commands above cover. `documentor
