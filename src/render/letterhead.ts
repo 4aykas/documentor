@@ -68,7 +68,7 @@ export type MastheadColumn = { index: string; lines: { text: string; strong: boo
  * column; the contact lines are split at each "|" into one item per line,
  * which is what a grid column is narrow enough to need, and the address at
  * each comma, so a postcode is never broken at its hyphen; the document's
- * own entity (when it is not the issuer again) and date take the last. A column with nothing in it is dropped and
+ * own reference number and date take the last. A column with nothing in it is dropped and
  * the indexes close up, so no document prints a numbered empty cell.
  */
 export function mastheadColumns(letterhead: string[], doc: Doc): MastheadColumn[] {
@@ -81,10 +81,11 @@ export function mastheadColumns(letterhead: string[], doc: Doc): MastheadColumn[
   ];
   const contact = items(rest, /\|/).map((text) => ({ text, strong: false }));
   // The date is what a reader looks for in this column, so it is the one set
-  // strong. An entity that only repeats the issuer in column 02 is left out:
-  // said twice in one row it reads as a mistake, not as information.
-  const same = (a: string, b: string | undefined) => a.trim().toLowerCase() === (b ?? '').trim().toLowerCase();
-  const ownLines = letterheadDocLines(doc).filter((l) => !(l === doc.meta.entity && same(l, name)));
+  // strong. The document's entity is not printed here at all: column 02
+  // already names who issues the document, and a company name in the
+  // document's own column, the same one or another, read as a second issuer.
+  // The classic band still prints it (see letterheadDocLines).
+  const ownLines = [doc.meta.reference, doc.meta.date].filter((v): v is string => v !== undefined && v !== '');
   const own = ownLines.map((text, i) => ({ text, strong: doc.meta.date !== undefined && doc.meta.date !== '' && i === ownLines.length - 1 }));
   return [issuer, contact, own]
     .filter((lines) => lines.length > 0)

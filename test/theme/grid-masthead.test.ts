@@ -36,10 +36,9 @@ describe('the grid masthead columns', () => {
     expect(cols[2]!.lines).toEqual([{ text: '30.09.2026', strong: true }]);
   });
 
-  it('prints the document number above the date, and an entity only when it is someone else', () => {
+  it('prints the document number above the date, and never an entity', () => {
     const [, , own] = mastheadColumns(TEBIN_PL, docWith({ entity: 'Client GmbH', reference: 'TN-2026-014', date: '30.09.2026' }));
     expect(own!.lines).toEqual([
-      { text: 'Client GmbH', strong: false },
       { text: 'TN-2026-014', strong: false },
       { text: '30.09.2026', strong: true },
     ]);
@@ -51,9 +50,8 @@ describe('the grid masthead columns', () => {
     expect(mastheadColumns([], docWith())).toEqual([]);
   });
 
-  it('only sets the date strong, never an entity standing alone', () => {
-    const [, , own] = mastheadColumns(TEBIN_PL, docWith({ entity: 'Client GmbH' }));
-    expect(own!.lines).toEqual([{ text: 'Client GmbH', strong: false }]);
+  it('leaves column 04 out when the document has only an entity', () => {
+    expect(mastheadColumns(TEBIN_PL, docWith({ entity: 'Client GmbH' })).map((c) => c.index)).toEqual(['02', '03']);
   });
 });
 

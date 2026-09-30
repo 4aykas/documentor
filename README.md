@@ -411,7 +411,8 @@ the gutters break the rule:
 1. The logo.
 2. The issuer: name, then the address split at each comma.
 3. The contact and registry lines, split at each `|`.
-4. The document's own entity and date, with the date set strong.
+4. The document's own number (`reference`) and date, with the date set strong.
+   The entity is not printed here, because column 2 already names the issuer.
 
 An empty column is dropped and the numbers close up. Numbers stand in for
 captions because a caption would have to be translated, and a number reads
