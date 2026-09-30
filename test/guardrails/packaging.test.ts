@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PACKAGE_NAME, bundledThemeIds } from '../../src/theme/resolve.js';
@@ -115,5 +115,35 @@ describe('what an installed copy contains', () => {
     // `prepack` covers pack and publish only. Either satisfies this.
     const builds = ['prepare', 'prepack'].some((s) => pkg.scripts[s]?.includes('build'));
     expect(builds, 'neither prepare nor prepack runs the build').toBe(true);
+  });
+});
+
+// The same gap, one level down: a package the code imports at runtime but
+// package.json lists only under devDependencies is present in this working
+// tree and in CI, and missing from every installed copy. pdfjs-dist shipped
+// that way — `npm install github:4aykas/documentor` produced a CLI that could
+// not start, since every command loads the PDF reader.
+describe('what an installed copy can import', () => {
+  const deps = new Set(Object.keys((pkg as unknown as { dependencies?: Record<string, string> }).dependencies ?? {}));
+  const files = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory() ? files(join(dir, e.name)) : e.name.endsWith('.ts') ? [join(dir, e.name)] : []);
+  const packageOf = (spec: string) => (spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0]!);
+
+  it('declares every package src imports at runtime as a dependency, not a devDependency', () => {
+    const missing = new Set<string>();
+    for (const file of files(join(ROOT, 'src'))) {
+      const code = readFileSync(file, 'utf8');
+      // Value imports only: `import type` is erased by tsc and never loaded.
+      const specs = [
+        ...code.matchAll(/^\s*import\s+(?!type\b)[^;]*?from\s+'([^'.][^']*)'/gm),
+        ...code.matchAll(/\bimport\(\s*'([^'.][^']*)'\s*\)/g),
+      ].map((m) => m[1]!);
+      for (const spec of specs) {
+        if (spec.startsWith('node:')) continue;
+        if (!deps.has(packageOf(spec))) missing.add(`${packageOf(spec)} (imported by ${file.slice(ROOT.length)})`);
+      }
+    }
+    expect([...missing], 'imported at runtime but not in "dependencies"').toEqual([]);
   });
 });
