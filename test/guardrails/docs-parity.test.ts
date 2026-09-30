@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FORMATS, READABLE_EXTS, parseArgs } from '../../src/cli/build.js';
 import { parseInspectArgs } from '../../src/cli/inspect.js';
+import { parseSetupArgs } from '../../src/cli/setup.js';
 import { parseThemeArgs } from '../../src/cli/theme.js';
 
 // Guardrail for a defect this project has shipped three times in one week:
@@ -192,10 +193,10 @@ describe('every FORMATS/READABLE_EXTS member has a matching column/row in the RE
 // anywhere in the source text (README prose, code fences, or --help output).
 // Nothing about surrounding sentences matters — only the exact spelling of
 // each flag token. A flag is "accepted" if parseArgs, parseInspectArgs or
-// parseThemeArgs does not throw "unknown option <flag>" for it; all three
-// parsers are checked because README and --help between them describe
-// `build`, `inspect` and `theme capture`, and a flag need only belong to one
-// to be legitimate.
+// parseThemeArgs or parseSetupArgs does not throw "unknown option <flag>"
+// for it; all four parsers are checked because README and --help between
+// them describe `build`, `inspect`, `theme capture` and `setup`, and a flag
+// need only belong to one to be legitimate.
 //
 // Deliberately not checked, and left as known future scope rather than
 // silent: the reverse direction, a flag a parser accepts that appears in
@@ -227,12 +228,13 @@ function isKnownOption(parse: (argv: string[]) => unknown, flag: string): boolea
 
 function assertFlagsKnown(source: string, flags: readonly string[]): void {
   const unknown = flags.filter(
-    (f) => !isKnownOption(parseArgs, f) && !isKnownOption(parseInspectArgs, f) && !isKnownOption(parseThemeArgs, f),
+    (f) => !isKnownOption(parseArgs, f) && !isKnownOption(parseInspectArgs, f) && !isKnownOption(parseThemeArgs, f)
+      && !isKnownOption(parseSetupArgs, f),
   );
   expect(
     unknown,
     `${source} mentions ${unknown.join(', ')}, but neither build's parseArgs, inspect's `
-    + `parseInspectArgs nor theme's parseThemeArgs accepts ${unknown.length === 1 ? 'it' : 'them'} — the flag was renamed or `
+    + `parseInspectArgs, theme's parseThemeArgs nor setup's parseSetupArgs accepts ${unknown.length === 1 ? 'it' : 'them'} — the flag was renamed or `
     + `removed in code and the docs were not updated to match`,
   ).toEqual([]);
 }

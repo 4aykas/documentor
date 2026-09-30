@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { FORMATS, runBuild } from '../cli/build.js';
 import { runDoctor } from '../cli/doctor.js';
+import { runSetup } from '../cli/setup.js';
 import { runInspect } from '../cli/inspect.js';
 import { runProposal } from '../cli/proposal.js';
 import { runContract } from '../cli/contract.js';
@@ -16,6 +17,7 @@ const USAGE = `documentor — re-issue an existing document as a well-typeset on
   documentor proposal <data.json> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>]
   documentor contract <data.json> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>]
 ${THEME_USAGE_LINE}
+  documentor setup [--with-deps]
   documentor doctor
 
 inspect reads a document and reports what it understood, what it had to drop,
@@ -44,7 +46,11 @@ theme capture measures a web page whose design you like — the faces, sizes
 and colours it actually paints — and writes capture.json and a screenshot
 (under .input/captures/<id>/ by default). It writes no theme: which free face
 stands in for the site's, and which colour becomes the brand, is decided by
-whoever writes themes/<id>/theme.json from it.`;
+whoever writes themes/<id>/theme.json from it.
+
+setup installs the Chromium build this copy of documentor launches (once,
+after installing documentor); doctor then checks everything a build needs
+and names the command that fixes whatever is missing.`;
 
 /**
  * The exit code contract, documented in this one place because callers script
@@ -87,6 +93,7 @@ try {
   else if (command === 'proposal') code = await runProposal(rest, io);
   else if (command === 'contract') code = await runContract(rest, io);
   else if (command === 'theme') code = await runTheme(rest, io);
+  else if (command === 'setup') code = runSetup(rest, io);
   else if (command === 'doctor') code = await runDoctor(io);
   else if (command === undefined || command === '--help' || command === '-h') { io.log(USAGE); code = command === undefined ? 2 : 0; }
   else { io.err(`documentor: unknown command ${JSON.stringify(command)}\n\n${USAGE}`); code = 2; }
