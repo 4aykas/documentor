@@ -19,14 +19,41 @@ documentor build report.md --to docx
 
 ## Getting it
 
-Not on npm yet. Until it is, install it from the repository — npm builds it as
-part of the install, so there is no separate build step:
+Check "Requirements" below first. documentor isn't on npm yet, so install
+it from the repository. npm builds it during the install, so there is no separate
+build step:
 
 ```bash
-npm install github:4aykas/documentor
-npx playwright install chromium
-npx documentor doctor
+npm install -g github:4aykas/documentor
+documentor setup      # the Chromium build this copy launches, once
+documentor doctor     # checks everything a build needs, names any fix
 ```
+
+Use `documentor setup` for the browser, not `npx playwright install
+chromium`. npx installs the Chromium build of whatever playwright release is
+newest. That build is not the one documentor's pinned `playwright-core`
+looks for, so doctor then reports a browser that "does not exist".
+
+To update, run the same `npm install -g` line again, then `documentor setup`.
+
+**In Claude Code**, the skill that drives the CLI installs from this
+repository too:
+
+```
+/plugin marketplace add 4aykas/documentor
+/plugin install documentor@documentor
+```
+
+The skill runs `inspect`, asks only the questions that change the output,
+writes the sidecar and builds. It does not install the CLI itself. On a
+machine without the CLI it gives these same three commands.
+
+**Fonts in Word.** A PDF carries its fonts inside it, so it looks the same
+everywhere. A `.docx` names its fonts and leaves drawing them to Word. The
+`schweiz`, `tebin-schweiz` and `tebin-ua-schweiz` themes use Manrope and
+JetBrains Mono, both free on Google Fonts. Install both where the Word files
+will be opened, or Word substitutes a serif. The `plain` and `tebin` themes
+use Arial, which every machine has.
 
 From a clone, `npm install` and then `npm run documentor -- build report.md`
 runs the same code without installing anything.
@@ -429,9 +456,23 @@ when someone edits above them. The default is `"band"`.
 
 ## Requirements
 
-Node 22+ and Chromium — the two the install commands above cover. `documentor
-doctor` reports what is missing and the exact command that fixes it, which is
-the first thing to run when something behaves oddly.
+| What | Needed for | How to get it |
+|:--|:--|:--|
+| **Node.js 22 or newer** | Everything | [nodejs.org](https://nodejs.org), the LTS installer. It includes npm. |
+| **Git** | Installing from GitHub (`npm install -g github:…`) | [git-scm.com](https://git-scm.com). Not needed once installed. |
+| **Internet access** | The install, and `documentor setup` once (about 150 MB of Chromium) | After that, builds run offline. |
+| **Chromium** | Every PDF, and reading a PDF | `documentor setup`. On Linux, `documentor setup --with-deps` also installs the system libraries Chromium needs. |
+| **Manrope and JetBrains Mono** | Only `.docx` files from `schweiz`, `tebin-schweiz` and `tebin-ua-schweiz`, opened in Word | Free on [fonts.google.com](https://fonts.google.com). Install them on each machine that opens those Word files. PDFs don't need them. |
+| **Microsoft Word** or another `.docx` reader | Opening Word output | Not needed to build it. |
+| **Claude Code** | Only the skill | See "Getting it" above. |
+
+Everything else ships inside the package. That covers the other npm
+dependencies, the fonts embedded in PDFs, and the themes with their logos.
+
+`documentor doctor` checks all of this and names the command that fixes
+whatever is missing. Run it first when something behaves oddly. A missing
+Word font shows as a `note`, not a failure, because it changes how Word
+draws a file, not whether documentor can build it.
 
 ## License
 

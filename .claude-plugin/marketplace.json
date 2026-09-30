@@ -1,0 +1,14 @@
+{
+  "name": "documentor",
+  "owner": { "name": "4aykas" },
+  "metadata": {
+    "description": "The documentor skill: re-issue an existing document as a well-typeset PDF, Word or Markdown file, and assemble proposals and contracts from data."
+  },
+  "plugins": [
+    {
+      "name": "documentor",
+      "source": "./plugin",
+      "description": "Re-issue an existing Markdown, Word, Excel or PDF document as a well-typeset PDF, Word, or Markdown file with the documentor CLI."
+    }
+  ]
+}

@@ -1,7 +1,18 @@
 {
   "name": "documentor",
   "version": "0.1.0",
-  "description": "Re-issue an existing Markdown or Word document as a well-typeset PDF, Word, or Markdown file.",
+  "description": "Re-issue an existing Markdown, Word, Excel or PDF document as a well-typeset PDF, Word, or Markdown file, and assemble proposals and contracts from data.",
+  "author": {
+    "name": "4aykas"
+  },
+  "homepage": "https://github.com/4aykas/documentor",
+  "repository": "https://github.com/4aykas/documentor",
   "license": "MIT",
-  "keywords": ["documents", "pdf", "docx", "typesetting", "branding"]
+  "keywords": [
+    "documents",
+    "pdf",
+    "docx",
+    "typesetting",
+    "branding"
+  ]
 }

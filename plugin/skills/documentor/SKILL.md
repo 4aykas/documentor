@@ -17,15 +17,17 @@ inputs, and a missing piece is an error, never a sentence documentor made up.
 
 ## When to use this skill
 
-Use it when the user hands you (or names) an existing `.md`, `.docx` or
-`.xlsx` file and wants a polished PDF, Word, or Markdown re-issue of it — a
+Use it when the user hands you (or names) an existing `.md`, `.docx`,
+`.xlsx` or `.pdf` file and wants a polished PDF, Word, or Markdown re-issue of it — a
 report, a memo, a proposal, a small register, something already written that
 needs to look better or come out in another format.
 
 Do **not** use it when:
 - the document doesn't exist yet **and is not a proposal** — write it first,
   with no theming; for a proposal, use the proposal flow below;
-- the source is `.pdf` — documentor cannot read PDF;
+- the source is a `.pdf` that is a scan, a multi-column layout, or mostly
+  images — documentor reads a PDF's drawn tables and single-column prose
+  only; run `inspect` first and relay what it says it dropped;
 - the source is a working spreadsheet rather than a register — see the
   spreadsheet limit below; most `.xlsx` files are refused, and offering to
   re-issue one before inspecting it sets up a promise that will not hold;
@@ -80,6 +82,23 @@ Know these before promising anything to the user:
   in plain reading order instead — present, in the right order, just not
   pinned to the page foot, because Word's paragraph flow has no primitive
   for that which this renderer trusts across versions.
+
+## Before the first run on a machine
+
+The skill drives a command-line tool; the plugin does not install it. If
+`documentor` is not found, install it and its browser, then check:
+
+```
+npm install -g github:4aykas/documentor
+documentor setup
+documentor doctor
+```
+
+`documentor setup` installs the exact Chromium build this copy launches. Do
+not substitute `npx playwright install chromium`: it installs the build for
+whatever playwright release is newest, and doctor then reports a browser
+that does not exist. Node 22 or newer is required; doctor names anything
+else that is missing and the command that fixes it.
 
 ## The flow
 
