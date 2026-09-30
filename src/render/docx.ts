@@ -23,6 +23,7 @@ import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
 import { normalizeDocx } from './normalize-docx.js';
 import { mixToWhite, readableOn, SCALE_STEPS, STATEMENT_TINT, stepOf, weekLabel } from './tint.js';
+import { MARK_LINE_PT } from './line-mark.js';
 
 const halfPt = (pt: number): number => Math.round(pt * 2);
 const dxa = (pt: number): number => Math.round(pt * 20);
@@ -57,6 +58,17 @@ const NO_BORDERS = {
  */
 function styles(theme: Theme) {
   const { colors: c, type: ty } = theme;
+  // The theme's heading and label faces, the same two roles html.ts's
+  // faceRules() draws. Word embeds no font, so these are names a reader's
+  // machine resolves or substitutes. Each is spread in only when the theme
+  // sets something different from the body, so a theme written before the
+  // roles existed produces the same styles.xml it always did.
+  const f = theme.font;
+  const headingSet = f.heading.embed !== f.embed || f.heading.document !== f.document || f.heading.weight !== 700;
+  const hd = <R extends { bold: boolean }>(run: R) =>
+    headingSet ? { ...run, font: f.heading.document, bold: f.heading.weight >= 700 } : run;
+  const lb = (run: object) =>
+    f.label === null ? run : { ...run, font: f.label.document, ...(f.label.uppercase ? { allCaps: true } : {}) };
   const para = (id: string, name: string, run: object, paragraph: object = {}) => ({
     id, name, basedOn: 'Normal', next: 'DocBody', quickFormat: true, run, paragraph,
   });
@@ -75,7 +87,7 @@ function styles(theme: Theme) {
       // html.ts's `.doc-title` comment: a theme applies to every document, so
       // this style must not carry the theme's cover values, or a re-issued
       // report or a memo would inherit a 39pt grey title it never asked for.
-      para('DocTitle', 'Doc Title', { size: halfPt(ty.h1Pt), bold: true, color: hex(c.ink) }, {
+      para('DocTitle', 'Doc Title', hd({ size: halfPt(ty.h1Pt), bold: true, color: hex(c.ink) }), {
         // html.ts: `.doc-title{ margin: 22pt 0 0; }`
         spacing: { before: dxa(22), after: 0 },
       }),
@@ -85,7 +97,7 @@ function styles(theme: Theme) {
       // TEBIN's generated theme sets it to grey because all three real
       // originals this theme was built from set their cover title in a
       // lighter grey.
-      para('DocTitleCover', 'Doc Title Cover', { size: halfPt(ty.titlePt), bold: true, color: hex(c.title) }, {
+      para('DocTitleCover', 'Doc Title Cover', hd({ size: halfPt(ty.titlePt), bold: true, color: hex(c.title) }), {
         // html.ts: `.doc-title{ margin: 22pt 0 0; }` (shared with DocTitle)
         spacing: { before: dxa(22), after: 0 },
       }),
@@ -105,12 +117,12 @@ function styles(theme: Theme) {
       // no matching html.ts rule to copy — html.ts styles only h2 and h3
       // explicitly and leaves a bare <h1> to the browser's UA default, which
       // has no fixed point value — so its spacing is left as originally set.
-      para('DocH1', 'Doc Heading 1', { size: halfPt(ty.h1Pt), bold: true, color: hex(c.ink) }, { spacing: { before: dxa(11), after: dxa(3) }, keepNext: true }),
-      para('DocH2', 'Doc Heading 2', { size: halfPt(ty.h2Pt), bold: true, color: hex(c.ink) }, {
+      para('DocH1', 'Doc Heading 1', hd({ size: halfPt(ty.h1Pt), bold: true, color: hex(c.ink) }), { spacing: { before: dxa(11), after: dxa(3) }, keepNext: true }),
+      para('DocH2', 'Doc Heading 2', hd({ size: halfPt(ty.h2Pt), bold: true, color: hex(c.ink) }), {
         // html.ts: `h2{ margin: 18pt 0 4pt; }`
         spacing: { before: dxa(18), after: dxa(4) }, keepNext: true,
       }),
-      para('DocH3', 'Doc Heading 3', { size: halfPt(ty.h3Pt), bold: true, color: hex(c.ink) }, {
+      para('DocH3', 'Doc Heading 3', hd({ size: halfPt(ty.h3Pt), bold: true, color: hex(c.ink) }), {
         // html.ts: `h3{ margin: 14pt 0 3pt; }`
         spacing: { before: dxa(14), after: dxa(3) }, keepNext: true,
       }),
@@ -133,11 +145,11 @@ function styles(theme: Theme) {
                   right: { style: BorderStyle.SINGLE, size: eighthPt(0.75), color: hex(c.rule), space: 6 } },
         spacing: { after: dxa(8) },
       }),
-      para('DocTableHeader', 'Doc Table Header', { size: halfPt(ty.bodyPt * 0.95), bold: true }, { spacing: { after: 0 } }),
+      para('DocTableHeader', 'Doc Table Header', f.label === null ? { size: halfPt(ty.bodyPt * 0.95), bold: true } : lb({ size: halfPt(ty.smallPt), bold: false }), { spacing: { after: 0 } }),
       para('DocTableCell', 'Doc Table Cell', { size: halfPt(ty.bodyPt * 0.95) }, { spacing: { after: 0 } }),
-      para('DocLetterheadName', 'Doc Letterhead Name', { size: halfPt(ty.smallPt + 0.5), bold: true, color: hex(c.muted) }, { alignment: AlignmentType.RIGHT, spacing: { after: 0 } }),
-      para('DocLetterheadLine', 'Doc Letterhead Line', { size: halfPt(ty.smallPt - 0.5), color: hex(c.muted) }, { alignment: AlignmentType.RIGHT, spacing: { after: 0 } }),
-      para('DocRunningHeader', 'Doc Running Header', { size: halfPt(ty.smallPt - 1), color: hex(c.muted) }, { spacing: { after: 0 } }),
+      para('DocLetterheadName', 'Doc Letterhead Name', lb({ size: halfPt(ty.smallPt + 0.5), bold: true, color: hex(c.muted) }), { alignment: AlignmentType.RIGHT, spacing: { after: 0 } }),
+      para('DocLetterheadLine', 'Doc Letterhead Line', lb({ size: halfPt(ty.smallPt - 0.5), color: hex(c.muted) }), { alignment: AlignmentType.RIGHT, spacing: { after: 0 } }),
+      para('DocRunningHeader', 'Doc Running Header', lb({ size: halfPt(ty.smallPt - 1), color: hex(c.muted) }), { spacing: { after: 0 } }),
     ],
   };
 }
@@ -977,6 +989,9 @@ function separateAdjacentTables(children: (Paragraph | Table)[]): (Paragraph | T
  */
 function statementTable(paras: Inline[][], theme: Theme, opts: BlockOpts = {}): Table {
   const total = columnDxa(theme);
+  // html.ts's markLineRules: a 'line' band drops the fill and draws the bar
+  // as the marks' own hairline, with the same tighter padding.
+  const line = theme.coverStatement === 'line';
   return new Table({
     layout: TableLayoutType.FIXED,
     width: { size: total, type: WidthType.DXA },
@@ -985,14 +1000,16 @@ function statementTable(paras: Inline[][], theme: Theme, opts: BlockOpts = {}): 
       top: NO_BORDER, bottom: NO_BORDER, right: NO_BORDER,
       insideHorizontal: NO_BORDER, insideVertical: NO_BORDER,
       // html.ts: `border-left: 4pt solid var(--brand);`
-      left: { style: BorderStyle.SINGLE, size: eighthPt(4), color: hex(theme.colors.brandOnLight) },
+      left: { style: BorderStyle.SINGLE, size: eighthPt(line ? MARK_LINE_PT : 4), color: hex(theme.colors.brandOnLight) },
     },
     rows: [new TableRow({ children: [
       new TableCell({
         width: { size: total, type: WidthType.DXA },
-        shading: { type: ShadingType.CLEAR, color: 'auto', fill: hex(mixToWhite(theme.colors.brandOnLight, STATEMENT_TINT)) },
-        // html.ts: `padding: 18pt 22pt;`
-        margins: { top: dxa(18), bottom: dxa(18), left: dxa(22), right: dxa(22), marginUnitType: WidthType.DXA },
+        ...(line ? {} : { shading: { type: ShadingType.CLEAR, color: 'auto', fill: hex(mixToWhite(theme.colors.brandOnLight, STATEMENT_TINT)) } }),
+        // html.ts: `padding: 18pt 22pt;` (a 'line' band: `4pt 0 4pt 22pt`)
+        margins: line
+          ? { top: dxa(4), bottom: dxa(4), left: dxa(22), right: 0, marginUnitType: WidthType.DXA }
+          : { top: dxa(18), bottom: dxa(18), left: dxa(22), right: dxa(22), marginUnitType: WidthType.DXA },
         children: paras.map((p, i) => new Paragraph({
           style: i === 0 ? 'CoverStatement' : 'DocBody',
           children: inline(p, opts, theme),

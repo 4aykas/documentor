@@ -5,7 +5,8 @@
 import type { Block, Doc, Inline } from '../ir/types.js';
 import { PAGE_PT, toMm, type Theme } from '../theme/types.js';
 import { PANEL_BORDER_PT, coverStatementPt, partitionCoverBlocks, ruleIndexes, splitAtFirstPagebreak } from './cover-zones.js';
-import { arimoFaceCss } from './fonts.js';
+import { familyStack, themeFaceCss } from './fonts.js';
+import { lineRules, MARK_LINE_PT, usesLines } from './line-mark.js';
 import { LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
 import { SCALE_STEPS, STATEMENT_TINT, mixToWhite, readableOn, stepOf, weekLabel } from './tint.js';
@@ -320,8 +321,45 @@ function firstPageHeader(doc: Doc, theme: Theme): string {
   }`;
 }
 
+/**
+ * The rules a theme's own heading and label faces add. Appended only when the
+ * theme sets something the base stylesheet does not already say, so a theme
+ * written before these existed prints exactly the bytes it always printed.
+ * docx.ts draws the same two roles through its heading and table-header
+ * styles; the sizes and weights here are the ones it copies.
+ */
+function faceRules(theme: Theme): string {
+  const f = theme.font;
+  const out: string[] = [];
+  if (f.heading.embed !== f.embed || f.heading.document !== f.document || f.heading.weight !== 700) {
+    out.push(`h1,h2,h3,.doc-title{ font-family: ${familyStack(f.heading)}; font-weight: ${f.heading.weight}; }`);
+  }
+  if (f.label !== null) {
+    const caps = f.label.uppercase ? ' text-transform: uppercase; letter-spacing: 0.04em;' : '';
+    out.push(`.lh-name,.lh-line,.lh-doc,th{ font-family: ${familyStack(f.label, 'monospace')};${caps} }`);
+    // A label is set small and regular, the way a Swiss layout sets its
+    // captions: a bold uppercase monospace header row shouts over the table.
+    out.push(`th{ font-weight: 400; font-size: ${theme.type.smallPt}pt; }`);
+  }
+  return out.length === 0 ? '' : `\n${out.join('\n')}`;
+}
+
+/** The line-class rules (see line-mark.ts) and the line-style statement
+ *  band, only for a theme that asks for them — so no other theme's
+ *  stylesheet changes by a byte. */
+function markLineRules(theme: Theme): string {
+  const out: string[] = [];
+  if (usesLines(theme.logo?.svg) || usesLines(theme.cornerMark?.svg)) out.push(lineRules(['.logo', '.corner-mark-panel']));
+  // The statement band in line (see Theme['coverStatement']): the fill goes,
+  // and the thick bar becomes the same hairline the marks are drawn in.
+  if (theme.coverStatement === 'line') {
+    out.push(`.cover-statement-zone > blockquote{ background: none; border-left: ${MARK_LINE_PT}pt solid var(--brand); padding: 4pt 0 4pt 22pt; }`);
+  }
+  return out.length === 0 ? '' : `\n${out.join('\n')}`;
+}
+
 export async function buildHtml(doc: Doc, theme: Theme): Promise<string> {
-  const faces = await arimoFaceCss();
+  const faces = await themeFaceCss(theme);
   const { colors: c, type: ty, page } = theme;
   const trim = PAGE_PT[page.size];
   const colWidthPt = trim.w - page.marginPt * 2;
@@ -357,7 +395,7 @@ export async function buildHtml(doc: Doc, theme: Theme): Promise<string> {
 *{ box-sizing: border-box; }
 html,body{ margin:0; padding:0; }
 body{
-  font-family: Arimo, ${theme.font.document}, sans-serif;
+  font-family: ${familyStack(theme.font)};
   font-size: ${ty.bodyPt}pt;
   line-height: ${ty.leading};
   color: var(--ink);
@@ -549,7 +587,7 @@ body{ position: relative; }
 .corner-mark-panel svg{ height: 100%; width: auto; display: block; }
 .corner-mark-panel .c-brand{ fill: var(--brand); }
 .corner-mark-panel .c-muted{ fill: var(--muted); }
-.corner-mark-panel .c-ink{ fill: var(--ink); }`;
+.corner-mark-panel .c-ink{ fill: var(--ink); }${faceRules(theme)}${markLineRules(theme)}`;
 
   const cover = doc.meta.cover === true;
   const headerHtml = cover ? '' : firstPageHeader(doc, theme);

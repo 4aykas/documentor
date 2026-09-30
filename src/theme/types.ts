@@ -1,5 +1,8 @@
 export type PageSize = 'A4' | 'Letter';
 
+/** A face render/fonts.ts can inline. Free, OFL, and carrying Cyrillic. */
+export type FaceId = 'arimo' | 'manrope' | 'jetbrains-mono';
+
 /** Trim size in points, portrait. Chromium is given millimetres; see toMm. */
 export const PAGE_PT: Record<PageSize, { w: number; h: number }> = {
   A4: { w: 595.28, h: 841.89 },
@@ -48,13 +51,20 @@ export type Theme = {
   font: {
     /** The family name written into DOCX, where fonts are not embedded. */
     document: string;
+    /** The body face embedded into PDFs — see render/fonts.ts for the set. */
+    embed: FaceId;
     /**
-     * The family embedded into PDFs. Only 'arimo' exists, so nothing consults
-     * this yet — it is a forward-compatibility guard, kept and validated so
-     * that adding a second embeddable face does not force every theme file
-     * already in the wild to change shape.
+     * Headings and the document title. Defaults to the body face at 700 —
+     * see resolveTheme — which is exactly what every theme drew before this
+     * existed, so a theme that says nothing about it renders unchanged.
      */
-    embed: 'arimo';
+    heading: { document: string; embed: FaceId; weight: number };
+    /**
+     * The small furniture — letterhead lines, table header cells, the running
+     * header — set apart from the text in a face of its own, the way a Swiss
+     * layout sets its labels in a monospace. Null keeps them in the body face.
+     */
+    label: { document: string; embed: FaceId; uppercase: boolean } | null;
   };
   logo: Logo | null;
   /**
@@ -82,6 +92,14 @@ export type Theme = {
     smallPt: number;
   };
   letterhead: string[];
+  /**
+   * How a cover's statement band (a quote between the cover's rules) is set
+   * apart. 'tint' is a brand-tinted fill behind a thick brand bar; 'line' is a
+   * brand hairline down its left edge and nothing behind it, for a theme whose
+   * marks are drawn in line too. Defaults to 'tint', what every cover drew
+   * before this existed.
+   */
+  coverStatement: 'tint' | 'line';
 };
 
 export const PT_TO_MM = 0.352778;

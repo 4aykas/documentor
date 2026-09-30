@@ -2,7 +2,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PAGE_PT, type PageSize, type Theme } from './types.js';
+import { FACE_IDS, FACES } from '../render/fonts.js';
+import { PAGE_PT, type FaceId, type PageSize, type Theme } from './types.js';
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const PAGE_SIZES = new Set<PageSize>(['A4', 'Letter']);
@@ -78,11 +79,41 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
     bad('page.marginPt', `${marginPt}pt margins leave no usable column on ${size}`);
   }
 
-  // Validated although nothing reads it: see the comment on Theme['font']
-  // ['embed']. Rejecting an unknown value now is what keeps a theme that names
-  // a second face from silently printing in the first one later.
-  const embed = (font['embed'] ?? 'arimo') as string;
-  if (embed !== 'arimo') bad('font.embed', `only 'arimo' is available, got ${JSON.stringify(embed)}`);
+  // An unknown face is refused rather than skipped: a PDF that silently
+  // printed in the body face would look finished while being wrong.
+  const face = (v: unknown, where: string, fallback: FaceId): FaceId => {
+    const id = v ?? fallback;
+    if (typeof id !== 'string' || !(FACE_IDS as readonly string[]).includes(id)) {
+      bad(where, `expected one of ${FACE_IDS.join(', ')}, got ${JSON.stringify(id)}`);
+    }
+    return id as FaceId;
+  };
+  const embed = face(font['embed'], 'font.embed', 'arimo');
+  const document = String(font['document'] ?? 'Arial');
+  const rawHeading = (font['heading'] ?? {}) as Record<string, unknown>;
+  const headingWeight = rawHeading['weight'] ?? 700;
+  const heading = {
+    document: String(rawHeading['document'] ?? document),
+    embed: face(rawHeading['embed'], 'font.heading.embed', embed),
+    weight: headingWeight as number,
+  };
+  // Checked against the heading face itself: a weight it does not ship would
+  // print as a synthetic bold that looks finished while being wrong.
+  const shipped = FACES[heading.embed]?.weights ?? [];
+  if (!shipped.includes(headingWeight as number)) {
+    bad('font.heading.weight', `${heading.embed} is inlined at ${shipped.join(', ')}, got ${JSON.stringify(headingWeight)}`);
+  }
+  let label: Theme['font']['label'] = null;
+  const rawLabel = font['label'];
+  if (rawLabel !== undefined && rawLabel !== null) {
+    const l = rawLabel as Record<string, unknown>;
+    if (typeof l['document'] !== 'string') bad('font.label.document', 'expected a family name');
+    label = {
+      document: l['document'],
+      embed: face(l['embed'], 'font.label.embed', embed),
+      uppercase: l['uppercase'] === true,
+    };
+  }
 
   let logo: Theme['logo'] = null;
   const rawLogo = t['logo'];
@@ -165,7 +196,7 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
         title: hex(colors['title'], 'colors.title', ink),
       };
     })(),
-    font: { document: String(font['document'] ?? 'Arial'), embed: 'arimo' },
+    font: { document, embed, heading, label },
     logo,
     cornerMark,
     page: { size, marginPt },
@@ -185,6 +216,11 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
       };
     })(),
     letterhead,
+    coverStatement: (() => {
+      const v = t['coverStatement'] ?? 'tint';
+      if (v !== 'tint' && v !== 'line') bad('coverStatement', `expected "tint" or "line", got ${JSON.stringify(v)}`);
+      return v;
+    })(),
   };
 }
 

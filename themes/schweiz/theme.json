@@ -1,0 +1,37 @@
+{
+  "id": "schweiz",
+  "name": "Schweiz",
+  "$source": {
+    "by": "documentor theme capture https://www.rosarot.ch/agentur --name schweiz",
+    "note": "Modelled on the measured page, not copied from it. The site sets its text in Euclid Square and its labels in Aeonik Mono, both commercial; Manrope and JetBrains Mono stand in for them (OFL, with Cyrillic). Colours are the page's own: black type, #707070 for secondary text, black hairlines. No artwork or logo of the site is used."
+  },
+  "colors": {
+    "brandOnLight": "#000000",
+    "brandOnDark": "#FFFFFF",
+    "ink": "#000000",
+    "muted": "#707070",
+    "rule": "#000000",
+    "title": "#000000"
+  },
+  "font": {
+    "document": "Manrope",
+    "embed": "manrope",
+    "heading": { "document": "Manrope", "embed": "manrope", "weight": 800 },
+    "label": { "document": "JetBrains Mono", "embed": "jetbrains-mono", "uppercase": true }
+  },
+  "page": {
+    "size": "A4",
+    "marginPt": 56
+  },
+  "type": {
+    "bodyPt": 9.5,
+    "leading": 1.5,
+    "titlePt": 40,
+    "h1Pt": 24,
+    "h2Pt": 14,
+    "h3Pt": 10.5,
+    "smallPt": 7.5
+  },
+  "letterhead": [],
+  "coverStatement": "line"
+}

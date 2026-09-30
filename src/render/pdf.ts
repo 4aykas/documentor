@@ -3,7 +3,7 @@ import { PDFDocument } from 'pdf-lib';
 import type { Doc } from '../ir/types.js';
 import { PAGE_PT, type Theme } from '../theme/types.js';
 import { buildHtml, escapeHtml } from './html.js';
-import { arimoFaceCss } from './fonts.js';
+import { familyStack, themeFaceCss } from './fonts.js';
 
 /**
  * The second guard on "this renderer fetches nothing".
@@ -109,12 +109,14 @@ const HEADER_TITLE_MAX_LINES = 2;
 const HEADER_TITLE_CLAMP_THRESHOLD_CHARS = 100;
 
 async function runningHeader(doc: Doc, theme: Theme): Promise<string> {
-  const faces = await arimoFaceCss();
+  const faces = await themeFaceCss(theme);
+  const face = theme.font.label ?? theme.font;
+  const caps = theme.font.label?.uppercase === true ? 'text-transform:uppercase;letter-spacing:0.04em;' : '';
   const pad = `${(theme.page.marginPt * 1.333).toFixed(0)}px`;
   const maxHeight = `${HEADER_TITLE_LINE_HEIGHT_PT * HEADER_TITLE_MAX_LINES}pt`;
   const titleStyle = doc.meta.title.length > HEADER_TITLE_CLAMP_THRESHOLD_CHARS ? ` style="max-height:${maxHeight};overflow:hidden;"` : '';
   return `<style>${faces}</style>
-<div style="width:100%;padding:0 ${pad};font-family:Arimo,Arial,sans-serif;font-size:7pt;color:${theme.colors.muted};display:flex;justify-content:space-between;">
+<div style="width:100%;padding:0 ${pad};font-family:${theme.font.label === null && theme.font.embed === 'arimo' ? 'Arimo,Arial,sans-serif' : familyStack(face)};${caps}font-size:7pt;color:${theme.colors.muted};display:flex;justify-content:space-between;">
 <span${titleStyle}>${escapeHtml(doc.meta.title)}</span>
 <span><span class="pageNumber"></span> / <span class="totalPages"></span></span>
 </div>`;
