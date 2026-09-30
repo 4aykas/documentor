@@ -19,7 +19,7 @@ import type { Block, Doc, Inline } from '../ir/types.js';
 import { PAGE_PT, type Theme } from '../theme/types.js';
 import { PANEL_BORDER_PT, coverStatementPt, partitionCoverBlocks, ruleIndexes, splitAtFirstPagebreak } from './cover-zones.js';
 import { columnWidthsDxa, fitsWidth, isKeyValue } from './table-width.js';
-import { GRID_TITLE_AFTER_PT, GRID_TITLE_BEFORE_PT, gridTitlePt, LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines, mastheadColumns } from './letterhead.js';
+import { GRID_GUTTER_PT, GRID_TITLE_AFTER_PT, GRID_TITLE_BEFORE_PT, gridMark, gridTitlePt, LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines, mastheadColumns } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
 import { normalizeDocx } from './normalize-docx.js';
 import { mixToWhite, readableOn, SCALE_STEPS, STATEMENT_TINT, stepOf, weekLabel } from './tint.js';
@@ -92,6 +92,8 @@ function styles(theme: Theme) {
         // and further down, a choice of that masthead rather than a cover value.
         ? para('DocTitle', 'Doc Title', hd({ size: halfPt(gridTitlePt(ty)), bold: true, color: hex(c.ink) }), {
             spacing: { before: dxa(GRID_TITLE_BEFORE_PT), after: 0, line: 250 },
+            // Hung from column 02's edge, as html.ts's .mg-text is.
+            indent: { left: gridHangDxa(theme) },
           })
         : para('DocTitle', 'Doc Title', hd({ size: halfPt(ty.h1Pt), bold: true, color: hex(c.ink) }), {
             // html.ts: `.doc-title{ margin: 22pt 0 0; }`
@@ -164,6 +166,13 @@ function styles(theme: Theme) {
             para('DocMastIndex', 'Doc Masthead Index', lb({ size: halfPt(ty.smallPt - 1), color: hex(c.brandOnLight) }), { spacing: { after: dxa(7) } }),
             para('DocMastStrong', 'Doc Masthead Strong', lb({ size: halfPt(ty.smallPt - 1), bold: true, color: hex(c.ink) }), { spacing: { after: 0 } }),
             para('DocMastLine', 'Doc Masthead Line', lb({ size: halfPt(ty.smallPt - 1), color: hex(c.muted) }), { spacing: { after: 0 } }),
+            // html.ts's .mg-text subtitle, with the hairline that closes the
+            // title band under it; a cover keeps the plain DocSubtitle.
+            para('DocGridSubtitle', 'Doc Grid Subtitle', { size: halfPt(ty.bodyPt + 1.5), color: hex(c.muted) }, {
+              indent: { left: gridHangDxa(theme) },
+              spacing: { before: dxa(10), after: dxa(GRID_TITLE_AFTER_PT) },
+              border: { bottom: { style: BorderStyle.SINGLE, size: eighthPt(0.75), color: hex(c.ink), space: 16 } },
+            }),
           ]
         : []),
     ],
@@ -1307,9 +1316,43 @@ function firstPageHeader(doc: Doc, theme: Theme): Header {
  * lives in the body, and an anchored picture there would move with whatever
  * someone types above it.
  */
+/**
+ * The corner mark in column 01 of a grid masthead's title band (html.ts's
+ * .corner-mark-grid). Anchored to the title paragraph rather than the page,
+ * so it travels with the title: an edit above the title moves both together,
+ * which is the only reason the mark could not live in the header.
+ */
+function gridTitleMark(theme: Theme): ImageRun[] {
+  const mark = theme.cornerMark;
+  if (!mark?.png) return [];
+  const bytes = Buffer.from(mark.png.slice(mark.png.indexOf(',') + 1), 'base64');
+  const size = pngSize(bytes);
+  if (size === null) throw new Error('theme.cornerMark.png is not a usable PNG (bad signature, too few bytes, or a zero dimension)');
+  const { heightPt, dropPt } = gridMark(theme.type);
+  return [new ImageRun({
+    data: bytes,
+    type: 'png',
+    transformation: { width: px96((heightPt * size.w) / size.h), height: px96(heightPt) },
+    floating: {
+      horizontalPosition: { relative: HorizontalPositionRelativeFrom.MARGIN, offset: 0 },
+      // Word measures from the top of the paragraph's space-before, not from
+      // its first line, so the title's own 46pt is part of the drop.
+      verticalPosition: { relative: VerticalPositionRelativeFrom.PARAGRAPH, offset: emu(GRID_TITLE_BEFORE_PT + dropPt) },
+      wrap: { type: TextWrappingType.NONE },
+      margins: { top: 0, bottom: 0, left: 0, right: 0 },
+    },
+  })];
+}
+
+/** Where column 02 starts: one column and one gutter in from the margin. */
+function gridHangDxa(theme: Theme): number {
+  const gap = dxa(GRID_GUTTER_PT);
+  return Math.floor((columnDxa(theme) - 3 * gap) / 4) + gap;
+}
+
 function gridMastheadHeader(doc: Doc, theme: Theme): Header {
   const total = columnDxa(theme);
-  const gap = dxa(10);
+  const gap = dxa(GRID_GUTTER_PT);
   const col = Math.floor((total - 3 * gap) / 4);
   const rule = { style: BorderStyle.SINGLE, size: eighthPt(0.75), color: hex(theme.colors.ink) };
   const text = (style: string, t: string) => new Paragraph({ style, children: [new TextRun({ text: t })] });
@@ -1415,8 +1458,11 @@ export async function renderDocx(doc: Doc, theme: Theme, opts: { epochSeconds: n
   const bodyChildren: (Paragraph | Table)[] = ruleIdxs.length > 0
     ? coverBody(doc, theme, refOf, pageBlocks, restBlocks, ruleIdxs, wideTables)
     : [
-        new Paragraph({ style: cover ? 'DocTitleCover' : 'DocTitle', children: [new TextRun({ text: doc.meta.title })] }),
-        ...(doc.meta.subtitle ? [new Paragraph({ style: 'DocSubtitle', children: [new TextRun({ text: doc.meta.subtitle })] })] : []),
+        new Paragraph({
+          style: cover ? 'DocTitleCover' : 'DocTitle',
+          children: [...(!cover && theme.masthead === 'grid' ? gridTitleMark(theme) : []), new TextRun({ text: doc.meta.title })],
+        }),
+        ...(doc.meta.subtitle ? [new Paragraph({ style: !cover && theme.masthead === 'grid' ? 'DocGridSubtitle' : 'DocSubtitle', children: [new TextRun({ text: doc.meta.subtitle })] })] : []),
         ...doc.blocks.flatMap((b) => blocks(b, theme, refOf, { wide: wideTables })),
       ];
 

@@ -16,9 +16,19 @@ export function gridTitlePt(type: Theme['type']): number {
   return Math.round((type.h1Pt + type.titlePt) / 2);
 }
 
+/** The corner mark's height in column 01 of the title band, and how far it
+ *  drops to sit centred on the title's first line (set at 1.04 leading). */
+export function gridMark(type: Theme['type']): { heightPt: number; dropPt: number } {
+  const titlePt = gridTitlePt(type);
+  const heightPt = Math.round(titlePt * 0.82);
+  return { heightPt, dropPt: Number(((titlePt * 1.04 - heightPt) / 2).toFixed(1)) };
+}
+
 /** The space above a grid masthead's title, and below its subtitle. */
 export const GRID_TITLE_BEFORE_PT = 46;
 export const GRID_TITLE_AFTER_PT = 26;
+/** The gutter between the grid's four columns, in the head and the title band alike. */
+export const GRID_GUTTER_PT = 10;
 
 /**
  * The gap above the first line of the document's own entity/date column —

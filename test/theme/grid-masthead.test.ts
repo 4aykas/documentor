@@ -66,12 +66,14 @@ describe('the masthead theme field', () => {
 describe('a grid masthead in print', () => {
   const doc = docWith({ entity: 'TEBIN.PRO Sp. z o.o.', date: '30.09.2026' });
 
-  it('numbers its columns, stands the mark beside the title, and draws no tick row', async () => {
+  it('numbers its columns, keeps the grid through the title band, and draws no tick row', async () => {
     const theme = await loadTheme('tebin-schweiz');
     const html = await buildHtml(doc, theme);
     expect(html).toMatch(/<header class="mast-grid"><div class="mg-col"><div class="mg-idx">01<\/div><div class="logo"/);
     for (const i of ['02', '03', '04']) expect(html).toContain(`<div class="mg-idx">${i}</div>`);
-    expect(html).toMatch(/<div class="mg-title"><div class="corner-mark-grid"><svg/);
+    expect(html).toMatch(/<div class="mg-title"><div class="mg-mark"><div class="corner-mark-grid"><svg/);
+    expect(html).toMatch(/<div class="mg-text"><h1 class="doc-title">Technische Notiz<\/h1>/);
+    expect(html).toContain('.mg-text{ grid-column: 2 / 5;');
     expect(html).toContain(`.mg-title .doc-title{ font-size: ${gridTitlePt(theme.type)}pt;`);
     expect(html).toMatch(/\.corner-mark-grid \.c-line\{/);
     expect(html).not.toContain('<div class="tick-row">');
@@ -93,7 +95,21 @@ describe('a grid masthead in print', () => {
     expect(head.match(/<w:gridCol /g)?.length).toBeGreaterThanOrEqual(7);
     const styles = await docxPart(buf, 'word/styles.xml');
     expect(styles).toContain('w:styleId="DocMastStrong"');
+    expect(styles).toMatch(/w:styleId="DocTitle"[\s\S]*?<w:ind w:left="\d+"/);
     const classic = await docxPart(await renderDocx(doc, await loadTheme('tebin'), { epochSeconds: EPOCH }), 'word/styles.xml');
     expect(classic).not.toMatch(/DocMast/);
+  });
+});
+
+describe('the grid title band in Word', () => {
+  it('anchors the corner mark to the title and closes the band under the subtitle', async () => {
+    const doc = docWith({ subtitle: 'Stufe DD' });
+    const body = await docxPart(await renderDocx(doc, await loadTheme('tebin-schweiz'), { epochSeconds: EPOCH }), 'word/document.xml');
+    const title = body.slice(body.indexOf('w:val="DocTitle"'), body.indexOf('Technische Notiz'));
+    expect(title).toMatch(/<wp:anchor[\s\S]*relativeFrom="paragraph"/);
+    expect(body).toContain('w:val="DocGridSubtitle"');
+    const cover = ingestMarkdown('Lead\n', { title: 'T', subtitle: 'S', cover: true }).doc;
+    const coverBody = await docxPart(await renderDocx(cover, await loadTheme('tebin-schweiz'), { epochSeconds: EPOCH }), 'word/document.xml');
+    expect(coverBody).not.toContain('DocGridSubtitle');
   });
 });

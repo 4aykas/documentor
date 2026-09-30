@@ -7,7 +7,7 @@ import { PAGE_PT, toMm, type Theme } from '../theme/types.js';
 import { PANEL_BORDER_PT, coverStatementPt, partitionCoverBlocks, ruleIndexes, splitAtFirstPagebreak } from './cover-zones.js';
 import { familyStack, themeFaceCss } from './fonts.js';
 import { lineRules, MARK_LINE_PT, usesLines } from './line-mark.js';
-import { GRID_TITLE_AFTER_PT, GRID_TITLE_BEFORE_PT, gridTitlePt, LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines, mastheadColumns } from './letterhead.js';
+import { GRID_GUTTER_PT, GRID_TITLE_AFTER_PT, GRID_TITLE_BEFORE_PT, gridMark, gridTitlePt, LETTERHEAD_ENTITY_DATE_GAP_PT, letterheadDocLines, mastheadColumns } from './letterhead.js';
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
 import { SCALE_STEPS, STATEMENT_TINT, mixToWhite, readableOn, stepOf, weekLabel } from './tint.js';
 import { columnWidthsDxa, dxa, fitsWidth, isKeyValue } from './table-width.js';
@@ -330,10 +330,12 @@ function firstPageHeader(doc: Doc, theme: Theme): string {
  * rather than captions, because a caption would have to be in the document's
  * language and the index reads the same in all of them.
  *
- * Below it the title gets the page's width at a size between h1 and a
- * cover's, tight, with the corner mark standing to its right at the height of
- * its first line — the one asymmetric thing on the page. No tick row: the
- * column rules above already divide the head from the body.
+ * The title band below keeps the same four columns, so the grid holds all
+ * the way down the head instead of stopping at its first row. The corner mark
+ * stands in column 01, straight under the logo, the two of them one vertical
+ * axis; the title and subtitle hang from column 02's edge, at a size between
+ * h1 and a cover's, and a hairline under them spans 02–04 only. No tick row:
+ * those rules already divide the head from the body.
  */
 function gridMasthead(doc: Doc, theme: Theme): string {
   const logo = theme.logo
@@ -346,9 +348,9 @@ function gridMasthead(doc: Doc, theme: Theme): string {
     .join('');
   const mark = theme.cornerMark ? `<div class="corner-mark-grid">${theme.cornerMark.svg}</div>` : '';
   return `<header class="mast-grid"><div class="mg-col"><div class="mg-idx">01</div>${logo}</div>${cols}</header>
-<div class="mg-title">${mark}<h1 class="doc-title">${escapeHtml(doc.meta.title)}</h1>${
+<div class="mg-title"><div class="mg-mark">${mark}</div><div class="mg-text"><h1 class="doc-title">${escapeHtml(doc.meta.title)}</h1>${
     doc.meta.subtitle ? `<p class="doc-subtitle">${escapeHtml(doc.meta.subtitle)}</p>` : ''
-  }</div>`;
+  }</div></div>`;
 }
 
 /** The grid masthead's rules, only for a theme that asks for it — so no other
@@ -359,20 +361,25 @@ function mastheadRules(theme: Theme): string {
   const label = theme.font.label ?? theme.font;
   const caps = theme.font.label?.uppercase ? ' text-transform: uppercase; letter-spacing: 0.04em;' : '';
   const titlePt = gridTitlePt(ty);
-  const markPt = Math.round(titlePt * 0.82);
+  const { heightPt: markPt, dropPt: markDropPt } = gridMark(ty);
+  // A whole number of CSS pixels (0.75pt each): at a fractional line height
+  // Chromium rounds alternate lines up and down, and a column of small caps
+  // shows the uneven steps at once.
+  const gridLinePt = Math.round(((ty.smallPt - 1) * 1.45) / 0.75) * 0.75;
   return `
-.mast-grid{ display: grid; grid-template-columns: repeat(4, 1fr); column-gap: 10pt; }
+.mast-grid,.mg-title{ display: grid; grid-template-columns: repeat(4, 1fr); column-gap: ${GRID_GUTTER_PT}pt; }
 .mg-col{ border-top: ${MARK_LINE_PT}pt solid var(--ink); padding-top: 5pt; min-width: 0; }
 .mg-idx{ color: var(--brand); margin-bottom: 7pt; }
-.mg-idx,.mg-strong,.mg-line{ font-family: ${familyStack(label, 'monospace')};${caps} font-size: ${ty.smallPt - 1}pt; line-height: 1.45; overflow-wrap: break-word; }
+.mg-idx,.mg-strong,.mg-line{ font-family: ${familyStack(label, 'monospace')};${caps} font-size: ${ty.smallPt - 1}pt; line-height: ${gridLinePt}pt; overflow-wrap: break-word; }
 .mg-strong{ color: var(--ink); font-weight: 700; }
 .mg-line{ color: var(--muted); }
 .mast-grid .logo{ margin-top: 1pt; }
 .mg-title{ margin: ${GRID_TITLE_BEFORE_PT}pt 0 ${GRID_TITLE_AFTER_PT}pt; }
-.mg-title::after{ content: ""; display: block; clear: both; }
-.mg-title .doc-title{ font-size: ${titlePt}pt; line-height: 1.04; letter-spacing: -0.028em; margin: 0; max-width: 82%; }
-.mg-title .doc-subtitle{ margin-top: 8pt; font-size: ${ty.bodyPt + 1.5}pt; }
-.corner-mark-grid{ float: right; height: ${markPt}pt; margin: ${(titlePt - markPt) / 2}pt 0 0 12pt; }
+.mg-mark{ grid-column: 1; }
+.mg-text{ grid-column: 2 / 5; border-bottom: ${MARK_LINE_PT}pt solid var(--ink); padding-bottom: 16pt; }
+.mg-title .doc-title{ font-size: ${titlePt}pt; line-height: 1.04; letter-spacing: -0.028em; margin: 0; }
+.mg-title .doc-subtitle{ margin: 10pt 0 0; font-size: ${ty.bodyPt + 1.5}pt; }
+.corner-mark-grid{ height: ${markPt}pt; margin-top: ${markDropPt}pt; }
 .corner-mark-grid svg{ height: 100%; width: auto; display: block; }
 .corner-mark-grid .c-brand{ fill: var(--brand); }
 .corner-mark-grid .c-muted{ fill: var(--muted); }

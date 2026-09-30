@@ -411,11 +411,16 @@ the gutters break the rule:
 
 An empty column is dropped and the numbers close up. Numbers stand in for
 captions because a caption would have to be translated, and a number reads
-the same in every language. The title below gets the page's width, set
-between h1 and cover size, and the corner mark stands to its right. Word
-draws the same columns in its first-page header. The mark beside the title is
-PDF-only, because in Word the title lives in the editable body. The default
-is `"band"`.
+the same in every language. The grid continues through the title band:
+
+- The corner mark stands in column 01, under the logo.
+- The title and subtitle hang from column 02's edge, set between h1 and cover
+  size.
+- A hairline across columns 02–04 closes the band.
+
+Word draws the columns in its first-page header and hangs the title the same
+way. It anchors the mark to the title paragraph, so the two move together
+when someone edits above them. The default is `"band"`.
 
 ## Requirements
 
