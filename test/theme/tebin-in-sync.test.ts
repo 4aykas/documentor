@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { TEBIN_ENTITIES, tebinThemeJson } from '../../src/theme/tebin.js';
+import { tebinSchweizId, tebinSchweizThemeJson } from '../../src/theme/tebin-schweiz.js';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -23,6 +24,19 @@ describe.each(TEBIN_ENTITIES)('themes/$id/theme.json', (entity) => {
     expect(
       committed.replace(/\r\n/g, '\n'),
       `themes/${entity.id}/theme.json is generated — run \`npm run theme:tebin\` and commit the result, rather than editing it`,
+    ).toBe(regenerated);
+  });
+});
+
+// The Schweiz variants come from the same script and the same snapshot, and
+// are guarded the same way.
+describe.each(TEBIN_ENTITIES.map((e) => ({ ...e, variant: tebinSchweizId(e) })))('themes/$variant/theme.json', (entity) => {
+  it('is exactly what the generator produces from the vendored snapshot', async () => {
+    const regenerated = await tebinSchweizThemeJson(join(ROOT, 'brand', 'tebin'), entity);
+    const committed = readFileSync(join(ROOT, 'themes', entity.variant, 'theme.json'), 'utf8');
+    expect(
+      committed.replace(/\r\n/g, '\n'),
+      `themes/${entity.variant}/theme.json is generated — run \`npm run theme:tebin\` and commit the result, rather than editing it`,
     ).toBe(regenerated);
   });
 });

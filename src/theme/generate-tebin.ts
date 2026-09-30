@@ -13,12 +13,21 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { TEBIN_ENTITIES, tebinThemeJson } from './tebin.js';
+import { tebinSchweizId, tebinSchweizThemeJson } from './tebin-schweiz.js';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
-for (const entity of TEBIN_ENTITIES) {
-  const out = await tebinThemeJson(join(ROOT, 'brand', 'tebin'), entity);
-  const target = join(ROOT, 'themes', entity.id, 'theme.json');
+// Each entity twice: the classic theme and its Schweiz variant (see
+// tebin-schweiz.ts). Same snapshot, same letterhead, so the variant can never
+// print a different company than the classic theme does.
+const jobs = TEBIN_ENTITIES.flatMap((entity) => [
+  { id: entity.id, make: () => tebinThemeJson(join(ROOT, 'brand', 'tebin'), entity) },
+  { id: tebinSchweizId(entity), make: () => tebinSchweizThemeJson(join(ROOT, 'brand', 'tebin'), entity) },
+]);
+
+for (const job of jobs) {
+  const out = await job.make();
+  const target = join(ROOT, 'themes', job.id, 'theme.json');
   // themes/<entity>/ does not exist until the first run.
   await mkdir(dirname(target), { recursive: true });
   await writeFile(target, out, 'utf8');

@@ -4,7 +4,9 @@ It also contains TEBIN brand assets, which are not:
 
   brand/tebin/logo-full.svg
   brand/tebin/logo-full.png
-  the "logo" field of themes/tebin/theme.json
+  the "logo" and "cornerMark" fields of every themes/tebin*/theme.json,
+  including the outlined marks of the -schweiz variants, which are traced
+  from them
 
   © TEBIN — all rights reserved.
 
