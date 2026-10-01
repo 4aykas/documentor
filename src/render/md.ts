@@ -27,6 +27,7 @@ function inline(nodes: Inline[]): string {
         case 'text': return n.v;
         case 'strong': return `**${inline(n.children)}**`;
         case 'em': return `*${inline(n.children)}*`;
+        case 'del': return `~~${inline(n.children)}~~`;
         case 'code': return `\`${inline(n.children)}\``;
         case 'link':
           return schemeIsRefused(n.href)

@@ -3,7 +3,7 @@ import type { Align, Block, Doc, Inline } from './types.js';
 const BLOCK_TYPES = new Set([
   'heading', 'para', 'list', 'table', 'heatmap', 'image', 'code', 'quote', 'rule', 'pagebreak',
 ]);
-const INLINE_TYPES = new Set(['text', 'strong', 'em', 'code', 'link']);
+const INLINE_TYPES = new Set(['text', 'strong', 'em', 'del', 'code', 'link']);
 const ALIGNS = new Set<Align>(['l', 'r', 'c']);
 
 function fail(where: string, why: string): never {

@@ -45,9 +45,7 @@ function inlinesOf(tokens: Token[] | undefined, sink: Sink, images?: Tokens.Imag
         out.push({ t: 'text', v: '\n' });
         break;
       case 'del':
-        // The IR has no strikethrough. Keep the words, say the styling went.
-        sink.dropped.push('strikethrough styling (the text was kept)');
-        out.push(...inlinesOf((tok as Tokens.Del).tokens, sink, images));
+        out.push({ t: 'del', children: inlinesOf((tok as Tokens.Del).tokens, sink, images) });
         break;
       case 'html':
         sink.dropped.push(`inline html: ${truncate((tok as Tokens.HTML).text)}`);

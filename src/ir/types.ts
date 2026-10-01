@@ -6,6 +6,10 @@ export type Inline =
   | { t: 'text'; v: string }
   | { t: 'strong'; children: Inline[] }
   | { t: 'em'; children: Inline[] }
+  // Struck-through text: words a document shows as deleted, the way a redline
+  // marks them. Carried, not dropped, because in a marked-up contract the
+  // struck words are as much the content as the ones that replace them.
+  | { t: 'del'; children: Inline[] }
   | { t: 'code'; children: Inline[] }
   | { t: 'link'; href: string; children: Inline[] };
 

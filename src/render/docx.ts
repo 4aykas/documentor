@@ -247,7 +247,7 @@ function listNumbering(doc: Doc, theme: Theme): { refOf: Map<Block, string>; con
  */
 function inline(
   nodes: Inline[],
-  fmt: { bold?: boolean; italics?: boolean; code?: boolean; link?: boolean; plainLink?: boolean; muted?: boolean } = {},
+  fmt: { bold?: boolean; italics?: boolean; strike?: boolean; code?: boolean; link?: boolean; plainLink?: boolean; muted?: boolean } = {},
   theme: Theme,
 ): ParagraphChild[] {
   const out: ParagraphChild[] = [];
@@ -259,6 +259,9 @@ function inline(
           ...(fmt.bold ? { bold: true } : {}),
           // The option is `italics`, not `italic`.
           ...(fmt.italics ? { italics: true } : {}),
+          // html.ts's `del`: struck, and in the brand colour, so a deletion reads
+          // as a deletion in Word too rather than as text with a line through it.
+          ...(fmt.strike ? { strike: true, color: hex(theme.colors.brandOnLight) } : {}),
           // Carried down rather than applied at the ExternalHyperlink, because
           // a link's appearance is a property of its runs and a link's text
           // can need more than one of them — see the `link` case below.
@@ -286,6 +289,7 @@ function inline(
         break;
       case 'strong': out.push(...inline(n.children, { ...fmt, bold: true }, theme)); break;
       case 'em': out.push(...inline(n.children, { ...fmt, italics: true }, theme)); break;
+      case 'del': out.push(...inline(n.children, { ...fmt, strike: true }, theme)); break;
       case 'code': out.push(...inline(n.children, { ...fmt, code: true }, theme)); break;
       case 'link':
         if (schemeIsRefused(n.href)) {

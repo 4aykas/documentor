@@ -43,6 +43,7 @@ function inline(nodes: Inline[]): string {
         case 'text': return escapeHtml(n.v);
         case 'strong': return `<strong>${inline(n.children)}</strong>`;
         case 'em': return `<em>${inline(n.children)}</em>`;
+        case 'del': return `<del>${inline(n.children)}</del>`;
         case 'code': return `<code>${inline(n.children)}</code>`;
         case 'link':
           return schemeIsRefused(n.href)
@@ -509,6 +510,9 @@ ${[0, 1, 2, 3].map((d) => `.d${d}{ margin-left: ${d * 14}pt; }`).join('\n')}
 li{ margin: 0 0 2pt; }
 blockquote{ margin: 0 0 10pt; padding-left: 12pt; border-left: 2pt solid var(--rule); color: var(--muted); }
 pre{ background: #F6F6F4; padding: 8pt 10pt; border-radius: 2pt; overflow-wrap: anywhere; white-space: pre-wrap; break-inside: avoid; }
+/* A deletion in a marked-up document: struck in the brand colour, so it
+   reads as removed rather than as text that happens to have a line through it. */
+del{ color: var(--brand); text-decoration-thickness: 0.06em; }
 code{ font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: ${(ty.bodyPt * 0.92).toFixed(1)}pt; }
 pre code{ font-size: ${(ty.bodyPt * 0.86).toFixed(1)}pt; }
 /* break-after: avoid keeps a rule from being stranded alone at the foot of a
