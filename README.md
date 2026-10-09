@@ -25,9 +25,23 @@ this installs the newest one:
 
 ```bash
 npm install -g https://github.com/4aykas/documentor/releases/latest/download/tebin-documentor.tgz
-documentor setup      # the Chromium build this copy launches, once
-documentor doctor     # checks everything a build needs, names any fix
+documentor build report.md --to pdf
 ```
+
+That is the whole install. The first command that writes a PDF notices the
+Chromium build this copy launches is missing, says so, installs it (one
+time, about 150 MB) and then builds. Two commands exist for doing that
+ahead of time and for finding out what else is missing:
+
+```bash
+documentor setup      # installs that Chromium now, before any document
+documentor doctor     # checks everything a build needs, names the fix for each miss
+```
+
+If anything stops a run — Node older than 22, a Chromium download that a
+proxy blocked, a font Word needs — the message names what is missing and
+the command or download that fixes it. `doctor` repeats all of it in one
+place.
 
 Use `documentor setup` for the browser, not `npx playwright install
 chromium`. npx installs the Chromium build of whatever playwright release is

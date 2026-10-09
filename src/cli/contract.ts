@@ -10,7 +10,6 @@
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve } from 'node:path';
-import { chromium } from 'playwright-core';
 import { assembleContract } from '../contract/assemble.js';
 import { readContractData } from '../contract/data.js';
 import { ContractError } from '../contract/types.js';
@@ -22,6 +21,7 @@ import { loadTheme } from '../theme/resolve.js';
 import { checkFormats, FORMATS } from './build.js';
 import { DEFAULT_THEME } from './config.js';
 import { resolveEpoch } from './timestamp.js';
+import { launchBrowser, wordFontNote } from './preflight.js';
 
 type Io = { log: (s: string) => void; err: (s: string) => void };
 
@@ -128,7 +128,7 @@ export async function runContract(argv: string[], io: Io): Promise<number> {
   await mkdir(dir, { recursive: true });
   const stem = contractStem(input);
 
-  const browser = formats.includes('pdf') ? await chromium.launch() : undefined;
+  const browser = formats.includes('pdf') ? await launchBrowser(io) : undefined;
   try {
     for (const format of formats) {
       const target = join(dir, `${stem}.${theme.id}.${format}`);
@@ -140,7 +140,11 @@ export async function runContract(argv: string[], io: Io): Promise<number> {
               ...(browser === undefined ? {} : { browser }),
             })
           : format === 'docx'
-            ? await renderDocx(doc, theme, { epochSeconds })
+            ? await (async () => {
+                const note = wordFontNote(theme);
+                if (note !== undefined) io.err(`documentor: warning — ${note}`);
+                return renderDocx(doc, theme, { epochSeconds });
+              })()
             : Buffer.from(renderMarkdown(doc), 'utf8');
       await writeFile(target, bytes);
       io.log(`${target}  (${bytes.length.toLocaleString('en-US')} bytes)`);

@@ -8,7 +8,7 @@
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve } from 'node:path';
-import { chromium, type Browser } from 'playwright-core';
+import type { Browser } from 'playwright-core';
 import { assembleProposal } from '../proposal/assemble.js';
 import { budgetTotalCents } from '../proposal/blocks.js';
 import { readProposalData } from '../proposal/data.js';
@@ -22,6 +22,7 @@ import { loadTheme, type Theme } from '../theme/resolve.js';
 import { checkFormats, FORMATS, type Format } from './build.js';
 import { DEFAULT_THEME } from './config.js';
 import { resolveEpoch } from './timestamp.js';
+import { launchBrowser, wordFontNote } from './preflight.js';
 
 type Io = { log: (s: string) => void; err: (s: string) => void };
 
@@ -40,7 +41,11 @@ async function renderTo(format: Format, doc: Doc, theme: Theme, epochSeconds: nu
       onWarn,
       ...(browser === undefined ? {} : { browser }),
     });
-    case 'docx': return renderDocx(doc, theme, { epochSeconds });
+    case 'docx': {
+      const note = wordFontNote(theme);
+      if (note !== undefined) onWarn(note);
+      return renderDocx(doc, theme, { epochSeconds });
+    }
     case 'md': return Buffer.from(renderMarkdown(doc), 'utf8');
     default: {
       const unhandled: never = format;
@@ -229,7 +234,7 @@ export async function runProposal(argv: string[], io: Io): Promise<number> {
   const stem = proposalStem(input);
 
   const needsBrowser = formats.includes('pdf');
-  const browser = needsBrowser ? await chromium.launch() : undefined;
+  const browser = needsBrowser ? await launchBrowser(io) : undefined;
   let refused = false;
   try {
     for (const format of formats) {

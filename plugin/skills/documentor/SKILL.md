@@ -86,21 +86,23 @@ Know these before promising anything to the user:
 ## Before the first run on a machine
 
 The skill drives a command-line tool; the plugin does not install it. If
-`documentor` is not found, install it and its browser, then check:
+`documentor` is not found, install it, then check:
 
 ```
 npm install -g https://github.com/4aykas/documentor/releases/latest/download/tebin-documentor.tgz
-documentor setup
 documentor doctor
 ```
 
 Install from that release URL, not `npm install -g github:4aykas/documentor`:
-a global install from git fails its own build step. `documentor setup`
-installs the exact Chromium build this copy launches. Do not substitute
-`npx playwright install chromium`: it installs the build for
-whatever playwright release is newest, and doctor then reports a browser
-that does not exist. Node 22 or newer is required; doctor names anything
-else that is missing and the command that fixes it.
+a global install from git fails its own build step. The first command that
+writes a PDF installs the exact Chromium build this copy launches, by itself
+(one time, about 150 MB) — `documentor setup` does the same ahead of time.
+Do not substitute `npx playwright install chromium`: it installs the build
+for whatever playwright release is newest, and doctor then reports a browser
+that does not exist. Node 22 or newer is required. Whatever stops a run —
+old Node, a blocked Chromium download, a font Word needs — the message names
+what is missing and the fix; relay that message to the user as it is, and run
+`documentor doctor` when it is not clear what else is missing.
 
 ## The flow
 

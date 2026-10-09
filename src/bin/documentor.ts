@@ -6,6 +6,7 @@ import { runInspect } from '../cli/inspect.js';
 import { runProposal } from '../cli/proposal.js';
 import { runContract } from '../cli/contract.js';
 import { runTheme, THEME_USAGE_LINE } from '../cli/theme.js';
+import { nodeTooOld } from '../cli/preflight.js';
 
 // The --to list is derived from build.ts's own FORMATS, not copied, so this
 // text cannot go stale the way it did when docx was wired in but the string
@@ -48,9 +49,10 @@ and colours it actually paints — and writes capture.json and a screenshot
 stands in for the site's, and which colour becomes the brand, is decided by
 whoever writes themes/<id>/theme.json from it.
 
-setup installs the Chromium build this copy of documentor launches (once,
-after installing documentor); doctor then checks everything a build needs
-and names the command that fixes whatever is missing.`;
+The first command that writes a PDF installs the Chromium build this copy
+launches, if it is not there yet (one time, about 150 MB); setup does the
+same install ahead of time. doctor checks everything a build needs and
+names the command that fixes whatever is missing.`;
 
 /**
  * The exit code contract, documented in this one place because callers script
@@ -85,6 +87,16 @@ and names the command that fixes whatever is missing.`;
 
 const io = { log: (s: string) => console.log(s), err: (s: string) => console.error(s) };
 const [command, ...rest] = process.argv.slice(2);
+
+// Before anything runs: on a Node older than engines.node promises, the first
+// thing to break would be a dependency, with a message about syntax rather
+// than about Node. The one thing a colleague needs to hear is which Node to
+// install.
+const oldNode = nodeTooOld();
+if (oldNode !== undefined) {
+  io.err(`documentor: ${oldNode}`);
+  process.exit(1);
+}
 
 let code = 0;
 try {

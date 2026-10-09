@@ -6,6 +6,7 @@
 
 import { resolve } from 'node:path';
 import { capturePage, writeCapture } from '../theme/capture.js';
+import { launchBrowser } from './preflight.js';
 
 type Io = { log: (s: string) => void; err: (s: string) => void };
 
@@ -50,7 +51,13 @@ export async function runTheme(argv: string[], io: Io): Promise<number> {
   // screenshot included, and .input/ is the directory this repository keeps
   // out of git for exactly that kind of material.
   const dir = resolve(args.out ?? `.input/captures/${args.name}`);
-  const result = await capturePage(args.url);
+  const browser = await launchBrowser(io);
+  let result;
+  try {
+    result = await capturePage(args.url, { browser });
+  } finally {
+    await browser.close();
+  }
   const written = await writeCapture(dir, result);
   const c = result.capture;
   io.log(`captured ${c.url}`);

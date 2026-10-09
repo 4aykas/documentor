@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve } from 'node:path';
-import { chromium, type Browser } from 'playwright-core';
+import type { Browser } from 'playwright-core';
 import { ingestMarkdown } from '../ingest/md.js';
 import { ingestDocx } from '../ingest/docx.js';
 import { ingestXlsx } from '../ingest/xlsx.js';
@@ -14,6 +14,7 @@ import { loadTheme, type Theme } from '../theme/resolve.js';
 import { resolveEpoch } from './timestamp.js';
 import { resolveConfig, SidecarResolutionError, type ConfigFlags, DEFAULT_THEME, DEFAULT_TO } from './config.js';
 import type { PdfChromeRule } from './sidecar.js';
+import { launchBrowser, wordFontNote } from './preflight.js';
 
 type Io = { log: (s: string) => void; err: (s: string) => void };
 // Exported so the top-level --help text can name exactly what this build
@@ -76,7 +77,11 @@ async function renderTo(
       onWarn,
       ...(browser === undefined ? {} : { browser }),
     });
-    case 'docx': return renderDocx(doc, theme, { epochSeconds });
+    case 'docx': {
+      const note = wordFontNote(theme);
+      if (note !== undefined) onWarn(note);
+      return renderDocx(doc, theme, { epochSeconds });
+    }
     case 'md': return Buffer.from(renderMarkdown(doc), 'utf8');
     default: {
       const unhandled: never = format;
@@ -340,16 +345,24 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
   // so the guard is still worth keeping either way, but it can no longer be
   // dismissed as untestable.
   let refused = false;
-  for (const format of formats) {
-    const target = join(dir, resolved.plainNames ? `${stem}.${format}` : `${stem}.${theme.id}.${format}`);
-    if (resolve(target) === input) {
-      io.err(`documentor: refusing to overwrite the input file ${input}`);
-      refused = true; // refused — see the exit code contract in src/bin/documentor.ts
-      continue; // one colliding format must not stop the others from being written
+  // Launched here rather than inside renderPdf so the launch goes through
+  // the preflight: a colleague's very first build is usually this single-file
+  // path, and it is exactly the run that has no Chromium yet.
+  const browser = formats.includes('pdf') ? await launchBrowser(io) : undefined;
+  try {
+    for (const format of formats) {
+      const target = join(dir, resolved.plainNames ? `${stem}.${format}` : `${stem}.${theme.id}.${format}`);
+      if (resolve(target) === input) {
+        io.err(`documentor: refusing to overwrite the input file ${input}`);
+        refused = true; // refused — see the exit code contract in src/bin/documentor.ts
+        continue; // one colliding format must not stop the others from being written
+      }
+      const bytes = await renderTo(format, doc, theme, epochSeconds, (m) => io.err(`documentor: warning — ${m}`), browser);
+      await writeFile(target, bytes);
+      io.log(`${target}  (${bytes.length.toLocaleString('en-US')} bytes)`);
     }
-    const bytes = await renderTo(format, doc, theme, epochSeconds, (m) => io.err(`documentor: warning — ${m}`));
-    await writeFile(target, bytes);
-    io.log(`${target}  (${bytes.length.toLocaleString('en-US')} bytes)`);
+  } finally {
+    if (browser !== undefined) await browser.close();
   }
   return refused ? 3 : 0;
 }
@@ -787,7 +800,7 @@ async function runBuildBatch(
   // should not fail with an "install chromium" message a single-file build
   // of the same input would never have hit.
   const needsBrowser = [...perFile.values()].some((cfg) => cfg.formats.includes('pdf'));
-  const browser = needsBrowser ? await chromium.launch() : undefined;
+  const browser = needsBrowser ? await launchBrowser(io) : undefined;
   const results: FileResult[] = [];
   let sidecarCount = 0;
   try {
