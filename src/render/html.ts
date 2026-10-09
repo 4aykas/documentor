@@ -428,6 +428,28 @@ function markLineRules(theme: Theme): string {
   return out.length === 0 ? '' : `\n${out.join('\n')}`;
 }
 
+/**
+ * The sheet's own colour, and the class a mark paints in it — only for a
+ * theme that colours its paper or cuts a mark out in it, so no other theme's
+ * stylesheet changes by a byte. The body carries the colour rather than
+ * @page because Chromium prints a body background to every sheet and
+ * ignores one on @page.
+ */
+function paperRules(theme: Theme): string {
+  const usesPaper = (svg: string | undefined) => svg !== undefined && /class="c-paper"/.test(svg);
+  const out: string[] = [];
+  if (theme.colors.paper.toUpperCase() !== '#FFFFFF') {
+    // On html, not body: a body background stops at the page's content box
+    // when Chromium prints, leaving white margins around a coloured sheet.
+    // The root's background is the canvas, and the canvas is the whole page.
+    out.push(`html{ background: var(--paper); print-color-adjust: exact; -webkit-print-color-adjust: exact; }`);
+  }
+  if (usesPaper(theme.logo?.svg) || usesPaper(theme.cornerMark?.svg)) {
+    out.push(`.logo .c-paper, .corner-mark-panel .c-paper, .corner-mark-grid .c-paper{ fill: var(--paper); }`);
+  }
+  return out.length === 0 ? '' : `\n${out.join('\n')}`;
+}
+
 export async function buildHtml(doc: Doc, theme: Theme): Promise<string> {
   const faces = await themeFaceCss(theme);
   const { colors: c, type: ty, page } = theme;
@@ -437,6 +459,7 @@ export async function buildHtml(doc: Doc, theme: Theme): Promise<string> {
   const css = `${faces}
 :root{
   --brand: ${c.brandOnLight};
+  --paper: ${c.paper};
   --ink: ${c.ink};
   --muted: ${c.muted};
   --rule: ${c.rule};
@@ -660,7 +683,7 @@ body{ position: relative; }
 .corner-mark-panel svg{ height: 100%; width: auto; display: block; }
 .corner-mark-panel .c-brand{ fill: var(--brand); }
 .corner-mark-panel .c-muted{ fill: var(--muted); }
-.corner-mark-panel .c-ink{ fill: var(--ink); }${faceRules(theme)}${markLineRules(theme)}${mastheadRules(theme)}`;
+.corner-mark-panel .c-ink{ fill: var(--ink); }${faceRules(theme)}${markLineRules(theme)}${mastheadRules(theme)}${paperRules(theme)}`;
 
   const cover = doc.meta.cover === true;
   const headerHtml = cover ? '' : firstPageHeader(doc, theme);

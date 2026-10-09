@@ -41,7 +41,12 @@ describe('every inlinable face', () => {
     for (const id of FACE_IDS) {
       const theme = resolveTheme({ font: { embed: id } });
       const css = await themeFaceCss(theme);
-      expect(css.match(/@font-face/g), id).toHaveLength(3 * FACES[id].weights.length);
+      // A face with a Cyrillic stand-in inlines its own subsets and the
+      // stand-in's full set beside them.
+      const own = FACES[id];
+      const standIn = own.cyrillicFrom === undefined ? undefined : FACES[own.cyrillicFrom];
+      const expected = (own.subsets?.length ?? 3) * own.weights.length + (standIn === undefined ? 0 : 3 * standIn.weights.length);
+      expect(css.match(/@font-face/g), id).toHaveLength(expected);
       expect(css, id).not.toMatch(/url\((?!data:)/);
       const ranges = [...css.matchAll(/unicode-range:([^;}]+)/g)].map((m) => m[1]!);
       const covers = (cp: number) =>

@@ -1472,6 +1472,10 @@ export async function renderDocx(doc: Doc, theme: Theme, opts: { epochSeconds: n
 
   const packed = await Packer.toBuffer(new Document({
     styles: styles(theme),
+    // The sheet's colour, for a theme that has one (see Theme['colors']['paper']).
+    // Word shows it on screen; whether it prints is the reader's print
+    // setting, the same as for any Word page colour.
+    ...(theme.colors.paper.toUpperCase() === '#FFFFFF' ? {} : { background: { color: theme.colors.paper.slice(1) } }),
     numbering: { config },
     // Deliberately NOT `features: { updateFields: true }`. That flag writes
     // `<w:updateFields/>` into settings.xml, which is what makes Word greet

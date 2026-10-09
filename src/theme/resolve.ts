@@ -186,6 +186,7 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
       return {
         brandOnLight: hex(colors['brandOnLight'], 'colors.brandOnLight', '#1A1A1A'),
         brandOnDark: (brandOnDark as string | null | undefined) ?? null,
+        paper: hex(colors['paper'], 'colors.paper', '#FFFFFF'),
         ink,
         muted: hex(colors['muted'], 'colors.muted', '#6B6B6B'),
         rule: hex(colors['rule'], 'colors.rule', '#D8D8D8'),

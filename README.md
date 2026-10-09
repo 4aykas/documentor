@@ -71,7 +71,7 @@ machine without the CLI it gives these same three commands.
 **Fonts in Word.** A PDF carries its fonts inside it, so it looks the same
 everywhere. A `.docx` names its fonts and leaves drawing them to Word. The
 `schweiz`, `tebin-schweiz` and `tebin-ua-schweiz` themes use Manrope and
-JetBrains Mono, both free on Google Fonts. Install both where the Word files
+JetBrains Mono, and `haskoning` uses Urbanist, all free on Google Fonts. Install both where the Word files
 will be opened, or Word substitutes a serif. The `plain` and `tebin` themes
 use Arial, which every machine has.
 
@@ -407,6 +407,23 @@ In the second step a person reads the capture beside the screenshot and
 writes `themes/<id>/theme.json`. The most frequent colour on a page is
 usually its body text, not its brand, so this step is not automated.
 
+`haskoning` is the second theme made this way, modelled on an engineering
+consultancy's site: a cream sheet, dark navy type and rules, a teal accent,
+bold geometric headings in Urbanist and small uppercase labels with a little
+tracking. It uses none of the company's artwork — its corner mark is an
+arrow cut out of a filled square, after the site's own button furniture.
+Two things it needed that `schweiz` did not, and any theme may now use:
+
+- `colors.paper` colours the sheet itself. The PDF lays that colour under
+  every page, margins included; Word is handed it as the document
+  background, which Word shows on screen and prints only if the reader's
+  print settings say so. A mark may paint in it through the `c-paper`
+  class, the way a glyph cut out of a filled square shows the sheet.
+- A face without Cyrillic of its own may name a stand-in. Urbanist is Latin
+  only, so `render/fonts.ts` inlines Manrope's Cyrillic beside it and names
+  Manrope next in the family stack: a Ukrainian word falls to a chosen
+  face, never to whatever the reader's system has.
+
 A theme can give three roles a face of their own:
 
 ```json
@@ -482,6 +499,7 @@ when someone edits above them. The default is `"band"`.
 | **Internet access** | The install, and `documentor setup` once (about 150 MB of Chromium) | After that, builds run offline. |
 | **Chromium** | Every PDF, and reading a PDF | `documentor setup`. On Linux, `documentor setup --with-deps` also installs the system libraries Chromium needs. |
 | **Manrope and JetBrains Mono** | Only `.docx` files from `schweiz`, `tebin-schweiz` and `tebin-ua-schweiz`, opened in Word | Free on [fonts.google.com](https://fonts.google.com). Install them on each machine that opens those Word files. PDFs don't need them. |
+| **Urbanist** | Only `.docx` files from `haskoning`, opened in Word | The same, from the same place. |
 | **Microsoft Word** or another `.docx` reader | Opening Word output | Not needed to build it. |
 | **Claude Code** | Only the skill | See "Getting it" above. |
 

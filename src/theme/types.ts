@@ -1,7 +1,8 @@
 export type PageSize = 'A4' | 'Letter';
 
-/** A face render/fonts.ts can inline. Free, OFL, and carrying Cyrillic. */
-export type FaceId = 'arimo' | 'manrope' | 'jetbrains-mono';
+/** A face render/fonts.ts can inline. Free, OFL, and carrying Cyrillic —
+ *  itself, or through the face it names as its Cyrillic stand-in. */
+export type FaceId = 'arimo' | 'manrope' | 'jetbrains-mono' | 'urbanist';
 
 /** Trim size in points, portrait. Chromium is given millimetres; see toMm. */
 export const PAGE_PT: Record<PageSize, { w: number; h: number }> = {
@@ -37,6 +38,14 @@ export type Theme = {
      * so silently reusing brandOnLight would ship an unreadable document.
      */
     brandOnDark: string | null;
+    /**
+     * The sheet itself. White unless a theme says otherwise, and a theme
+     * that says otherwise prints it: Chromium is asked for backgrounds (see
+     * pdf.ts) and Word is handed the same colour as the document background.
+     * Marks may paint in it through the `c-paper` class, the way a glyph cut
+     * out of a filled square shows the sheet through.
+     */
+    paper: string;
     ink: string;
     muted: string;
     rule: string;

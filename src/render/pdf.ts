@@ -1,5 +1,5 @@
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
-import { PDFDocument } from 'pdf-lib';
+import { PDFArray, PDFDocument, PDFName, type PDFPage } from 'pdf-lib';
 import type { Doc } from '../ir/types.js';
 import { PAGE_PT, type Theme } from '../theme/types.js';
 import { buildHtml, escapeHtml } from './html.js';
@@ -158,7 +158,26 @@ function dateFromEpoch(epochSeconds: number): Date {
  * wall clock) has to be written back in explicitly — hence the two
  * `set*Date` calls below, rather than trusting pdf-lib's own default.
  */
-async function stitchCleanFirstPage(withHeader: Buffer, withoutHeader: Buffer, epochSeconds: number): Promise<Buffer> {
+/**
+ * The sheet's colour, laid under everything Chromium drew. Chromium paints a
+ * root background inside the page's content box only: with header and
+ * footer templates on, the margins stay white however the stylesheet
+ * colours the canvas, and a cover's bleed is refused for the same reason
+ * (see html.ts on the page-corner mark). So a coloured sheet is a fill the
+ * size of the media box, prepended to each page's content stream so the
+ * page's own drawing lands on top of it. Nothing for a white sheet: the
+ * bytes of every white-paper theme stay what they were.
+ */
+function layPaperUnder(page: PDFPage, paper: string): void {
+  const [r, g, b] = [1, 3, 5].map((i) => (parseInt(paper.slice(i, i + 2), 16) / 255).toFixed(4));
+  const { width, height } = page.getMediaBox();
+  const fill = page.doc.context.register(page.doc.context.stream(`q ${r} ${g} ${b} rg 0 0 ${width} ${height} re f Q\n`));
+  const existing = page.node.get(PDFName.of('Contents'));
+  const rest = existing instanceof PDFArray ? existing.asArray() : existing === undefined ? [] : [existing];
+  page.node.set(PDFName.of('Contents'), page.doc.context.obj([fill, ...rest]));
+}
+
+async function stitchCleanFirstPage(withHeader: Buffer, withoutHeader: Buffer, epochSeconds: number, paper: string): Promise<Buffer> {
   const empty = await PDFDocument.load(withoutHeader, { updateMetadata: false });
   const real = await PDFDocument.load(withHeader, { updateMetadata: false });
   const out = await PDFDocument.create({ updateMetadata: false });
@@ -175,6 +194,8 @@ async function stitchCleanFirstPage(withHeader: Buffer, withoutHeader: Buffer, e
     const rest = await out.copyPages(real, Array.from({ length: pageCount - 1 }, (_, i) => i + 1));
     for (const p of rest) out.addPage(p);
   }
+
+  if (paper.toUpperCase() !== '#FFFFFF') for (const p of out.getPages()) layPaperUnder(p, paper);
 
   const date = dateFromEpoch(epochSeconds);
   out.setCreationDate(date);
@@ -327,7 +348,7 @@ export async function renderPdf(
         headerTemplate: '<span></span>',
         footerTemplate: '<span></span>',
       });
-      return await stitchCleanFirstPage(Buffer.from(withHeader), Buffer.from(withoutHeader), opts.epochSeconds);
+      return await stitchCleanFirstPage(Buffer.from(withHeader), Buffer.from(withoutHeader), opts.epochSeconds, theme.colors.paper);
     } finally {
       await page.close();
     }
