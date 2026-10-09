@@ -89,6 +89,15 @@ export async function launchBrowser(io: Io, deps: BrowserDeps = realDeps): Promi
 const fontNoteGiven = new Set<string>();
 
 /**
+ * Faces Word carries with it, so a machine that has Word has them. A Linux
+ * runner lacks Arial and has no Word either; naming it there is noise, and
+ * the note would otherwise fire on every CI build of a plain-themed .docx.
+ * `doctor` keeps checking these — its line is advisory and a person reads
+ * it; this note goes into a build's stderr, which scripts compare.
+ */
+const WORD_OWN_FACES = new Set(['arial', 'times new roman', 'calibri', 'cambria', 'courier new']);
+
+/**
  * One line, or nothing: the faces a theme names for Word that this machine
  * does not have. Word draws a .docx with the fonts of the machine that opens
  * it, so this cannot stop a build and is not an error — but a colleague who
@@ -100,7 +109,8 @@ const fontNoteGiven = new Set<string>();
 export function wordFontNote(theme: Theme, dirs: string[] = systemFontDirs()): string | undefined {
   if (fontNoteGiven.has(theme.id)) return undefined;
   fontNoteGiven.add(theme.id);
-  const faces = [...new Set([theme.font.document, theme.font.heading.document, theme.font.label?.document].filter((f): f is string => f !== undefined))];
+  const faces = [...new Set([theme.font.document, theme.font.heading.document, theme.font.label?.document]
+    .filter((f): f is string => f !== undefined && !WORD_OWN_FACES.has(f.toLowerCase())))];
   const missing = missingSystemFonts(faces, dirs);
   if (missing.length === 0) return undefined;
   return `${missing.join(', ')} not installed on this machine — Word here shows a substitute in .docx files from theme ${theme.id}; `

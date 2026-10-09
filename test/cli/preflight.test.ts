@@ -86,6 +86,15 @@ describe('the Word font note', () => {
     expect(wordFontNote(theme, [dir])).toBeUndefined();
   });
 
+  it('leaves the faces Word ships with itself alone, even on a machine without them', async () => {
+    // A Linux CI runner has no Arial and no Word; the plain theme must build
+    // a .docx there with nothing on stderr.
+    resetWordFontNotes();
+    const theme = await loadTheme('plain');
+    const dir = await mkdtemp(join(tmpdir(), 'documentor-bare-'));
+    expect(wordFontNote(theme, [dir])).toBeUndefined();
+  });
+
   it('says nothing when every face is installed', async () => {
     resetWordFontNotes();
     const theme = await loadTheme('plain');
