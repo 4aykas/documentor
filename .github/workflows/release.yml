@@ -30,7 +30,13 @@ jobs:
       # The tag must name the version package.json ships, or "latest" would
       # hand out a tarball that calls itself something else.
       - run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+      # The same browser install the CI workflow uses, so the suite can run
+      # here too: a tag used to publish on typecheck alone, and prepublishOnly
+      # guards `npm publish`, not `npm pack`.
+      - run: npx playwright-core install --with-deps chromium
       - run: npm run typecheck
+      - run: npm run build
+      - run: npx vitest run --exclude 'test/baseline/local-only-pixels.test.ts'
       - run: npm pack && mv tebin-documentor-*.tgz tebin-documentor.tgz
       - run: gh release create "$GITHUB_REF_NAME" tebin-documentor.tgz --title "documentor $GITHUB_REF_NAME" --generate-notes
         env:

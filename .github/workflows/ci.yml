@@ -44,3 +44,42 @@ jobs:
       # is not rasterisation-dependent and runs on all three platforms same
       # as the rest of the suite.
       - run: npx vitest run --exclude 'test/baseline/local-only-pixels.test.ts'
+
+  # The install a colleague actually does, on a machine that has never seen
+  # Chromium: the packed tarball into an empty project, then one build, with
+  # the browser cache pointed at an empty folder so the first run has to
+  # install the browser itself. The suite above cannot see this: it runs on
+  # a runner that already has the browser, and the one bug this job exists
+  # for (a path check that looked for the full browser when a headless run
+  # opens the headless shell) passed every unit test and showed up only here.
+  fresh-install:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Only the system libraries, never the browser: installing the browser
+      # here would hide exactly what the job checks.
+      - if: runner.os == 'Linux'
+        run: npx playwright-core install-deps chromium
+      - run: npm pack --pack-destination "${{ runner.temp }}"
+      - name: Install into an empty project and build without a browser present
+        shell: bash
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/no-browsers-yet
+        run: |
+          mkdir -p "$RUNNER_TEMP/fresh" && cd "$RUNNER_TEMP/fresh"
+          npm init -y > /dev/null
+          npm install "$RUNNER_TEMP"/tebin-documentor-*.tgz
+          printf '# Note\n\nA first build on a fresh machine.\n' > note.md
+          npx documentor build note.md --to pdf,docx --theme tebin | tee build.log
+          grep -q 'not installed yet — installing it now' build.log
+          test -s note.tebin.pdf && test -s note.tebin.docx
+          npx documentor doctor
