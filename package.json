@@ -1,6 +1,6 @@
 {
   "name": "@tebin/documentor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Re-issue existing documents as well-typeset, themed PDF, Word, Excel and Markdown",
   "license": "MIT",
   "author": "TEBIN",
