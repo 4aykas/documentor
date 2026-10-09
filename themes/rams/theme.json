@@ -1,0 +1,28 @@
+{
+  "id": "rams",
+  "name": "Rams",
+  "$source": {
+    "by": "written by hand, 2026-10-10",
+    "note": "After Dieter Rams: weniger, aber besser. The PDF is set in the rams layout (render/layouts/rams.ts): the cover as a Braun front panel — speaker grille, tuning wheel, one coloured switch, a tuning scale whose stations are the document's gates — and inside, one grid, a label column, hairlines, one quiet size and one accent. Arimo stands in for Akzidenz-Grotesk. Word gets the ordinary page in these colours and faces. Nothing of Braun's or Vitsœ's artwork is used."
+  },
+  "colors": {
+    "brandOnLight": "#EFA500",
+    "brandOnDark": "#EFA500",
+    "paper": "#F4F3EF",
+    "ink": "#262624",
+    "muted": "#8E8D88",
+    "rule": "#CFCEC8",
+    "title": "#262624"
+  },
+  "font": {
+    "document": "Arial",
+    "embed": "arimo",
+    "heading": { "document": "Arial", "embed": "arimo", "weight": 700 }
+  },
+  "logo": null,
+  "page": { "size": "A4", "marginPt": 57 },
+  "type": { "bodyPt": 8.6, "leading": 1.5, "titlePt": 28, "h1Pt": 13, "h2Pt": 9, "h3Pt": 8.6, "smallPt": 6.4 },
+  "letterhead": [],
+  "coverStatement": "line",
+  "layout": "rams"
+}

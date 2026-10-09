@@ -11,6 +11,8 @@ import { GRID_GUTTER_PT, GRID_TITLE_AFTER_PT, GRID_TITLE_BEFORE_PT, gridMark, gr
 import { refusedLinkTarget, schemeIsRefused } from './links.js';
 import { SCALE_STEPS, STATEMENT_TINT, mixToWhite, readableOn, stepOf, weekLabel } from './tint.js';
 import { columnWidthsDxa, dxa, fitsWidth, isKeyValue } from './table-width.js';
+import type { Kit } from './layouts/common.js';
+import { layoutHtml } from './layouts/index.js';
 
 export function escapeHtml(s: string): string {
   return s
@@ -100,6 +102,12 @@ function colSizing(theme: Theme): ColSizing {
     landscapeDxa: dxa(page.h - theme.page.marginPt * 2),
     bodyPt: theme.type.bodyPt,
   };
+}
+
+/** The renderer's own drawing, as a designed layout is handed it. */
+export function layoutKit(theme: Theme): Kit {
+  const size = colSizing(theme);
+  return { block: (b) => block(b, size), inline, esc: escapeHtml };
 }
 
 function block(b: Block, size: ColSizing): string {
@@ -686,8 +694,25 @@ body{ position: relative; }
 .corner-mark-panel .c-ink{ fill: var(--ink); }${faceRules(theme)}${markLineRules(theme)}${mastheadRules(theme)}${paperRules(theme)}`;
 
   const cover = doc.meta.cover === true;
-  const headerHtml = cover ? '' : firstPageHeader(doc, theme);
   const size = colSizing(theme);
+
+  // A designed layout keeps this stylesheet — tables, images, the wide-table
+  // page, the faces — and adds its own after it; its body replaces the
+  // letterhead and the cover zones, every block still drawn by block().
+  if (theme.layout !== null) {
+    const lay = layoutHtml(doc, theme, layoutKit(theme));
+    return `<!doctype html>
+<html lang="${escapeHtml(doc.meta.lang)}">
+<head><meta charset="utf-8"><title>${escapeHtml(doc.meta.title)}</title>
+<style>${css}\n${lay.css}</style></head>
+<body>
+<main>
+${lay.body}
+</main>
+</body></html>`;
+  }
+
+  const headerHtml = cover ? '' : firstPageHeader(doc, theme);
   const mainHtml = cover ? coverMain(doc, theme) : doc.blocks.map((x) => block(x, size)).join('\n');
 
   return `<!doctype html>

@@ -1,0 +1,28 @@
+{
+  "id": "rodchenko",
+  "name": "Rodchenko",
+  "$source": {
+    "by": "written by hand, 2026-10-10",
+    "note": "After Alexander Rodchenko and the constructivists. The PDF is set in the rodchenko layout (render/layouts/rodchenko.ts): a poster cover — red circle, the title on a diagonal band, the cover's lines on rays from a megaphone after \"Books!\" — and inside, sections opened by a black girder and a large red number, black-rule tables, arrows for bullets, and gates that climb. Roboto Condensed stands in for the hand-drawn grotesques. Word gets the ordinary page in these colours and faces. No artwork of Rodchenko's or anyone else's is used."
+  },
+  "colors": {
+    "brandOnLight": "#D2261B",
+    "brandOnDark": "#ECE2CB",
+    "paper": "#ECE2CB",
+    "ink": "#141312",
+    "muted": "#5B554C",
+    "rule": "#141312",
+    "title": "#141312"
+  },
+  "font": {
+    "document": "Roboto Condensed",
+    "embed": "roboto-condensed",
+    "heading": { "document": "Roboto Condensed", "embed": "roboto-condensed", "weight": 900 }
+  },
+  "logo": null,
+  "page": { "size": "A4", "marginPt": 51 },
+  "type": { "bodyPt": 9.4, "leading": 1.38, "titlePt": 40, "h1Pt": 26, "h2Pt": 15, "h3Pt": 9.6, "smallPt": 7.2 },
+  "letterhead": [],
+  "coverStatement": "tint",
+  "layout": "rodchenko"
+}

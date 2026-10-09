@@ -2,7 +2,16 @@ export type PageSize = 'A4' | 'Letter';
 
 /** A face render/fonts.ts can inline. Free, OFL, and carrying Cyrillic —
  *  itself, or through the face it names as its Cyrillic stand-in. */
-export type FaceId = 'arimo' | 'manrope' | 'jetbrains-mono' | 'urbanist';
+export type FaceId = 'arimo' | 'manrope' | 'jetbrains-mono' | 'urbanist' | 'roboto-condensed';
+
+/**
+ * A designed layout a theme can ask the PDF to be set in, instead of the
+ * ordinary letterhead-and-flow page — see render/layouts/. Each is drawn by
+ * hand from one designer's or one house's language, and lays out any
+ * document's own blocks; it adds chrome and figures, never text.
+ */
+export const LAYOUT_IDS = ['rams', 'rodchenko', 'haskoning'] as const;
+export type LayoutId = (typeof LAYOUT_IDS)[number];
 
 /** Trim size in points, portrait. Chromium is given millimetres; see toMm. */
 export const PAGE_PT: Record<PageSize, { w: number; h: number }> = {
@@ -118,6 +127,13 @@ export type Theme = {
    * standing beside it (see html.ts's gridMasthead). A cover draws neither.
    */
   masthead: 'band' | 'grid';
+  /**
+   * Null for the ordinary page. A layout id sets the PDF in that designed
+   * layout (cover, first page, section openings, running foot, the gate
+   * figure); Word keeps the ordinary page, in the theme's colours and faces,
+   * because a designed page in Word would be a picture of one.
+   */
+  layout: LayoutId | null;
 };
 
 export const PT_TO_MM = 0.352778;

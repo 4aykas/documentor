@@ -441,6 +441,60 @@ each inlined into the PDF with Latin and Cyrillic. Word embeds no fonts. A
 `.docx` names the same families and looks right only where they are
 installed; anywhere else Word substitutes its own.
 
+### Designed layouts
+
+A theme sets colours and faces on the ordinary page. A layout replaces the
+page itself with one drawn by hand from a single designer's or house's
+language. Three themes come with one:
+
+```bash
+documentor build approach.md --theme rams --to pdf
+documentor build approach.md --theme rodchenko --to pdf
+documentor build approach.md --theme haskoning --to pdf
+```
+
+- **`rams`**, after Dieter Rams. The cover is a Braun front panel: a speaker
+  grille, a tuning wheel, one coloured switch, and a tuning scale whose
+  stations are the document's gates. Inside there is one grid: a label column
+  with each section's number and name, a text column in one quiet size,
+  hairlines, and a single orange accent.
+- **`rodchenko`**, after Alexander Rodchenko. The cover is a poster: a red
+  circle, the title on a diagonal band, and the cover's lines on rays from a
+  megaphone, after *Books!*. Each section opens with a black girder and a
+  large red number. Tables have black rules, bullets are arrows, and gates
+  climb a staircase.
+- **`haskoning`**, in the language of haskoning.com. A navy hero band sits
+  under a drawn bathymetric chart. Sections alternate sky and mint, list
+  items are rows ending in an arrow, gates sit on a navy band, and the close
+  is navy under a teal strip. No logo or photograph of the company is used.
+
+A layout places the document's own blocks and writes no text. A
+`meta.cover` document (`"cover": true` in the sidecar) gets the full cover.
+Its title, its panel lines, the key-value table, the quote, and the lines
+between and after the rules each go to a fixed place on that page. A
+document without a cover opens with the layout's first page instead.
+Top-level headings become sections. A heading's own leading number ("1.")
+is set apart as the section number. When no heading has one, the layout
+numbers the sections itself.
+
+One table is drawn as a figure. That is a table of two to eight rows whose
+first column is a run of gate codes such as G0, G1 or M1. It becomes the
+gate figure, with every cell and the header row carried. When one column
+holds a month and year for every row, the gates are placed in time.
+
+Three things a layout does not do:
+
+- **No layout in Word.** A `.docx` gets the ordinary page in the theme's
+  colours and faces, because a designed page in Word would be a picture of
+  one.
+- **A4 only.** The covers are drawn for that sheet.
+- **Some lines change case on the page.** `rams` sets an all-capitals source
+  line in sentence case, and `rodchenko` sets its band and rays in capitals.
+  The text in the file is unchanged; only how it is drawn differs, so a copy
+  out of the PDF may differ in case from the source.
+
+The suite checks that every word of a document reaches each layout's page.
+
 ### Refreshing the TEBIN brand theme
 
 `themes/tebin/theme.json` is generated, not hand-edited. Its only input is

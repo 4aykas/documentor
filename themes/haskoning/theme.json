@@ -3,7 +3,7 @@
   "name": "Haskoning",
   "$source": {
     "by": "measured on https://www.haskoning.com (home, about-us) on 2026-10-10",
-    "note": "Modelled on the measured site, not copied from it. The site sets everything in Urbanist (OFL, Latin only) — inlined here with Manrope standing in for Cyrillic. Colours are the page's own: cream #FAF2E3 paper, #002E4F navy for type and rules, #206087 blue for secondary text, #009EAB teal as the accent, #5CBD7D green for the accent on dark. Headings bold, labels uppercase with a little tracking, outlined boxes with arrow glyphs. No logo or artwork of the company is used: the corner mark is this theme's own, an arrow cut out of a filled square, after the site's button furniture."
+    "note": "Modelled on the measured site, not copied from it. The site sets everything in Urbanist (OFL, Latin only) — inlined here with Manrope standing in for Cyrillic. Colours are the page's own: cream #FAF2E3 paper, #002E4F navy for type and rules, #206087 blue for secondary text, #009EAB teal as the accent, #5CBD7D green for the accent on dark. Headings bold, labels uppercase with a little tracking, outlined boxes with arrow glyphs. No logo or artwork of the company is used: the corner mark is this theme's own, an arrow cut out of a filled square, after the site's button furniture. The PDF is set in the haskoning layout (render/layouts/haskoning.ts): a navy hero band under a drawn bathymetric chart, colour sections, arrow rows, gates on a navy band, a navy close under a teal strip. Word gets the ordinary page."
   },
   "colors": {
     "brandOnLight": "#009EAB",
@@ -38,5 +38,6 @@
   },
   "letterhead": [],
   "coverStatement": "tint",
-  "masthead": "grid"
+  "masthead": "grid",
+  "layout": "haskoning"
 }

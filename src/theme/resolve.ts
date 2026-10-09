@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FACE_IDS, FACES } from '../render/fonts.js';
-import { PAGE_PT, type FaceId, type PageSize, type Theme } from './types.js';
+import { LAYOUT_IDS, PAGE_PT, type FaceId, type PageSize, type Theme } from './types.js';
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const PAGE_SIZES = new Set<PageSize>(['A4', 'Letter']);
@@ -226,6 +226,13 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
       const v = t['masthead'] ?? 'band';
       if (v !== 'band' && v !== 'grid') bad('masthead', `expected "band" or "grid", got ${JSON.stringify(v)}`);
       return v;
+    })(),
+    layout: (() => {
+      const v = t['layout'] ?? null;
+      if (v !== null && !(LAYOUT_IDS as readonly unknown[]).includes(v)) {
+        bad('layout', `expected one of ${LAYOUT_IDS.join(', ')} or null, got ${JSON.stringify(v)}`);
+      }
+      return v as Theme['layout'];
     })(),
   };
 }

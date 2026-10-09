@@ -2,7 +2,8 @@ import { chromium, type Browser, type BrowserContext, type Page } from 'playwrig
 import { PDFArray, PDFDocument, PDFName, type PDFPage } from 'pdf-lib';
 import type { Doc } from '../ir/types.js';
 import { PAGE_PT, type Theme } from '../theme/types.js';
-import { buildHtml, escapeHtml } from './html.js';
+import { buildHtml, escapeHtml, layoutKit } from './html.js';
+import { layoutFooter } from './layouts/index.js';
 import { familyStack, themeFaceCss } from './fonts.js';
 
 /**
@@ -338,8 +339,9 @@ export async function renderPdf(
         printBackground: true,
         preferCSSPageSize: true,
         displayHeaderFooter: true,
-        headerTemplate: await runningHeader(doc, theme),
-        footerTemplate: '<span></span>',
+        // A designed layout runs its own foot instead of the title header.
+        headerTemplate: theme.layout === null ? await runningHeader(doc, theme) : '<span></span>',
+        footerTemplate: theme.layout === null ? '<span></span>' : layoutFooter(doc, theme, layoutKit(theme), await themeFaceCss(theme)),
       });
       const withoutHeader = await page.pdf({
         printBackground: true,

@@ -112,6 +112,12 @@ what is missing and the fix; relay that message to the user as it is, and run
 documentor inspect <file> --json
 ```
 
+When the user asks for a document "in the style of Rams", "constructivist",
+"like Rodchenko" or "in the Haskoning style", the themes `rams`,
+`rodchenko` and `haskoning` set the PDF in a designed layout (README,
+"Designed layouts"). A full cover needs `"cover": true` in the sidecar. Word
+output keeps the ordinary page in those colours.
+
 This renders nothing and writes nothing — it reports what the document
 contains and what a build would do with it. Other flags it accepts, matching
 `build`'s own: `--theme <id>`, `--title <s>`, `--date <s>`, `--entity <s>`,
