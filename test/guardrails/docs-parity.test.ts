@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { FORMATS, READABLE_EXTS, parseArgs } from '../../src/cli/build.js';
 import { parseInspectArgs } from '../../src/cli/inspect.js';
 import { parseSetupArgs } from '../../src/cli/setup.js';
+import { parseProofArgs } from '../../src/cli/proof.js';
 import { parseThemeArgs } from '../../src/cli/theme.js';
 
 // Guardrail for a defect this project has shipped three times in one week:
@@ -229,7 +230,7 @@ function isKnownOption(parse: (argv: string[]) => unknown, flag: string): boolea
 function assertFlagsKnown(source: string, flags: readonly string[]): void {
   const unknown = flags.filter(
     (f) => !isKnownOption(parseArgs, f) && !isKnownOption(parseInspectArgs, f) && !isKnownOption(parseThemeArgs, f)
-      && !isKnownOption(parseSetupArgs, f),
+      && !isKnownOption(parseSetupArgs, f) && !isKnownOption(parseProofArgs, f),
   );
   expect(
     unknown,

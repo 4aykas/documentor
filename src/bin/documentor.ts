@@ -7,6 +7,7 @@ import { runProposal } from '../cli/proposal.js';
 import { runContract } from '../cli/contract.js';
 import { runTheme, THEME_USAGE_LINE } from '../cli/theme.js';
 import { nodeTooOld } from '../cli/preflight.js';
+import { runProof, PROOF_USAGE_LINE } from '../cli/proof.js';
 
 // The --to list is derived from build.ts's own FORMATS, not copied, so this
 // text cannot go stale the way it did when docx was wired in but the string
@@ -18,6 +19,7 @@ const USAGE = `documentor — re-issue an existing document as a well-typeset on
   documentor proposal <data.json> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>]
   documentor contract <data.json> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>]
 ${THEME_USAGE_LINE}
+${PROOF_USAGE_LINE}
   documentor setup [--with-deps]
   documentor doctor
 
@@ -48,6 +50,9 @@ and colours it actually paints — and writes capture.json and a screenshot
 (under .input/captures/<id>/ by default). It writes no theme: which free face
 stands in for the site's, and which colour becomes the brand, is decided by
 whoever writes themes/<id>/theme.json from it.
+
+proof lays every page of a PDF side by side on one PNG, beside the PDF,
+so a layout is checked by looking at one image.
 
 The first command that writes a PDF installs the Chromium build this copy
 launches, if it is not there yet (one time, about 150 MB); setup does the
@@ -105,6 +110,7 @@ try {
   else if (command === 'proposal') code = await runProposal(rest, io);
   else if (command === 'contract') code = await runContract(rest, io);
   else if (command === 'theme') code = await runTheme(rest, io);
+  else if (command === 'proof') code = await runProof(rest, io);
   else if (command === 'setup') code = runSetup(rest, io);
   else if (command === 'doctor') code = await runDoctor(io);
   else if (command === undefined || command === '--help' || command === '-h') { io.log(USAGE); code = command === undefined ? 2 : 0; }

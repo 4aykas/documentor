@@ -495,6 +495,18 @@ Three things a layout does not do:
 
 The suite checks that every word of a document reaches each layout's page.
 
+### Looking at a whole PDF at once
+
+```bash
+documentor proof approach.rams.pdf            # approach.rams.proof.png beside it
+documentor proof approach.rams.pdf --cols 5 --width 240 --out sheet.png
+```
+
+`proof` lays every page of a PDF side by side on one PNG, numbered, so a
+layout is checked in one look rather than page by page. It draws the pages
+with the same PDF engine documentor reads PDFs with, inside the Chromium it
+prints with, so it needs nothing else installed.
+
 ### Refreshing the TEBIN brand theme
 
 `themes/tebin/theme.json` is generated, not hand-edited. Its only input is
