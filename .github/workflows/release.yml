@@ -26,6 +26,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # npm 11, for the devEngines pin; see the CI workflow for why.
+      - run: npm install -g npm@11
+        working-directory: ${{ runner.temp }}
       - run: npm ci
       # The tag must name the version package.json ships, or "latest" would
       # hand out a tarball that calls itself something else.

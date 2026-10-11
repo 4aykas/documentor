@@ -21,6 +21,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # npm 11, not Node 22's bundled npm 10: package.json pins it through
+      # devEngines, because npm 10 rewrites the lockfile npm 11 wrote (it
+      # marks optional platform packages "dev") and a lockfile that changes
+      # with whoever ran `npm install` last is noise in every diff. Run from
+      # outside the checkout, where the pin would refuse npm 10 itself.
+      - run: npm install -g npm@11
+        working-directory: ${{ runner.temp }}
       - run: npm ci
       # playwright-core, not playwright: the repository depends only on
       # playwright-core, so `npx playwright` fetched whatever release is newest
@@ -64,6 +71,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # npm 11, for the devEngines pin; see the test job for why.
+      - run: npm install -g npm@11
+        working-directory: ${{ runner.temp }}
       - run: npm ci
       # Only the system libraries, never the browser: installing the browser
       # here would hide exactly what the job checks.
