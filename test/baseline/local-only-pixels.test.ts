@@ -157,6 +157,23 @@ describe('the heatmap under the plain theme (local pixels only)', () => {
   });
 });
 
+/**
+ * The designed layouts draw their own cover and masthead, so neither the
+ * plain nor the TEBIN pictures above say anything about them: a layout is
+ * several hundred lines of geometry a markup assertion cannot see. Each gets
+ * the shared cover and the kitchen sink's first page.
+ */
+for (const layout of ['rams', 'rodchenko', 'haskoning']) {
+  describe(`the ${layout} layout (local pixels only)`, () => {
+    it('the cover matches its committed image', async () => {
+      await expectPageOneMatches(COVER, layout, `${layout}-cover-01.png`);
+    });
+    it('page one of the kitchen sink matches its committed image', async () => {
+      await expectPageOneMatches(ingestMarkdown(source).doc, layout, `${layout}-page-01.png`);
+    });
+  });
+}
+
 describe('the TEBIN theme (local pixels only)', () => {
   it('page one matches its committed image', async () => {
     const theme = await loadTheme('tebin');
