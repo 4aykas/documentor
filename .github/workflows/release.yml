@@ -41,6 +41,23 @@ jobs:
       - run: npm run build
       - run: npx vitest run --exclude 'test/baseline/local-only-pixels.test.ts'
       - run: npm pack && mv tebin-documentor-*.tgz tebin-documentor.tgz
+      # The exact tarball this release is about to publish, installed into an
+      # empty project with an empty browser cache, as the CI workflow's
+      # fresh-install job does. A tag push does not wait for that workflow,
+      # and the bug that job was written for passed every unit test and
+      # showed up only on a clean machine.
+      - name: Install the tarball into an empty project and build without a browser present
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/no-browsers-yet
+        run: |
+          mkdir -p "$RUNNER_TEMP/fresh" && cd "$RUNNER_TEMP/fresh"
+          npm init -y > /dev/null
+          npm install "$GITHUB_WORKSPACE/tebin-documentor.tgz"
+          printf '# Note\n\nA first build on a fresh machine.\n' > note.md
+          npx documentor build note.md --to pdf,docx --theme tebin | tee build.log
+          grep -q 'not installed yet — installing it now' build.log
+          test -s note.tebin.pdf && test -s note.tebin.docx
+          npx documentor doctor
       - run: gh release create "$GITHUB_REF_NAME" tebin-documentor.tgz --title "documentor $GITHUB_REF_NAME" --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}
