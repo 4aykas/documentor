@@ -25,7 +25,8 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-          cache: npm
+          package-manager-cache: false
+          # No `cache: npm`: see the test job in ci.yml.
       # npm 11, for the devEngines pin; see the CI workflow for why.
       - run: npm install -g npm@11
         working-directory: ${{ runner.temp }}

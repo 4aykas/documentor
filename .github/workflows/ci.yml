@@ -20,7 +20,11 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-          cache: npm
+          package-manager-cache: false
+          # No `cache: npm`: setup-node reads npm's cache folder by running
+          # npm in the checkout, before the step below can install npm 11,
+          # and the devEngines pin refuses npm 10 there. 89 packages
+          # download in seconds without it.
       # npm 11, not Node 22's bundled npm 10: package.json pins it through
       # devEngines, because npm 10 rewrites the lockfile npm 11 wrote (it
       # marks optional platform packages "dev") and a lockfile that changes
@@ -70,7 +74,8 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-          cache: npm
+          package-manager-cache: false
+          # No `cache: npm`: see the test job.
       # npm 11, for the devEngines pin; see the test job for why.
       - run: npm install -g npm@11
         working-directory: ${{ runner.temp }}
