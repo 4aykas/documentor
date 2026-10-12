@@ -71,8 +71,10 @@ machine without the CLI it gives these same three commands.
 **Fonts in Word.** A PDF carries its fonts inside it, so it looks the same
 everywhere. A `.docx` names its fonts and leaves drawing them to Word. The
 `schweiz`, `tebin-schweiz` and `tebin-ua-schweiz` themes use Manrope and
-JetBrains Mono, and `haskoning` uses Urbanist, all free on Google Fonts. Install both where the Word files
-will be opened, or Word substitutes a serif. The `plain` and `tebin` themes
+JetBrains Mono, `haskoning` uses Urbanist, `dreamscape` uses Manrope,
+Pixelify Sans and JetBrains Mono, and `blueprint` uses JetBrains Mono, all
+free on Google Fonts. Install them where the Word files will be opened, or
+Word substitutes a serif. The `plain` and `tebin` themes
 use Arial, which every machine has.
 
 From a clone, `npm install` and then `npm run documentor -- build report.md`
@@ -445,12 +447,14 @@ installed; anywhere else Word substitutes its own.
 
 A theme sets colours and faces on the ordinary page. A layout replaces the
 page itself with one drawn by hand from a single designer's or house's
-language. Three themes come with one:
+language. Five themes come with one:
 
 ```bash
 documentor build approach.md --theme rams --to pdf
 documentor build approach.md --theme rodchenko --to pdf
 documentor build approach.md --theme haskoning --to pdf
+documentor build approach.md --theme dreamscape --to pdf
+documentor build approach.md --theme blueprint --to pdf
 ```
 
 - **`rams`**, after Dieter Rams. The cover is a Braun front panel: a speaker
@@ -467,6 +471,27 @@ documentor build approach.md --theme haskoning --to pdf
   under a drawn bathymetric chart. Sections alternate sky and mint, list
   items are rows ending in an arrow, gates sit on a navy band, and the close
   is navy under a teal strip. No logo or photograph of the company is used.
+- **`dreamscape`**, after a contemporary-art exhibition identity built from
+  generated dreams. The cover is a full-bleed picture drawn from the title:
+  discs that step round into a spiral or sink into a tunnel, in a sunrise
+  ramp from indigo through magenta to orange. The title is set in a pixel
+  face, and the document's own words become snake_case keys and
+  `[ bracketed ]` tags in a monospace. Each section opens on its own dream
+  band. Statements, gates and the close sit in black panels with thin
+  outlined boxes, and the gates are rings round one centre. The same title
+  always draws the same picture. No artwork, mark or name of a museum or
+  agency is used.
+- **`blueprint`**, a sheet of a drawing set. Pages are A4 landscape inside
+  a double frame with grid-reference zones (1–8 across, A–D down) and
+  centring marks. Every sheet, the first included, carries a title block
+  with the TEBIN logo, the document's title, subtitle, number and date, and
+  the sheet number out of the total. The cover sheet draws the document's
+  sections as a chain dimension with a numbered bubble each and lists them
+  beside it. Inside, sections open on a detail bubble and second-level
+  headings hang in the left column. Tables are schedules, bullets are
+  dimension ticks, numbered items sit in bubbles, a quote is a boxed note
+  under a revision triangle, and gates stand on a dimension line. TEBIN red
+  is the one accent; codes and labels are set in JetBrains Mono.
 
 A layout places the document's own blocks and writes no text. A
 `meta.cover` document (`"cover": true` in the sidecar) gets the full cover.
@@ -487,9 +512,12 @@ Three things a layout does not do:
 - **No layout in Word.** A `.docx` gets the ordinary page in the theme's
   colours and faces, because a designed page in Word would be a picture of
   one.
-- **A4 only.** The covers are drawn for that sheet.
+- **A4 only.** The covers are drawn for that sheet, upright, except
+  `blueprint`, which turns it landscape.
 - **Some lines change case on the page.** `rams` sets an all-capitals source
-  line in sentence case, and `rodchenko` sets its band and rays in capitals.
+  line in sentence case, `rodchenko` sets its band and rays in capitals, and
+  `dreamscape` repeats section titles and its cover's first line as
+  capitalised snake_case keys.
   The text in the file is unchanged; only how it is drawn differs, so a copy
   out of the PDF may differ in case from the source.
 
@@ -566,6 +594,7 @@ when someone edits above them. The default is `"band"`.
 | **Chromium** | Every PDF, and reading a PDF | `documentor setup`. On Linux, `documentor setup --with-deps` also installs the system libraries Chromium needs. |
 | **Manrope and JetBrains Mono** | Only `.docx` files from `schweiz`, `tebin-schweiz` and `tebin-ua-schweiz`, opened in Word | Free on [fonts.google.com](https://fonts.google.com). Install them on each machine that opens those Word files. PDFs don't need them. |
 | **Urbanist** | Only `.docx` files from `haskoning`, opened in Word | The same, from the same place. |
+| **Pixelify Sans** | Only `.docx` files from `dreamscape`, opened in Word, with Manrope and JetBrains Mono | The same, from the same place. |
 | **Microsoft Word** or another `.docx` reader | Opening Word output | Not needed to build it. |
 | **Claude Code** | Only the skill | See "Getting it" above. |
 

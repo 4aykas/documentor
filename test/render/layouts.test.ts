@@ -78,7 +78,7 @@ describe('a theme\'s layout', () => {
     expect(() => resolveTheme({ layout: 'bauhaus' })).toThrow(/layout.*rams, rodchenko, haskoning/);
   });
 
-  it('is what the three designed themes name', async () => {
+  it('is what each designed theme names', async () => {
     for (const id of LAYOUT_IDS) expect((await loadTheme(id)).layout).toBe(id);
     expect((await loadTheme('plain')).layout).toBeNull();
   });

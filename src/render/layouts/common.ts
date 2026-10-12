@@ -70,6 +70,8 @@ export interface Layout {
   end(p: CoverParts, ctx: Ctx): string;
   /** Chromium's footer template for pages 2..N. */
   footer(ctx: Ctx, faces: string): string;
+  /** True when the footer is the sheet's own frame and belongs on page 1 too. */
+  footerOnFirstPage?: boolean;
 }
 
 export function plain(nodes: Inline[]): string {

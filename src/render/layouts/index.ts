@@ -4,12 +4,14 @@
 
 import type { Block, Doc } from '../../ir/types.js';
 import { PAGE_PT, PT_TO_MM, type LayoutId, type Theme } from '../../theme/types.js';
+import { blueprint } from './blueprint.js';
 import { asGates, coverParts, plain, sections, type Ctx, type Kit, type Layout } from './common.js';
+import { dreamscape } from './dreamscape.js';
 import { haskoning } from './haskoning.js';
 import { rams } from './rams.js';
 import { rodchenko } from './rodchenko.js';
 
-export const LAYOUTS: Record<LayoutId, Layout> = { rams, rodchenko, haskoning };
+export const LAYOUTS: Record<LayoutId, Layout> = { rams, rodchenko, haskoning, dreamscape, blueprint };
 
 export function layoutContext(doc: Doc, theme: Theme, kit: Kit): Ctx {
   const p = coverParts(doc);
@@ -38,4 +40,9 @@ export function layoutHtml(doc: Doc, theme: Theme, kit: Kit): { css: string; bod
 
 export function layoutFooter(doc: Doc, theme: Theme, kit: Kit, faces: string): string {
   return LAYOUTS[theme.layout!].footer(layoutContext(doc, theme, kit), faces);
+}
+
+/** Whether the theme's layout draws its footer on the first page as well. */
+export function layoutFramesFirstPage(theme: Theme): boolean {
+  return theme.layout !== null && LAYOUTS[theme.layout].footerOnFirstPage === true;
 }

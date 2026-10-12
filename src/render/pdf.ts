@@ -3,7 +3,7 @@ import { PDFArray, PDFDocument, PDFName, type PDFPage } from 'pdf-lib';
 import type { Doc } from '../ir/types.js';
 import { PAGE_PT, type Theme } from '../theme/types.js';
 import { buildHtml, escapeHtml, layoutKit } from './html.js';
-import { layoutFooter } from './layouts/index.js';
+import { layoutFooter, layoutFramesFirstPage } from './layouts/index.js';
 import { familyStack, themeFaceCss } from './fonts.js';
 
 /**
@@ -350,7 +350,9 @@ export async function renderPdf(
         headerTemplate: '<span></span>',
         footerTemplate: '<span></span>',
       });
-      return await stitchCleanFirstPage(Buffer.from(withHeader), Buffer.from(withoutHeader), opts.epochSeconds, theme.colors.paper);
+      // A layout whose footer is the sheet's frame keeps it on page 1 too.
+      const first = layoutFramesFirstPage(theme) ? withHeader : withoutHeader;
+      return await stitchCleanFirstPage(Buffer.from(withHeader), Buffer.from(first), opts.epochSeconds, theme.colors.paper);
     } finally {
       await page.close();
     }

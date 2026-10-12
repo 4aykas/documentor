@@ -113,8 +113,11 @@ documentor inspect <file> --json
 ```
 
 When the user asks for a document "in the style of Rams", "constructivist",
-"like Rodchenko" or "in the Haskoning style", the themes `rams`,
-`rodchenko` and `haskoning` set the PDF in a designed layout (README,
+"like Rodchenko", "in the Haskoning style" or for a generative,
+contemporary-art look ("dreamscape"), or for a document set out like a
+drawing set ("blueprint", "like a drawing sheet"), the themes `rams`,
+`rodchenko`, `haskoning`, `dreamscape` and `blueprint` set the PDF in a
+designed layout (README,
 "Designed layouts"). A full cover needs `"cover": true` in the sidecar. Word
 output keeps the ordinary page in those colours.
 
