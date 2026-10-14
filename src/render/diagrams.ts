@@ -194,7 +194,9 @@ rect.actor { stroke-width: 1px; rx: 4px; ry: 4px; }
 `;
   // Types that draw with hard-coded colours rather than theme variables.
   const extra: Record<string, string> = {
-    timeline: `line { stroke: ${t.line}; } path { stroke-width: 1px; }`,
+    // Mermaid sets a timeline's title at 4ex and its axis 4px black.
+    timeline: `line { stroke: ${t.line} !important; stroke-width: 1.25px !important; } path { stroke-width: 1px; }
+      text[font-size="4ex"] { font-size: 1.35em; }`,
     gantt: `.grid .tick line { stroke: ${t.faint}; } .grid path { stroke: ${t.stroke}; } .task { stroke-width: 1px; } .today { display: none; }`,
     gitGraph: `.branch { stroke-width: 1px; stroke-dasharray: 2 3; } .commit-label-bkg { stroke: ${t.stroke}; }`,
     journey: `.task-line { stroke: ${t.stroke}; } .face { stroke: ${t.line}; } .mouth { stroke: ${t.line}; }`,
@@ -306,6 +308,9 @@ export async function drawDiagrams(doc: Doc, theme: Theme, browser: Browser, onW
       // third of the body size. Told the column, its labels stay legible.
       gantt: { axisFormat: '%d.%m', useWidth: Math.round(colPt * 4 / 3), fontSize: Math.round(bodyPx), sectionFontSize: Math.round(bodyPx), barHeight: 22, barGap: 6, topPadding: 44, leftPadding: 90, gridLineStartPadding: 30 },
       timeline: { padding: 8 },
+      // A state diagram is laid out tighter than its transition labels: at
+      // Mermaid's spacing a label sits on the line of its neighbour.
+      state: { nodeSpacing: 70, rankSpacing: 60, padding: 12 },
     };
     drawn = [];
     const fitOf = (r: { w: number; h: number }) => Math.min(1, colPt / (r.w * 0.75), maxHPt / (r.h * 0.75));
@@ -349,8 +354,8 @@ export async function drawDiagrams(doc: Doc, theme: Theme, browser: Browser, onW
 }
 
 /**
- * The source with a left-to-right flowchart turned top-down, or null when it
- * is not one. Only the header line's direction word changes.
+ * The source with a left-to-right flowchart or timeline turned top-down, or
+ * null when it is neither. Only the header line's direction word changes.
  */
 export function leftToRight(source: string): string | null {
   const lines = source.split('\n');
@@ -362,8 +367,15 @@ export function leftToRight(source: string): string | null {
   }
   while (i < lines.length && (lines[i]!.trim() === '' || lines[i]!.trim().startsWith('%%'))) i++;
   const m = /^(\s*(?:flowchart|graph)\s+)(LR|RL)\b(.*)$/.exec(lines[i] ?? '');
-  if (m === null) return null;
-  lines[i] = `${m[1]}TD${m[3]}`;
+  if (m !== null) {
+    lines[i] = `${m[1]}TD${m[3]}`;
+    return lines.join('\n');
+  }
+  // A timeline runs left to right unless its header says TD; Mermaid draws
+  // each period 200px apart, so four already outrun an A4 column.
+  const t = /^(\s*timeline)(?:\s+LR)?\s*$/.exec(lines[i] ?? '');
+  if (t === null) return null;
+  lines[i] = `${t[1]} TD`;
   return lines.join('\n');
 }
 

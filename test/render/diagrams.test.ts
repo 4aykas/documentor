@@ -173,6 +173,8 @@ describe('a left-to-right flow too wide for the column', () => {
     expect(leftToRight('flowchart LR\n  A --> B')).toBe('flowchart TD\n  A --> B');
     expect(leftToRight('---\nconfig:\n  layout: elk\n---\n%% note\ngraph RL;\n  A-->B')).toBe('---\nconfig:\n  layout: elk\n---\n%% note\ngraph TD;\n  A-->B');
     expect(leftToRight('flowchart TD\n  A --> B')).toBeNull();
+    expect(leftToRight('timeline\n  title T\n  2026 : a')).toBe('timeline TD\n  title T\n  2026 : a');
+    expect(leftToRight('timeline TD\n  2026 : a')).toBeNull();
     expect(leftToRight('sequenceDiagram\n  A->>B: hi')).toBeNull();
   });
 

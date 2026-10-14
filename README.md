@@ -266,8 +266,8 @@ mindmap
   is held to part of the column instead of filling it.
 - **Labels at the body size.** A diagram is laid out at the theme's body
   size, so the scale it needs to fit the column is the size its labels print
-  at. A left-to-right flowchart that would shrink below that is drawn
-  top-down when that prints larger, and the build says so; anything still
+  at. A left-to-right flowchart or timeline that would shrink below that is
+  drawn top-down when that prints larger, and the build says so; anything still
   scaled below three quarters of the body size gets a warning naming the
   size. The words are never changed, only the layout.
 - **ELK on request.** Flowcharts use dagre. A diagram whose own frontmatter
