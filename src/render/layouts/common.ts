@@ -54,7 +54,9 @@ export type GateRow = { code: string; month: number | null; cells: string[]; cel
  *  figure prints it as its caption, so no header word is lost. */
 export type Gates = { head: string[]; rows: GateRow[] };
 
-export type Ctx = { theme: Theme; doc: Doc; kit: Kit; gates: Gates | null; sectionTitles: string[]; pageMm: { w: number; h: number } };
+/** `sectionNums[i]` is the number section i opens on (see sections()), null
+ *  for an unnumbered heading in a document that numbers the others. */
+export type Ctx = { theme: Theme; doc: Doc; kit: Kit; gates: Gates | null; sectionTitles: string[]; sectionNums: (string | null)[]; pageMm: { w: number; h: number } };
 
 export interface Layout {
   /** The stylesheet appended after the ordinary one. */

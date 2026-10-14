@@ -218,7 +218,7 @@ figure.diagram .edgeLabel rect, figure.diagram .labelBkg{ fill: ${P.surf} !impor
       ? `<div class="lf-meta ${P.dark ? 'framed' : 'band'}">${p.contacts.map((l) => `<p>${kit.inline(l)}</p>`).join('')}${pairs}</div>`
       : '';
     const index = ctx.sectionTitles.length
-      ? `<div class="abs lf-index" style="left:16mm;top:${p.lines.length ? 128 : 112}mm">${ctx.sectionTitles.slice(0, 12).map((t, i) => `<div><b>${String(i + 1).padStart(2, '0')}</b><span>${kit.esc(t)}</span></div>`).join('')}${ctx.sectionTitles.length > 12 ? '<div><b>…</b><span></span></div>' : ''}</div>`
+      ? `<div class="abs lf-index" style="left:16mm;top:${p.lines.length ? 128 : 112}mm">${ctx.sectionTitles.slice(0, 12).map((t, i) => `<div><b>${kit.esc(ctx.sectionNums[i] ?? '')}</b><span>${kit.esc(t)}</span></div>`).join('')}${ctx.sectionTitles.length > 12 ? '<div><b>…</b><span></span></div>' : ''}</div>`
       : '';
     return `<div class="lf-cover"><div class="grid"></div>
 <svg class="lay-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${radar(W * 0.7, H * 0.56, W * 0.36, seed, P, 'cv')}${brackets(10, 10, W - 20, H - 20, 9, P.pk, 0.6)}</svg>

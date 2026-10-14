@@ -114,6 +114,22 @@ describe('the gate figure', () => {
   });
 });
 
+describe('the lionfocus cover index', () => {
+  it('numbers each section the way its opening does: the heading\'s own number when there is one', async () => {
+    const { doc } = ingestMarkdown(PROGRAMME, { cover: true });
+    const html = await buildHtml(doc, await loadTheme('lionfocus'));
+    expect(html).toContain('<b>1.</b><span>Purpose</span>');
+    expect(html).toContain('<b>2.</b><span>Gates</span>');
+  });
+
+  it('numbers 01, 02 … when the headings carry none', async () => {
+    const { doc } = ingestMarkdown('# T\n\nA line.\n\n<!-- pagebreak -->\n\n## Alpha\n\nx\n\n## Beta\n\ny\n', { cover: true });
+    const html = await buildHtml(doc, await loadTheme('lionfocus'));
+    expect(html).toContain('<b>01</b><span>Alpha</span>');
+    expect(html).toContain('<b>02</b><span>Beta</span>');
+  });
+});
+
 describe.each(LAYOUT_IDS)('the %s layout', (id) => {
   it('sets every word of a covered programme document', async () => {
     const { doc } = await ingestMarkdown(PROGRAMME, { cover: true });

@@ -19,9 +19,15 @@ export function layoutContext(doc: Doc, theme: Theme, kit: Kit): Ctx {
   let gates = null;
   for (const b of p.rest) if ((gates = asGates(b, kit)) !== null) break;
   const top = sectionLevel(p.rest);
-  const titles = p.rest.filter((b): b is Extract<Block, { t: 'heading' }> => b.t === 'heading' && b.level === top).map((b) => plain(b.text).replace(/^\d+(?:\.\d+)*\.?\s+/, ''));
+  const heads = p.rest.filter((b): b is Extract<Block, { t: 'heading' }> => b.t === 'heading' && b.level === top).map((b) => plain(b.text));
+  const NUM = /^(\d+(?:\.\d+)*\.?)\s+/;
+  const titles = heads.map((h) => h.replace(NUM, ''));
+  // The number each section opens on, the way sections() draws it: the
+  // heading's own when the document numbers its headings, else 01, 02, …
+  const numbered = heads.some((h) => NUM.test(h));
+  const nums = heads.map((h, i) => (numbered ? NUM.exec(h)?.[1] ?? null : String(i + 1).padStart(2, '0')));
   const pg = PAGE_PT[theme.page.size];
-  return { theme, doc, kit, gates, sectionTitles: titles, pageMm: { w: Math.round(pg.w * PT_TO_MM), h: Math.round(pg.h * PT_TO_MM) } };
+  return { theme, doc, kit, gates, sectionTitles: titles, sectionNums: nums, pageMm: { w: Math.round(pg.w * PT_TO_MM), h: Math.round(pg.h * PT_TO_MM) } };
 }
 
 /** The stylesheet and the body of a document set in its theme's layout. */
