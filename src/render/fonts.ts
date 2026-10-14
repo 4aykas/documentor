@@ -52,6 +52,8 @@ export const FACES: Record<FaceId, Face> = {
   'roboto-condensed': { family: 'Roboto Condensed', pkg: '@fontsource/roboto-condensed', weights: [400, 700, 900] },
   // A screen-pixel display face, for the dreamscape layout's titles.
   'pixelify-sans': { family: 'Pixelify Sans', pkg: '@fontsource/pixelify-sans', weights: [400, 700] },
+  // The neutral grotesque the lionfocus layout sets its body in.
+  inter: { family: 'Inter', pkg: '@fontsource/inter', weights: [400, 600, 700] },
 };
 
 export const FACE_IDS = Object.keys(FACES) as FaceId[];

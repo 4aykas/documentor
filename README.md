@@ -247,22 +247,35 @@ mindmap
 ```
 ````
 
-- **In the theme, not in Mermaid's colours.** Nodes are the brand tinted
-  toward the sheet and edged in the brand, lines are the theme's muted ink,
-  and a mind map, timeline or pie paints its branches with one hue running
-  from the brand toward the sheet. Labels are set in the theme's body face.
+- **Drawn, not filled.** Boxes are the sheet inside a brand outline with a
+  small radius, edges are straight muted lines, edge and message labels sit
+  in the muted ink at the nodes' size, stores get a faint tint, and a mind
+  map, timeline or pie paints its branches with one hue running from the
+  brand toward the sheet. Labels are set in the theme's body face, wrapped
+  at a width that keeps most to two or three lines; a long sequence message
+  wraps between its lifelines instead of pushing them apart.
+- **Labels at the body size.** A diagram is laid out at the theme's body
+  size, so the scale it needs to fit the column is the size its labels print
+  at. A left-to-right flowchart that would shrink below that is drawn
+  top-down when that prints larger, and the build says so; anything still
+  scaled below three quarters of the body size gets a warning naming the
+  size. The words are never changed, only the layout.
+- **ELK on request.** Flowcharts use dagre. A diagram whose own frontmatter
+  says `layout: elk` is laid out with ELK instead, for orthogonal edges and
+  aligned rows, which suits architecture drawings.
 - **The same picture in every format.** PDF inlines the SVG, so a label is
   text a reader can select and search; Word embeds a PNG of that SVG at
   three times its size; Markdown writes the fence back verbatim, and reading
   it in again gives the same source.
-- **Drawn offline.** Mermaid runs inside the Chromium the PDF already uses,
-  its bundle handed to the page whole, every request refused. A Word-only
-  build of a document with a diagram launches Chromium for that reason.
+- **Drawn offline.** Mermaid runs inside the Chromium the PDF already uses.
+  Its modules load from `https://documentor.invalid`, an origin that cannot
+  resolve, answered from the installed packages; every other request is
+  refused. A Word-only build of a document with a diagram launches Chromium
+  for that reason.
 - **A fence Mermaid cannot parse stays its source.** It prints as a code
   block, and the build warns which diagram it was and what the parser said.
 - **Never wider than the column.** A diagram is scaled down to the text
-  column and to most of a page's height, never cropped. A wide left-to-right
-  flow shrinks its labels with it; `flowchart TD` keeps them at body size.
+  column and to most of a page's height, never cropped.
 
 ## Proposals
 
@@ -481,7 +494,7 @@ installed; anywhere else Word substitutes its own.
 
 A theme sets colours and faces on the ordinary page. A layout replaces the
 page itself with one drawn by hand from a single designer's or house's
-language. Five themes come with one:
+language. Seven themes come with one:
 
 ```bash
 documentor build approach.md --theme rams --to pdf
@@ -489,6 +502,8 @@ documentor build approach.md --theme rodchenko --to pdf
 documentor build approach.md --theme haskoning --to pdf
 documentor build approach.md --theme dreamscape --to pdf
 documentor build approach.md --theme blueprint --to pdf
+documentor build approach.md --theme lionfocus --to pdf
+documentor build approach.md --theme lionfocus-light --to pdf
 ```
 
 - **`rams`**, after Dieter Rams. The cover is a Braun front panel: a speaker
@@ -526,13 +541,25 @@ documentor build approach.md --theme blueprint --to pdf
   dimension ticks, numbered items sit in bubbles, a quote is a boxed note
   under a revision triangle, and gates stand on a dimension line. TEBIN red
   is the one accent; codes and labels are set in JetBrains Mono.
+- **`lionfocus`** and **`lionfocus-light`**, in the language of
+  lionfocus.ai, one layout on a near-black sheet (the site's default) and on
+  white. The cover is a radar scope drawn from the title on a magenta
+  graph-paper grid: rings, a tick ring, a fading sweep, and blips, the
+  brightest three in reticles. The title is set in JetBrains Mono in two
+  tones, split at its colon, with an index of the sections beside the scope.
+  Sections open on a number in corner brackets over a magenta rule.
+  Numbered steps are joined by a line, diagrams and code sit in cards with
+  corner brackets, and quotes and the close are a magenta gradient band
+  standing on diagonal hatching. Body in Inter. No logo, photograph or
+  illustration of the company is used.
 
 A layout places the document's own blocks and writes no text. A
 `meta.cover` document (`"cover": true` in the sidecar) gets the full cover.
 Its title, its panel lines, the key-value table, the quote, and the lines
 between and after the rules each go to a fixed place on that page. A
 document without a cover opens with the layout's first page instead.
-Top-level headings become sections. A heading's own leading number ("1.")
+Top-level headings become sections; in a document whose only `#` is its
+title, the `##` headings do. A heading's own leading number ("1.")
 is set apart as the section number. When no heading has one, the layout
 numbers the sections itself.
 

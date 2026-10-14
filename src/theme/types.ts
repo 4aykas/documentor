@@ -2,7 +2,7 @@ export type PageSize = 'A4' | 'Letter';
 
 /** A face render/fonts.ts can inline. Free, OFL, and carrying Cyrillic —
  *  itself, or through the face it names as its Cyrillic stand-in. */
-export type FaceId = 'arimo' | 'manrope' | 'jetbrains-mono' | 'urbanist' | 'roboto-condensed' | 'pixelify-sans';
+export type FaceId = 'arimo' | 'manrope' | 'jetbrains-mono' | 'urbanist' | 'roboto-condensed' | 'pixelify-sans' | 'inter';
 
 /**
  * A designed layout a theme can ask the PDF to be set in, instead of the
@@ -10,7 +10,7 @@ export type FaceId = 'arimo' | 'manrope' | 'jetbrains-mono' | 'urbanist' | 'robo
  * hand from one designer's or one house's language, and lays out any
  * document's own blocks; it adds chrome and figures, never text.
  */
-export const LAYOUT_IDS = ['rams', 'rodchenko', 'haskoning', 'dreamscape', 'blueprint'] as const;
+export const LAYOUT_IDS = ['rams', 'rodchenko', 'haskoning', 'dreamscape', 'blueprint', 'lionfocus'] as const;
 export type LayoutId = (typeof LAYOUT_IDS)[number];
 
 /** Trim size in points, portrait. Chromium is given millimetres; see toMm. */

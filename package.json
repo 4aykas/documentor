@@ -30,19 +30,22 @@
     "prepare": "npm run build",
     "prepublishOnly": "npm run typecheck && npm test",
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run --exclude test/baseline/local-only-pixels.test.ts",
+    "test:pixels": "vitest run test/baseline/local-only-pixels.test.ts",
+    "test:watch": "vitest --exclude test/baseline/local-only-pixels.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "documentor": "tsx src/bin/documentor.ts",
     "theme:tebin": "tsx src/theme/generate-tebin.ts"
   },
   "dependencies": {
     "@fontsource/arimo": "^5.2.5",
+    "@fontsource/inter": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@fontsource/manrope": "^5.3.0",
     "@fontsource/pixelify-sans": "^5.3.0",
     "@fontsource/roboto-condensed": "^5.3.0",
     "@fontsource/urbanist": "^5.3.0",
+    "@mermaid-js/layout-elk": "^1.0.1",
     "docx": "^9.7.1",
     "jszip": "^3.10.1",
     "marked": "^15.0.0",
@@ -57,6 +60,9 @@
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "katex": "^0.19.0"
   },
   "devEngines": {
     "packageManager": {

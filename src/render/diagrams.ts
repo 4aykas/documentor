@@ -13,11 +13,12 @@
 
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import type { Browser } from 'playwright-core';
+import { dirname, join, resolve, sep } from 'node:path';
+import type { Browser, Page } from 'playwright-core';
 import type { Block, Doc } from '../ir/types.js';
 import { PAGE_PT, type Theme } from '../theme/types.js';
 import { FACES, familyStack, themeFaceCss } from './fonts.js';
-import { readableOn } from './tint.js';
+import { readableOn, sheetOf } from './tint.js';
 import { blockNonDataRequests } from './pdf.js';
 
 /** The fence languages this pass draws. Anything else stays a code block. */
@@ -44,19 +45,11 @@ function mix(a: string, b: string, t: number): string {
   return `#${ch(16)}${ch(8)}${ch(0)}`.toUpperCase();
 }
 
-function luminance(hex: string): number {
-  const n = parseInt(hex.replace('#', ''), 16);
-  const ch = (s: number) => {
-    const c = ((n >> s) & 0xff) / 255;
-    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  };
-  return 0.2126 * ch(16) + 0.7152 * ch(8) + 0.0722 * ch(0);
-}
-
 /**
- * Mermaid's `base` theme variables, read off the theme. Nodes are the brand
- * tinted toward the sheet and edged in the brand; lines are the theme's muted
- * ink; the branch scale a mindmap, timeline or pie paints with runs from the
+ * Mermaid's `base` theme variables, read off the theme. Nodes are the sheet
+ * inside a brand outline; lines are the theme's muted ink; notes and
+ * activations carry a faint brand tint; the branch scale a mindmap, timeline
+ * or pie paints with runs from the
  * brand at full strength toward the sheet, so every diagram in a document is
  * one hue, the way the heatmap is. Each fill's label colour is computed by
  * contrast rather than assumed. On a dark sheet the brand is brandOnDark when
@@ -66,12 +59,14 @@ function luminance(hex: string): number {
 export function diagramVars(theme: Theme): Record<string, string> {
   const c = theme.colors;
   const paper = c.paper;
-  const dark = luminance(paper) < 0.2;
-  const brand = dark ? c.brandOnDark ?? c.brandOnLight : c.brandOnLight;
+  const { dark, brand } = sheetOf(c);
   const ink = c.ink;
   const tint = (t: number) => mix(brand, paper, t);
   const label = (fill: string) => readableOn(fill, ink) === ink ? ink : (dark ? '#000000' : '#FFFFFF');
-  const node = tint(0.12);
+  // A box is drawn, not filled: the sheet inside a brand outline, the way a
+  // drafted figure reads. Tint is kept for what is set apart — a note, an
+  // activation — so the eye finds those first.
+  const node = paper;
   const v: Record<string, string> = {
     background: paper,
     fontFamily: familyStack(theme.font),
@@ -109,11 +104,44 @@ export function diagramVars(theme: Theme): Record<string, string> {
   return v;
 }
 
-let bundle: Promise<string> | undefined;
-/** Mermaid's browser bundle, read once per process. */
-function mermaidBundle(): Promise<string> {
-  bundle ??= readFile(createRequire(import.meta.url).resolve('mermaid/dist/mermaid.min.js'), 'utf8');
-  return bundle;
+/**
+ * The stylesheet Mermaid scopes into each SVG, after its own. What it changes
+ * is what makes a default Mermaid drawing look like one: hairline boxes with
+ * square corners at one weight, edge labels in the body size on a white box,
+ * a stick figure for every actor. Strokes get one weight per role, corners a
+ * small radius on a square box only (a rounded or stadium node keeps the
+ * corners its author chose), and edge and message labels the theme's muted
+ * ink at the nodes' size but not their weight.
+ */
+export function diagramCss(theme: Theme): string {
+  const c = theme.colors;
+  return `
+.node rect, .node polygon, .node circle, .node ellipse, .node path { stroke-width: 1.25px; }
+.node rect:not([rx]) { rx: 3px; ry: 3px; }
+.node .label text, .node .label tspan { font-weight: 600; }
+.flowchart-link, .edgePath .path { stroke-width: 1.1px; }
+.marker, .arrowheadPath, marker path { fill: ${c.muted}; stroke: ${c.muted}; }
+.edgeLabel text, .edgeLabel tspan, .messageText, .loopText, .loopText tspan, .labelText, .labelText tspan { fill: ${c.muted} !important; }
+.edgeLabel rect, .labelBkg { fill: ${c.paper}; opacity: 1; }
+.cluster rect { stroke-dasharray: 4 3; rx: 4px; ry: 4px; }
+rect.actor { stroke-width: 1.25px; rx: 3px; ry: 3px; }
+text.actor, text.actor tspan { font-weight: 600; }
+.actor-line { stroke-dasharray: 2 3; }
+.note { stroke-width: 1px; }
+.labelBox { stroke-width: 1px; }
+`;
+}
+
+/**
+ * Mermaid and its ELK layout ship as ES modules, which a page loads from a
+ * URL. The page is therefore served from an origin that does not exist —
+ * `.invalid` is reserved for exactly that — and every request to it is
+ * answered from the installed packages; anything else is refused by the
+ * same guard the PDF page uses. Nothing leaves the machine.
+ */
+const ORIGIN = 'https://documentor.invalid';
+function packageRoot(name: string): string {
+  return dirname(createRequire(import.meta.url).resolve(`${name}/package.json`));
 }
 
 /**
@@ -132,7 +160,7 @@ export function drawable(source: string): string {
   return kept.join('\n');
 }
 
-type Drawn ={ svg: string; png: string; wPx: number; hPx: number } | { error: string };
+type Drawn = { svg: string; png: string; wPx: number; hPx: number; triedDown: boolean } | { error: string };
 
 /**
  * Every diagram source in `doc` drawn and swapped for a `diagram` block; all
@@ -148,7 +176,7 @@ export async function drawDiagrams(doc: Doc, theme: Theme, browser: Browser, onW
   // under; a picture wider or taller is scaled down, never cropped.
   const size = PAGE_PT[theme.page.size];
   const colPt = size.w - theme.page.marginPt * 2;
-  const maxHPt = (size.h - theme.page.marginPt * 2) * 0.82;
+  const maxHPt = (size.h - theme.page.marginPt * 2) * 0.72;
   const bodyPx = theme.type.bodyPt * 4 / 3;
 
   const page = await browser.newPage({ deviceScaleFactor: PNG_SCALE });
@@ -156,20 +184,53 @@ export async function drawDiagrams(doc: Doc, theme: Theme, browser: Browser, onW
   try {
     await blockNonDataRequests(page);
     const faces = await themeFaceCss(theme);
-    await page.setContent(`<!doctype html><html><head><style>${faces}
-      html,body{margin:0;background:${theme.colors.paper}} #host{display:inline-block}</style></head><body><div id="host"></div></body></html>`);
+    const html = `<!doctype html><html><head><style>${faces}
+      html,body{margin:0;background:${theme.colors.paper}} #host{display:inline-block}</style></head><body><div id="host"></div></body></html>`;
+    const roots = { mermaid: join(packageRoot('mermaid'), 'dist'), elk: join(packageRoot('@mermaid-js/layout-elk'), 'dist') };
+    // Registered after the guard, so it is asked first (Playwright tries the
+    // newest route first) and answers only its own origin.
+    await page.route(`${ORIGIN}/**`, async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path === '/') return route.fulfill({ body: html, contentType: 'text/html' });
+      const [, pkg, ...rest] = path.split('/');
+      const root = pkg === 'mermaid' || pkg === 'elk' ? roots[pkg] : undefined;
+      const file = root === undefined ? undefined : resolve(root, ...rest);
+      if (file === undefined || !file.startsWith(root! + sep)) return route.abort();
+      try {
+        return await route.fulfill({ body: await readFile(file), contentType: 'text/javascript' });
+      } catch {
+        return route.abort();
+      }
+    });
+    await page.goto(`${ORIGIN}/`);
     // Mermaid measures every label as it lays the diagram out, so the faces
     // must be decoded first or the boxes are sized for the fallback font.
     const families = [...new Set([theme.font.embed, theme.font.heading.embed].map((id) => FACES[id].family))];
     await page.evaluate(`Promise.all(${JSON.stringify(families)}.map((f) => document.fonts.load('16px "' + f + '"'))).then(() => document.fonts.ready)`);
-    await page.addScriptTag({ content: await mermaidBundle() });
+    await page.evaluate(`(async () => {
+      const m = (await import('${ORIGIN}/mermaid/mermaid.esm.min.mjs')).default;
+      m.registerLayoutLoaders((await import('${ORIGIN}/elk/mermaid-layout-elk.esm.min.mjs')).default);
+      globalThis.mermaid = m;
+    })()`);
     const config = {
-      startOnLoad: false, theme: 'base', securityLevel: 'strict', deterministicIds: true,
+      startOnLoad: false, theme: 'base', look: 'classic', securityLevel: 'strict', deterministicIds: true,
       // SVG text rather than HTML in a foreignObject: the labels stay text a
       // PDF reader can select and search, and the picture needs no HTML
       // layout to be right.
-      htmlLabels: false, flowchart: { htmlLabels: false }, suppressErrorRendering: true,
-      fontFamily: familyStack(theme.font), themeVariables: diagramVars(theme),
+      htmlLabels: false, suppressErrorRendering: true,
+      // Named, because once ELK is registered Mermaid makes it the default
+      // for every flowchart. dagre stays the default — tighter on a page —
+      // and a diagram asks for ELK in its own frontmatter (`layout: elk`).
+      layout: 'dagre',
+      // Mermaid wraps a label at 200px, which stacks an ordinary sentence
+      // five lines deep in a narrow box; 260 keeps most labels to two or
+      // three. Straight edges, not the default spline, read as drawn.
+      flowchart: { htmlLabels: false, wrappingWidth: 260, nodeSpacing: 36, rankSpacing: 46, padding: 12, curve: 'linear' },
+      // A message as long as a sentence would otherwise set the gap between
+      // two lifelines to its full length; wrapped, the diagram keeps the
+      // column and its labels the body size.
+      sequence: { actorMargin: 90, boxMargin: 8, messageMargin: 30, mirrorActors: true, wrap: true, width: 130 },
+      fontFamily: familyStack(theme.font), themeVariables: diagramVars(theme), themeCSS: diagramCss(theme),
       // A Gantt chart is laid out to a width it is told, not to its content:
       // left alone it draws for a browser window and lands on the page at a
       // third of the body size. Told the column, its labels stay legible.
@@ -177,15 +238,68 @@ export async function drawDiagrams(doc: Doc, theme: Theme, browser: Browser, onW
       timeline: { padding: 8 },
     };
     drawn = [];
+    const fitOf = (r: { w: number; h: number }) => Math.min(1, colPt / (r.w * 0.75), maxHPt / (r.h * 0.75));
     for (const [i, b] of sources.entries()) {
+      let result = await renderOne(page, config, `dg${i}`, drawable(b.text));
+      // A left-to-right flow too wide for the column is drawn again top-down,
+      // and kept when that prints its labels larger: the direction is layout,
+      // the words are the author's either way.
+      const across = leftToRight(b.text);
+      let triedDown = false;
+      if (!('error' in result) && across !== null && fitOf(result) < 0.85) {
+        triedDown = true;
+        const down = await renderOne(page, config, `dg${i}`, drawable(across));
+        if (!('error' in down) && fitOf(down) > fitOf(result) * 1.15) {
+          onWarn(`diagram ${i + 1} (${b.lang}) is drawn top-down: left to right it would print its labels at about `
+            + `${(theme.type.bodyPt * fitOf(result)).toFixed(1)}pt, top-down at ${(theme.type.bodyPt * fitOf(down)).toFixed(1)}pt`);
+          result = down;
+        } else {
+          // The first drawing is the one kept: put it back for the screenshot
+          // rather than lay it out a third time.
+          await page.evaluate(`document.getElementById('host').innerHTML = ${JSON.stringify(result.svg)}`);
+        }
+      }
+      if ('error' in result) { drawn.push(result); continue; }
+      const shot = await (await page.$('#host svg'))!.screenshot({ type: 'png', omitBackground: false });
+      drawn.push({ svg: result.svg, png: `data:image/png;base64,${shot.toString('base64')}`, wPx: result.w, hPx: result.h, triedDown });
+    }
+  } finally {
+    await page.close();
+  }
+  return place(doc, drawn, theme, colPt, maxHPt, onWarn);
+}
+
+/**
+ * The source with a left-to-right flowchart turned top-down, or null when it
+ * is not one. Only the header line's direction word changes.
+ */
+export function leftToRight(source: string): string | null {
+  const lines = source.split('\n');
+  let i = 0;
+  if (lines[0]?.trim() === '---') {
+    const end = lines.findIndex((l, j) => j > 0 && l.trim() === '---');
+    if (end === -1) return null;
+    i = end + 1;
+  }
+  while (i < lines.length && (lines[i]!.trim() === '' || lines[i]!.trim().startsWith('%%'))) i++;
+  const m = /^(\s*(?:flowchart|graph)\s+)(LR|RL)\b(.*)$/.exec(lines[i] ?? '');
+  if (m === null) return null;
+  lines[i] = `${m[1]}TD${m[3]}`;
+  return lines.join('\n');
+}
+
+type Rendered = { svg: string; w: number; h: number } | { error: string };
+
+/** One source drawn into the page's host, trimmed to its ink. */
+async function renderOne(page: Page, config: object, id: string, source: string): Promise<Rendered> {
       // A string, not a closure: this project's tsconfig has no DOM lib.
-      const result = await page.evaluate(`(async () => {
+      return await page.evaluate(`(async () => {
         const m = globalThis.mermaid;
         m.initialize(${JSON.stringify(config)});
         const host = document.getElementById('host');
         host.innerHTML = '';
         try {
-          const { svg } = await m.render(${JSON.stringify(`dg${i}`)}, ${JSON.stringify(drawable(b.text))});
+          const { svg } = await m.render(${JSON.stringify(id)}, ${JSON.stringify(source)});
           host.innerHTML = svg;
           const el = host.querySelector('svg');
           const box = el.getBBox();
@@ -199,15 +313,11 @@ export async function drawDiagrams(doc: Doc, theme: Theme, browser: Browser, onW
         } catch (e) {
           return { error: String(e && e.message ? e.message : e).split('\\n').slice(0, 3).join(' ') };
         }
-      })()`) as { svg: string; w: number; h: number } | { error: string };
-      if ('error' in result) { drawn.push(result); continue; }
-      const shot = await (await page.$('#host svg'))!.screenshot({ type: 'png', omitBackground: false });
-      drawn.push({ svg: result.svg, png: `data:image/png;base64,${shot.toString('base64')}`, wPx: result.w, hPx: result.h });
-    }
-  } finally {
-    await page.close();
-  }
+      })()`) as Rendered;
+}
 
+/** The drawings swapped in for their sources, each scaled to the page. */
+function place(doc: Doc, drawn: Drawn[], theme: Theme, colPt: number, maxHPt: number, onWarn: (m: string) => void): Doc {
   let k = 0;
   const blocks = doc.blocks.map((b): Block => {
     if (!isDiagramSource(b)) return b;
@@ -220,6 +330,17 @@ export async function drawDiagrams(doc: Doc, theme: Theme, browser: Browser, onW
     let hPt = d.hPx * 0.75;
     const fit = Math.min(1, colPt / wPt, maxHPt / hPt);
     wPt *= fit; hPt *= fit;
+    // Labels are laid out at the body size; a picture scaled far below it
+    // prints them smaller than anything else on the page.
+    if (fit < 0.75) {
+      // Top-down is advice only for a flow that has not already been tried
+      // that way; a sequence or an already-vertical flow needs fewer boxes.
+      const advice = leftToRight(b.text) !== null && !d.triedDown
+        ? 'a top-down direction or fewer side-by-side boxes would keep them readable'
+        : 'fewer side-by-side boxes or shorter labels would keep them readable';
+      onWarn(`diagram ${k} (${b.lang}) is scaled to fit the page, so its labels print at about ${(theme.type.bodyPt * fit).toFixed(1)}pt `
+        + `against ${theme.type.bodyPt}pt body text; ${advice}`);
+    }
     return { t: 'diagram', lang: 'mermaid', source: b.text, svg: d.svg, png: d.png, wPt: round(wPt), hPt: round(hPt) };
   });
   return { ...doc, blocks };

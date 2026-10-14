@@ -114,9 +114,22 @@ export function coverParts(doc: Doc): CoverParts {
 
 const NUM = /^(\d+(?:\.\d+)*\.?)\s+/;
 
+/**
+ * The heading level a section opens on: 1, unless the body has none — the
+ * usual Markdown document whose one `#` is its title (which becomes
+ * meta.title) and whose parts are `##`. Without this such a document set in
+ * a layout was one untitled run with no section openings at all.
+ */
+export function sectionLevel(blocks: Block[]): 1 | 2 | 3 {
+  let top: 1 | 2 | 3 = 3;
+  for (const b of blocks) if (b.t === 'heading' && b.level < top) top = b.level;
+  return blocks.some((b) => b.t === 'heading') ? top : 1;
+}
+
 /** The body grouped by its top-level headings. */
 export function sections(blocks: Block[], draw: (b: Block) => string, kit: Kit): Section[] {
-  const numbered = blocks.some((b) => b.t === 'heading' && b.level === 1 && NUM.test(plain(b.text)));
+  const level = sectionLevel(blocks);
+  const numbered = blocks.some((b) => b.t === 'heading' && b.level === level && NUM.test(plain(b.text)));
   const out: Section[] = [];
   let cur: { head: Inline[] | null; body: string[] } = { head: null, body: [] };
   const flush = () => {
@@ -142,7 +155,7 @@ export function sections(blocks: Block[], draw: (b: Block) => string, kit: Kit):
     out.push({ num, title, titleText, body: cur.body.join('\n'), index: out.length });
   };
   for (const b of blocks) {
-    if (b.t === 'heading' && b.level === 1) {
+    if (b.t === 'heading' && b.level === level) {
       flush();
       cur = { head: b.text, body: [] };
     } else cur.body.push(draw(b));

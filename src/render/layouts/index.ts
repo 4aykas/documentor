@@ -5,19 +5,21 @@
 import type { Block, Doc } from '../../ir/types.js';
 import { PAGE_PT, PT_TO_MM, type LayoutId, type Theme } from '../../theme/types.js';
 import { blueprint } from './blueprint.js';
-import { asGates, coverParts, plain, sections, type Ctx, type Kit, type Layout } from './common.js';
+import { asGates, coverParts, plain, sectionLevel, sections, type Ctx, type Kit, type Layout } from './common.js';
 import { dreamscape } from './dreamscape.js';
 import { haskoning } from './haskoning.js';
+import { lionfocus } from './lionfocus.js';
 import { rams } from './rams.js';
 import { rodchenko } from './rodchenko.js';
 
-export const LAYOUTS: Record<LayoutId, Layout> = { rams, rodchenko, haskoning, dreamscape, blueprint };
+export const LAYOUTS: Record<LayoutId, Layout> = { rams, rodchenko, haskoning, dreamscape, blueprint, lionfocus };
 
 export function layoutContext(doc: Doc, theme: Theme, kit: Kit): Ctx {
   const p = coverParts(doc);
   let gates = null;
   for (const b of p.rest) if ((gates = asGates(b, kit)) !== null) break;
-  const titles = p.rest.filter((b): b is Extract<Block, { t: 'heading' }> => b.t === 'heading' && b.level === 1).map((b) => plain(b.text).replace(/^\d+(?:\.\d+)*\.?\s+/, ''));
+  const top = sectionLevel(p.rest);
+  const titles = p.rest.filter((b): b is Extract<Block, { t: 'heading' }> => b.t === 'heading' && b.level === top).map((b) => plain(b.text).replace(/^\d+(?:\.\d+)*\.?\s+/, ''));
   const pg = PAGE_PT[theme.page.size];
   return { theme, doc, kit, gates, sectionTitles: titles, pageMm: { w: Math.round(pg.w * PT_TO_MM), h: Math.round(pg.h * PT_TO_MM) } };
 }

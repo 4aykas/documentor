@@ -1,0 +1,29 @@
+{
+  "id": "lionfocus",
+  "name": "Lion Focus",
+  "$source": {
+    "by": "written by hand, 2026-10-14",
+    "note": "In the language of lionfocus.ai, read from the site's own code (brand ramp step 6 #9F2B92, Inter body, JetBrains Mono headings, dark theme the default). The PDF is set in the lionfocus layout (render/layouts/lionfocus.ts): a magenta graph-paper grid, monospace headlines in two tones split at the title's colon, corner-bracket reticles, cards with a second outline offset up and right, a magenta gradient band on diagonal hatching, and a radar scope drawn from the title. This is the dark sheet; lionfocus-light is the same layout on white. No logo, photograph or illustration of the company is used. Word gets the ordinary page in these colours and faces, and on this dark sheet that page is legible on screen only: Word prints a document background only when the reader's print settings say so."
+  },
+  "colors": {
+    "brandOnLight": "#9F2B92",
+    "brandOnDark": "#F0A3E5",
+    "paper": "#0F0E0F",
+    "ink": "#F4EFF3",
+    "muted": "#A0979E",
+    "rule": "#3A3339",
+    "title": "#F4EFF3"
+  },
+  "font": {
+    "document": "Inter",
+    "embed": "inter",
+    "heading": { "document": "JetBrains Mono", "embed": "jetbrains-mono", "weight": 700 },
+    "label": { "document": "JetBrains Mono", "embed": "jetbrains-mono", "uppercase": true }
+  },
+  "logo": null,
+  "page": { "size": "A4", "marginPt": 48 },
+  "type": { "bodyPt": 9.4, "leading": 1.58, "titlePt": 40, "h1Pt": 17, "h2Pt": 12, "h3Pt": 9.4, "smallPt": 7.2 },
+  "letterhead": [],
+  "coverStatement": "tint",
+  "layout": "lionfocus"
+}

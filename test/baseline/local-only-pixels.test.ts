@@ -23,9 +23,11 @@ import { resetPdfjsWorkerGlobal } from '../helpers/pdfjs-worker.js';
 // same check just moves the false-positive rate instead of removing it. A
 // check that cries wolf stops being read.
 //
-// So these images are a local, human-approved instrument: run them here,
-// look at the result yourself, and commit the baseline once you agree it's
-// right. They are deliberately kept in their own file, separate from
+// So these images are a local, human-approved instrument: run them here
+// (`npm run test:pixels`; `npm test` leaves them out, as CI does), look at
+// the result yourself, and commit the baseline once you agree it's right.
+// They pass only on the machine and Chromium build that approved them, so a
+// red run anywhere else says nothing about the code until you have looked. They are deliberately kept in their own file, separate from
 // kitchen-sink.test.ts and tebin.test.ts, so that the checks in those two
 // files that are NOT rasterisation-dependent — the running header not
 // colliding with the body, the fixture spanning more than one page, ingest

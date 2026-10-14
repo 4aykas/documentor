@@ -141,6 +141,9 @@ describe('what an installed copy can import', () => {
       ].map((m) => m[1]!);
       for (const spec of specs) {
         if (spec.startsWith('node:')) continue;
+        // An import written into a string the browser evaluates (a URL,
+        // built from a template) is the page's, not Node's.
+        if (spec.startsWith('${') || spec.includes('://')) continue;
         if (!deps.has(packageOf(spec))) missing.add(`${packageOf(spec)} (imported by ${file.slice(ROOT.length)})`);
       }
     }

@@ -52,17 +52,29 @@ export const STATEMENT_TINT = 0.08;
  * this is a contrast computation, not a palette guess.
  */
 export function readableOn(fill: string, ink: string): string {
-  const lum = (hex: string): number => {
-    const n = parseInt(hex.replace('#', ''), 16);
-    const ch = (shift: number): number => {
-      const c = ((n >> shift) & 0xff) / 255;
-      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-    };
-    return 0.2126 * ch(16) + 0.7152 * ch(8) + 0.0722 * ch(0);
-  };
   const ratio = (a: number, b: number): number => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
-  const bg = lum(fill);
-  return ratio(bg, lum(ink)) >= ratio(bg, 1) ? ink : '#FFFFFF';
+  const bg = luminance(fill);
+  return ratio(bg, luminance(ink)) >= ratio(bg, 1) ? ink : '#FFFFFF';
+}
+
+/** WCAG relative luminance of `#RRGGBB`, 0 for black to 1 for white. */
+export function luminance(hex: string): number {
+  const n = parseInt(hex.replace('#', ''), 16);
+  const ch = (shift: number): number => {
+    const c = ((n >> shift) & 0xff) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * ch(16) + 0.7152 * ch(8) + 0.0722 * ch(0);
+}
+
+/**
+ * Whether a theme prints on a dark sheet, and the brand that reads on its
+ * sheet: brandOnDark there when the theme has one. One place, so a layout
+ * and the diagrams drawn into it cannot disagree about either.
+ */
+export function sheetOf(colors: { paper: string; brandOnLight: string; brandOnDark: string | null }): { dark: boolean; brand: string } {
+  const dark = luminance(colors.paper) < 0.2;
+  return { dark, brand: dark ? colors.brandOnDark ?? colors.brandOnLight : colors.brandOnLight };
 }
 
 export const weekLabel = (i: number): string => `W${String(i + 1).padStart(2, '0')}`;

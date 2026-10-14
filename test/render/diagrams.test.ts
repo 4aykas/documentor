@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser } from 'playwright-core';
 import type { Block, Doc } from '../../src/ir/types.js';
-import { diagramVars, drawDiagrams, hasDiagrams } from '../../src/render/diagrams.js';
+import { diagramVars, drawDiagrams, hasDiagrams, leftToRight } from '../../src/render/diagrams.js';
 import { renderPdf } from '../../src/render/pdf.js';
 import { renderDocx } from '../../src/render/docx.js';
 import { renderMarkdown } from '../../src/render/md.js';
+import { buildHtml } from '../../src/render/html.js';
 import { ingestMarkdown } from '../../src/ingest/md.js';
 import { validateDoc } from '../../src/ir/validate.js';
 import { resolveTheme } from '../../src/theme/resolve.js';
@@ -66,10 +67,11 @@ describe('drawDiagrams', () => {
     expect(d!.svg).not.toMatch(/class="today"/);
   });
 
-  it('fetches nothing', async () => {
+  it('fetches nothing from the network: every request goes to the reserved local origin', async () => {
     // Watch the page drawDiagrams opens for itself, every request it makes,
-    // aborted or not: an abort keeps the promise, but only a request never
-    // made shows the bundle really is handed over whole.
+    // aborted or not. Mermaid's modules load from https://documentor.invalid,
+    // which a route answers from node_modules (.invalid never resolves), so
+    // that origin is the only one allowed to appear at all.
     const requests: string[] = [];
     const watched = {
       newPage: async (o: Parameters<Browser['newPage']>[0]) => {
@@ -79,7 +81,20 @@ describe('drawDiagrams', () => {
       },
     } as unknown as Browser;
     await drawDiagrams(ingestMarkdown(md).doc, theme, watched, () => {});
-    expect(requests).toEqual([]);
+    expect(requests.length).toBeGreaterThan(0);
+    expect(requests.filter((u) => new URL(u).origin !== 'https://documentor.invalid')).toEqual([]);
+  });
+
+  it('lays a flowchart out with ELK when its source asks for it', async () => {
+    const elk = '```mermaid\n---\nconfig:\n  layout: elk\n---\nflowchart LR\n  A[One] --> B[Two] --> C[Three]\n  C --> A\n```\n';
+    const warn: string[] = [];
+    const [d] = diagrams(await draw(elk, warn));
+    expect(warn).toEqual([]);
+    for (const w of ['One', 'Two', 'Three']) expect(d!.svg).toContain(`>${w}<`);
+    // Mermaid falls back to dagre without a word when a layout is not
+    // registered, so the proof ELK ran is a different drawing.
+    const [plain] = diagrams(await draw('```mermaid\nflowchart LR\n  A[One] --> B[Two] --> C[Three]\n  C --> A\n```\n'));
+    expect(d!.svg).not.toBe(plain!.svg);
   });
 
   it('keeps a fence Mermaid cannot parse as its source, and says so', async () => {
@@ -104,6 +119,12 @@ describe('every renderer places the drawn diagram', () => {
     }
   });
 
+  it('HTML caps each diagram at its drawn size, so a small one is not stretched to the column', async () => {
+    const doc = await draw(md);
+    const html = await buildHtml(doc, theme);
+    for (const d of diagrams(doc)) expect(html).toContain(`<svg style="max-width: ${d.wPt}pt; max-height: ${d.hPt}pt"`);
+  });
+
   it('Word embeds one picture per diagram', async () => {
     const doc = await draw(md);
     const media = (await docxEntries(await renderDocx(doc, theme, { epochSeconds: EPOCH }))).filter((n) => n.startsWith('word/media/') && !n.endsWith('/'));
@@ -118,6 +139,25 @@ describe('every renderer places the drawn diagram', () => {
       { t: 'code', lang: 'mermaid', text: MIND },
       { t: 'code', lang: 'js', text: 'const x = 1;' },
     ]);
+  });
+});
+
+describe('a left-to-right flow too wide for the column', () => {
+  it('is turned top-down by its header line alone', () => {
+    expect(leftToRight('flowchart LR\n  A --> B')).toBe('flowchart TD\n  A --> B');
+    expect(leftToRight('---\nconfig:\n  layout: elk\n---\n%% note\ngraph RL;\n  A-->B')).toBe('---\nconfig:\n  layout: elk\n---\n%% note\ngraph TD;\n  A-->B');
+    expect(leftToRight('flowchart TD\n  A --> B')).toBeNull();
+    expect(leftToRight('sequenceDiagram\n  A->>B: hi')).toBeNull();
+  });
+
+  it('is drawn top-down when that prints its labels larger, and the build says so', async () => {
+    const chain = Array.from({ length: 9 }, (_, i) => `  S${i}[Step number ${i}] --> S${i + 1}[Step number ${i + 1}]`).join('\n');
+    const warn: string[] = [];
+    const doc = await draw(`\`\`\`mermaid\nflowchart LR\n${chain}\n\`\`\`\n`, warn);
+    const [d] = diagrams(doc);
+    expect(d!.hPt).toBeGreaterThan(d!.wPt);
+    expect(d!.source.startsWith('flowchart LR')).toBe(true);
+    expect(warn.join('\n')).toMatch(/drawn top-down/);
   });
 });
 

@@ -205,7 +205,7 @@ function block(b: Block, size: ColSizing): string {
     // than the theme's (a grid track, a sidebar) shrinks it, and a fixed
     // width would push that column wider than the page instead.
     case 'diagram':
-      return `<figure class="diagram">${b.svg.replace(/^<svg/, `<svg style="max-width: ${b.wPt}pt"`)}</figure>`;
+      return `<figure class="diagram">${b.svg.replace(/^<svg\b/, `<svg style="max-width: ${b.wPt}pt; max-height: ${b.hPt}pt"`)}</figure>`;
     case 'quote':
       return `<blockquote>${b.paras.map((p) => `<p>${inline(p)}</p>`).join('')}</blockquote>`;
     case 'rule':
