@@ -18,7 +18,7 @@ import type { Browser, Page } from 'playwright-core';
 import type { Block, Doc } from '../ir/types.js';
 import { PAGE_PT, type Theme } from '../theme/types.js';
 import { FACES, familyStack, themeFaceCss } from './fonts.js';
-import { readableOn, sheetOf } from './tint.js';
+import { luminance, readableOn, sheetOf } from './tint.js';
 import { blockNonDataRequests } from './pdf.js';
 
 /** The fence languages this pass draws. Anything else stays a code block. */
@@ -63,10 +63,22 @@ export function diagramTokens(theme: Theme) {
   return {
     dark, paper, ink, brand, tint,
     surface: ink_(0.035), stroke: ink_(0.22), line: ink_(0.5), textSec: ink_(0.62), faint: ink_(0.08),
-    /** Categorical series: the brand, then neutrals and brand shades that
-     *  stay apart in lightness, so a series is told by more than hue. */
-    series: [brand, ink_(0.62), tint(0.45), ink_(0.3), mix(brand, ink, 0.6), tint(0.22), ink_(0.45), tint(0.7)],
+    /** Categorical series: the brand, then neutrals and brand shades, kept
+     *  only where they differ in lightness from every one before — so a
+     *  theme whose brand is its ink (plain) still gets eight distinct greys. */
+    series: distinct([brand, ink_(0.62), tint(0.45), ink_(0.3), mix(brand, ink, 0.6), tint(0.22), ink_(0.45), tint(0.7),
+      ink_(0.8), tint(0.32), ink_(0.18), tint(0.85), ink_(0.55), tint(0.12), ink_(0.7), tint(0.58)], 8),
   };
+}
+
+/** The first `n` colours that each differ in luminance from all kept before. */
+export function distinct(colours: string[], n: number): string[] {
+  const kept: string[] = [];
+  for (const c of colours) {
+    if (kept.length === n) break;
+    if (kept.every((k) => Math.abs(luminance(k) - luminance(c)) >= 0.035)) kept.push(c);
+  }
+  return kept;
 }
 
 /**
@@ -138,28 +150,47 @@ export function diagramVars(theme: Theme): Record<string, string> {
 
 /** The diagram type a source declares: its first word after any frontmatter. */
 export function kindOf(source: string): string {
-  const lines = source.split('\n');
-  let i = 0;
-  if (lines[0]?.trim() === '---') i = lines.findIndex((l, j) => j > 0 && l.trim() === '---') + 1;
-  while (i < lines.length && (lines[i]!.trim() === '' || lines[i]!.trim().startsWith('%%'))) i++;
-  return (lines[i] ?? '').trim().split(/[\s;]/)[0] ?? '';
+  const { lines, at } = headerLine(source);
+  return at === -1 ? '' : lines[at]!.trim().split(/[\s;]/)[0] ?? '';
 }
 
-/** Configuration a type takes outside themeVariables. */
-function kindConfig(kind: string, theme: Theme): Record<string, unknown> {
-  const t = diagramTokens(theme);
+/**
+ * The source's lines and the index of its header — the first line after
+ * any frontmatter, blank lines and %% comments — or -1 when there is none
+ * (no header, or frontmatter that never closes). The one place kindOf,
+ * leftToRight and drawable find the header, so they cannot disagree.
+ */
+export function headerLine(source: string): { lines: string[]; at: number } {
+  const lines = source.split('\n');
+  let i = 0;
+  if (lines[0]?.trim() === '---') {
+    const end = lines.findIndex((l, j) => j > 0 && l.trim() === '---');
+    if (end === -1) return { lines, at: -1 };
+    i = end + 1;
+  }
+  while (i < lines.length && (lines[i]!.trim() === '' || lines[i]!.trim().startsWith('%%'))) i++;
+  return { lines, at: i < lines.length ? i : -1 };
+}
+
+export type DiagramTokens = ReturnType<typeof diagramTokens>;
+
+/**
+ * Configuration a type takes outside the shared themeVariables. A journey
+ * has none that works: it reads its configuration before `initialize`
+ * applies (a Mermaid bug), so its actors are repainted after drawing and its
+ * task fills come from the shared fillType variables.
+ */
+function kindConfig(kind: string, t: DiagramTokens, vars: Record<string, string>): Record<string, unknown> {
   switch (kind) {
     case 'xychart-beta':
     case 'xychart':
-      return { themeVariables: { ...diagramVars(theme), xyChart: {
+      return { themeVariables: { ...vars, xyChart: {
         // Bars are the brand tinted, so a line drawn over them in the full
         // brand stays the one thing that reads first.
-        backgroundColor: t.paper, titleColor: t.ink, plotColorPalette: [t.tint(0.5), t.brand, ...t.series.slice(1)].join(', '),
+        backgroundColor: t.paper, titleColor: t.ink, plotColorPalette: distinct([t.tint(0.5), t.brand, ...t.series.slice(1)], 8).join(', '),
         xAxisLabelColor: t.textSec, xAxisTitleColor: t.textSec, xAxisTickColor: t.stroke, xAxisLineColor: t.stroke,
         yAxisLabelColor: t.textSec, yAxisTitleColor: t.textSec, yAxisTickColor: t.stroke, yAxisLineColor: t.stroke,
       } } };
-    case 'journey':
-      return { journey: { actorColours: t.series, sectionFills: [0.1, 0.18, 0.06, 0.26].map(t.tint), sectionColours: [t.ink] } };
     case 'gitGraph':
       return { gitGraph: { rotateCommitLabel: false } };
     default:
@@ -176,14 +207,13 @@ function kindConfig(kind: string, theme: Theme): Record<string, unknown> {
  * corners its author chose), and edge and message labels the theme's muted
  * ink at the nodes' size but not their weight.
  */
-export function diagramCss(theme: Theme, kind = ''): string {
-  const t = diagramTokens(theme);
+export function diagramCss(t: DiagramTokens, kind = ''): string {
   const base = `
 .node rect, .node polygon, .node circle, .node ellipse, .node path { stroke-width: 1px; }
 .node rect:not([rx]) { rx: 4px; ry: 4px; }
 .flowchart-link, .edgePath .path, .transition, .relationshipLine { stroke-width: 1px; }
 .marker, .arrowheadPath, marker path { fill: ${t.brand}; stroke: ${t.brand}; }
-.edgeLabel text, .edgeLabel tspan, .messageText, .loopText, .loopText tspan, .labelText, .labelText tspan { fill: ${t.textSec} !important; font-size: 0.86em; }
+.edgeLabel text, .edgeLabel tspan, .messageText, .loopText, .loopText tspan, .labelText, .labelText tspan { fill: ${t.textSec} !important; }
 .edgeLabel rect, .labelBkg { fill: ${t.paper}; stroke: ${t.faint}; stroke-width: 1px; rx: 2px; ry: 2px; opacity: 1; }
 .cluster rect { stroke-dasharray: 3 3; rx: 4px; ry: 4px; }
 rect.actor { stroke-width: 1px; rx: 4px; ry: 4px; }
@@ -224,9 +254,8 @@ function packageRoot(name: string): string {
  * author wrote is replaced by that one. The block keeps the source as written.
  */
 export function drawable(source: string): string {
-  const lines = source.split('\n');
-  const head = lines.findIndex((l) => /^\s*gantt\s*$/.test(l));
-  if (head === -1) return source;
+  const { lines, at: head } = headerLine(source);
+  if (head === -1 || !/^\s*gantt\s*$/.test(lines[head]!)) return source;
   const kept = lines.filter((l, i) => i <= head || !/^\s*todayMarker\b/.test(l));
   kept.splice(head + 1, 0, '  todayMarker off');
   return kept.join('\n');
@@ -284,6 +313,10 @@ export async function drawDiagrams(doc: Doc, theme: Theme, browser: Browser, onW
       m.registerLayoutLoaders((await import('${ORIGIN}/elk/mermaid-layout-elk.esm.min.mjs')).default);
       globalThis.mermaid = m;
     })()`);
+    // Colours and stylesheet are worked out once per document; each diagram
+    // only adds what its own type needs.
+    const tokens = diagramTokens(theme);
+    const vars = diagramVars(theme);
     const config = {
       startOnLoad: false, theme: 'base', look: 'classic', securityLevel: 'strict', deterministicIds: true,
       // SVG text rather than HTML in a foreignObject: the labels stay text a
@@ -302,7 +335,7 @@ export async function drawDiagrams(doc: Doc, theme: Theme, browser: Browser, onW
       // two lifelines to its full length; wrapped, the diagram keeps the
       // column and its labels the body size.
       sequence: { actorMargin: 90, boxMargin: 8, messageMargin: 30, mirrorActors: true, wrap: true, width: 130 },
-      fontFamily: familyStack(theme.font), themeVariables: diagramVars(theme), themeCSS: diagramCss(theme),
+      fontFamily: familyStack(theme.font), themeVariables: vars,
       // A Gantt chart is laid out to a width it is told, not to its content:
       // left alone it draws for a browser window and lands on the page at a
       // third of the body size. Told the column, its labels stay legible.
@@ -314,10 +347,10 @@ export async function drawDiagrams(doc: Doc, theme: Theme, browser: Browser, onW
     };
     drawn = [];
     const fitOf = (r: { w: number; h: number }) => Math.min(1, colPt / (r.w * 0.75), maxHPt / (r.h * 0.75));
-    const series = diagramTokens(theme).series;
+    const series = tokens.series;
     for (const [i, b] of sources.entries()) {
       const kind = kindOf(b.text);
-      const cfg = { ...config, ...kindConfig(kind, theme), themeCSS: diagramCss(theme, kind) };
+      const cfg = { ...config, ...kindConfig(kind, tokens, vars), themeCSS: diagramCss(tokens, kind) };
       // What no theme variable reaches is fixed in the page after drawing:
       // sankey's nodes and links take their colours from a fixed scheme,
       // journey reads its actor colours before any configuration is applied
@@ -358,14 +391,8 @@ export async function drawDiagrams(doc: Doc, theme: Theme, browser: Browser, onW
  * null when it is neither. Only the header line's direction word changes.
  */
 export function leftToRight(source: string): string | null {
-  const lines = source.split('\n');
-  let i = 0;
-  if (lines[0]?.trim() === '---') {
-    const end = lines.findIndex((l, j) => j > 0 && l.trim() === '---');
-    if (end === -1) return null;
-    i = end + 1;
-  }
-  while (i < lines.length && (lines[i]!.trim() === '' || lines[i]!.trim().startsWith('%%'))) i++;
+  const { lines, at: i } = headerLine(source);
+  if (i === -1) return null;
   const m = /^(\s*(?:flowchart|graph)\s+)(LR|RL)\b(.*)$/.exec(lines[i] ?? '');
   if (m !== null) {
     lines[i] = `${m[1]}TD${m[3]}`;
@@ -413,18 +440,22 @@ async function renderOne(page: Page, config: object, id: string, source: string,
             if (every > 1) ticks.forEach((t, i) => { if (i % every) t.remove(); });
           }
           if (palette) {
+            // Each node its own slot, in order; a link's gradient stops name
+            // the colours of its two nodes, so they follow through the map.
+            // (Two nodes Mermaid gave one colour keep sharing it in links.)
             const map = new Map();
-            for (const r of el.querySelectorAll('rect[fill]')) {
-              const f = r.getAttribute('fill').toLowerCase();
-              if (!map.has(f)) map.set(f, palette[map.size % palette.length]);
-              r.setAttribute('fill', map.get(f));
-            }
-            for (const s of el.querySelectorAll('stop')) {
+            el.querySelectorAll('.nodes .node rect').forEach((r, n) => {
+              const f = (r.getAttribute('fill') || '').toLowerCase();
+              const to = palette[n % palette.length];
+              if (!map.has(f)) map.set(f, to);
+              r.setAttribute('fill', to);
+            });
+            for (const s of el.querySelectorAll('.links stop')) {
               const f = (s.getAttribute('stop-color') || '').toLowerCase();
               if (map.has(f)) s.setAttribute('stop-color', map.get(f));
             }
-            for (const p of el.querySelectorAll('path[stroke]')) {
-              const f = p.getAttribute('stroke').toLowerCase();
+            for (const p of el.querySelectorAll('.links .link path')) {
+              const f = (p.getAttribute('stroke') || '').toLowerCase();
               if (map.has(f)) p.setAttribute('stroke', map.get(f));
               p.setAttribute('stroke-opacity', '0.4');
             }
@@ -459,20 +490,23 @@ function place(doc: Doc, drawn: Drawn[], theme: Theme, colPt: number, maxHPt: nu
     wPt *= fit; hPt *= fit;
     // A chart Mermaid draws at a fixed size, whatever it holds, would
     // otherwise take the whole column: a pie of four slices half a page.
+    // The cap never takes the labels below three quarters of the body size.
     const cap = { pie: 0.6, quadrantChart: 0.72 }[kindOf(b.text)];
     if (cap !== undefined && wPt > colPt * cap) {
-      const s = (colPt * cap) / wPt;
+      const s = Math.max((colPt * cap) / wPt, Math.min(1, 0.75 / fit));
       wPt *= s; hPt *= s;
     }
-    // Labels are laid out at the body size; a picture scaled far below it
-    // prints them smaller than anything else on the page.
-    if (fit < 0.75) {
+    // Labels are laid out at the body size, so the scale the picture prints
+    // at is the size they print at; far below it they are the smallest text
+    // on the page.
+    const scale = wPt / (d.wPx * 0.75);
+    if (scale < 0.75) {
       // Top-down is advice only for a flow that has not already been tried
       // that way; a sequence or an already-vertical flow needs fewer boxes.
       const advice = leftToRight(b.text) !== null && !d.triedDown
         ? 'a top-down direction or fewer side-by-side boxes would keep them readable'
         : 'fewer side-by-side boxes or shorter labels would keep them readable';
-      onWarn(`diagram ${k} (${b.lang}) is scaled to fit the page, so its labels print at about ${(theme.type.bodyPt * fit).toFixed(1)}pt `
+      onWarn(`diagram ${k} (${b.lang}) is scaled to fit the page, so its labels print at about ${(theme.type.bodyPt * scale).toFixed(1)}pt `
         + `against ${theme.type.bodyPt}pt body text; ${advice}`);
     }
     return { t: 'diagram', lang: 'mermaid', source: b.text, svg: d.svg, png: d.png, wPt: round(wPt), hPt: round(hPt) };

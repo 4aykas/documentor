@@ -9,7 +9,7 @@ import { renderMarkdown } from '../../src/render/md.js';
 import { buildHtml } from '../../src/render/html.js';
 import { ingestMarkdown } from '../../src/ingest/md.js';
 import { validateDoc } from '../../src/ir/validate.js';
-import { resolveTheme } from '../../src/theme/resolve.js';
+import { loadTheme, resolveTheme } from '../../src/theme/resolve.js';
 import { pdfText } from '../helpers/pdf-text.js';
 import { docxEntries } from '../helpers/docx-parts.js';
 import { resetPdfjsWorkerGlobal } from '../helpers/pdfjs-worker.js';
@@ -144,9 +144,19 @@ describe('every renderer places the drawn diagram', () => {
 });
 
 describe('types Mermaid colours by itself', () => {
-  it('names a source\'s type past frontmatter and comments', () => {
+  it('names a source\'s type past frontmatter and comments, and none for frontmatter that never closes', () => {
     expect(kindOf('---\nconfig:\n  layout: elk\n---\n%% c\nflowchart LR\n  A-->B')).toBe('flowchart');
     expect(kindOf('sankey-beta\nA,B,1')).toBe('sankey-beta');
+    expect(kindOf('---\nconfig:\n  layout: elk\nflowchart LR')).toBe('');
+  });
+
+  it('gives eight series that differ in lightness even when the brand is the ink', async () => {
+    const { luminance } = tint;
+    const series = diagramTokens(await loadTheme('plain')).series;
+    expect(series).toHaveLength(8);
+    for (let i = 0; i < series.length; i++) for (let j = 0; j < i; j++) {
+      expect(Math.abs(luminance(series[i]!) - luminance(series[j]!))).toBeGreaterThanOrEqual(0.035);
+    }
   });
 
   it('sankey nodes and links take the theme\'s series, not Tableau\'s', async () => {

@@ -60,8 +60,11 @@ describe.each(['plain', 'tebin', 'haskoning'])('the diagram gallery under %s', (
         }
         return [...seen];
       })`) as string[][];
+      // A theme whose own ink is pure black paints text in it rightly.
+      const n = parseInt(theme.colors.ink.slice(1), 16);
+      const ink = `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
       offenders.push(...painted.flatMap((colours, i) =>
-        colours.filter((c) => c in DEFAULTS).map((c) => `${kindOf(drawn[i]!.source)}: ${DEFAULTS[c]} ${c}`)));
+        colours.filter((c) => c in DEFAULTS && c !== ink).map((c) => `${kindOf(drawn[i]!.source)}: ${DEFAULTS[c]} ${c}`)));
       expect(offenders).toEqual([]);
     } finally {
       await page.close();
