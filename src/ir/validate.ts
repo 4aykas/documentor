@@ -1,7 +1,7 @@
 import type { Align, Block, Doc, Inline } from './types.js';
 
 const BLOCK_TYPES = new Set([
-  'heading', 'para', 'list', 'table', 'heatmap', 'image', 'code', 'quote', 'rule', 'pagebreak',
+  'heading', 'para', 'list', 'table', 'heatmap', 'image', 'code', 'diagram', 'quote', 'rule', 'pagebreak',
 ]);
 const INLINE_TYPES = new Set(['text', 'strong', 'em', 'del', 'code', 'link']);
 const ALIGNS = new Set<Align>(['l', 'r', 'c']);
@@ -117,6 +117,17 @@ function checkBlock(b: unknown, where: string): void {
     case 'code':
       if (typeof n['text'] !== 'string') fail(where, 'code needs a string text');
       return;
+    case 'diagram': {
+      if (n['lang'] !== 'mermaid') fail(where, `diagram lang must be "mermaid", got ${JSON.stringify(n['lang'])}`);
+      if (typeof n['source'] !== 'string' || n['source'] === '') fail(where, 'diagram needs a non-empty source');
+      if (typeof n['svg'] !== 'string' || !n['svg'].startsWith('<svg')) fail(where, 'diagram needs svg markup');
+      if (typeof n['png'] !== 'string' || !n['png'].startsWith('data:image/png;base64,')) fail(where, 'diagram needs a PNG data: URI');
+      for (const k of ['wPt', 'hPt']) {
+        const v = n[k];
+        if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) fail(`${where}.${k}`, `expected a number > 0, got ${JSON.stringify(v)}`);
+      }
+      return;
+    }
     case 'quote': {
       if (!Array.isArray(n['paras'])) fail(`${where}.paras`, 'expected an array');
       n['paras'].forEach((p, i) => checkInlines(p, `${where}.paras[${i}]`));

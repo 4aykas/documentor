@@ -57,6 +57,16 @@ Know these before promising anything to the user:
   shape. Page furniture (a letterhead, a footer) is never removed unless the
   sidecar's `pdfChrome` field says where — run `inspect` first and relay
   its advisory rather than guessing a value.
+- **A diagram is drawn from a ```` ```mermaid ```` fence, and only from one.**
+  Any Mermaid type works (flowchart, sequence, mindmap, timeline, gantt,
+  pie, quadrantChart, xychart, sankey, …); the colours and faces come from
+  the theme, so never set `%%{init}%%` colours or `style`/`classDef` fills.
+  Adding a diagram the source does not have is adding content: draft the
+  fence from the document's own words and numbers only, show it to the user
+  as a proposed edit to the Markdown, and build after they accept. A build
+  warning "could not be drawn" means a Mermaid syntax error — fix the fence,
+  do not ship the code-block fallback. Prefer `flowchart TD` for more than
+  five steps; a wide `LR` flow is scaled down to the column, labels and all.
 - **A spreadsheet has to be a register, not a workbook.** A merge confined to
   one row is flattened and reported by range; a merge spanning more than one
   row refuses the sheet by name, and so does a sheet past 200 rows or 25

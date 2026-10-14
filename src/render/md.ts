@@ -90,6 +90,12 @@ function block(b: Block): string {
       const f = fence(b.text);
       return `${f}${b.lang ?? ''}\n${b.text}\n${f}`;
     }
+    case 'diagram': {
+      const f = fence(b.source);
+      return `${f}${b.lang}
+${b.source}
+${f}`;
+    }
     case 'quote':
       return b.paras.map((p) => `> ${inline(p)}`).join('\n>\n');
     case 'rule':

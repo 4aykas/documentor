@@ -230,6 +230,40 @@ deliberate rather than unfinished:
   page-relative box for growing content, gets a fixed gap above and below
   instead. The band is a little higher on the Word page than on the PDF one.
 
+## Diagrams
+
+A ```` ```mermaid ```` fence in a Markdown source is drawn, not printed as code:
+flowcharts, sequence, class, state and ER diagrams, mind maps, timelines,
+Gantt charts, pies, quadrant and XY charts, Sankey, journeys, git graphs —
+whatever [Mermaid](https://mermaid.js.org) draws.
+
+````markdown
+```mermaid
+mindmap
+  root((Exposure))
+    Websites
+    Cloud
+    Credentials
+```
+````
+
+- **In the theme, not in Mermaid's colours.** Nodes are the brand tinted
+  toward the sheet and edged in the brand, lines are the theme's muted ink,
+  and a mind map, timeline or pie paints its branches with one hue running
+  from the brand toward the sheet. Labels are set in the theme's body face.
+- **The same picture in every format.** PDF inlines the SVG, so a label is
+  text a reader can select and search; Word embeds a PNG of that SVG at
+  three times its size; Markdown writes the fence back verbatim, and reading
+  it in again gives the same source.
+- **Drawn offline.** Mermaid runs inside the Chromium the PDF already uses,
+  its bundle handed to the page whole, every request refused. A Word-only
+  build of a document with a diagram launches Chromium for that reason.
+- **A fence Mermaid cannot parse stays its source.** It prints as a code
+  block, and the build warns which diagram it was and what the parser said.
+- **Never wider than the column.** A diagram is scaled down to the text
+  column and to most of a page's height, never cropped. A wide left-to-right
+  flow shrinks its labels with it; `flowchart TD` keeps them at body size.
+
 ## Proposals
 
 `documentor proposal <data.json>` assembles a commercial offer from two

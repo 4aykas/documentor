@@ -634,6 +634,14 @@ function blocks(b: Block, theme: Theme, listRefs: Map<Block, string>, opts: Bloc
       })];
     case 'pagebreak':
       return [new Paragraph({ children: [new PageBreak()] })];
+    case 'diagram': {
+      const bytes = Buffer.from(b.png.slice(b.png.indexOf(',') + 1), 'base64');
+      return [new Paragraph({
+        children: [new ImageRun({ data: bytes, type: 'png', transformation: { width: px96(b.wPt), height: px96(b.hPt) } })],
+        spacing: { before: dxa(4), after: dxa(12) },
+        keepLines: true,
+      })];
+    }
     case 'image': {
       if (!canEmbedInDocx(b.src)) return [imagePlaceholder(b, theme)];
       const bytes = Buffer.from(b.src.slice(b.src.indexOf(',') + 1), 'base64');

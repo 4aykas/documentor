@@ -10,6 +10,7 @@ import { validateDoc, type Doc } from '../ir/validate.js';
 import { renderMarkdown } from '../render/md.js';
 import { renderPdf } from '../render/pdf.js';
 import { renderDocx } from '../render/docx.js';
+import { drawDiagrams, hasDiagrams } from '../render/diagrams.js';
 import { loadTheme, type Theme } from '../theme/resolve.js';
 import { resolveEpoch } from './timestamp.js';
 import { resolveConfig, SidecarResolutionError, type ConfigFlags, DEFAULT_THEME, DEFAULT_TO } from './config.js';
@@ -88,6 +89,23 @@ async function renderTo(
       throw new Error(`no renderer for format ${JSON.stringify(unhandled)}`);
     }
   }
+}
+
+/** Whether this build needs Chromium: for a PDF always, and for Word only
+ *  when there is a diagram to draw — Markdown writes the fence back as text. */
+function needsBrowser(formats: readonly Format[], doc: Doc): boolean {
+  return formats.includes('pdf') || (formats.includes('docx') && hasDiagrams(doc));
+}
+
+/** The document with its diagrams drawn, when any format will place them as
+ *  pictures; otherwise the document unchanged. */
+async function drawn_(
+  doc: Doc, theme: Theme, formats: readonly Format[], browser: Browser | (() => Promise<Browser>) | undefined, onWarn: (m: string) => void,
+): Promise<Doc> {
+  if (!hasDiagrams(doc) || !needsBrowser(formats, doc)) return doc;
+  const b = typeof browser === 'function' ? await browser() : browser;
+  if (b === undefined) throw new Error('internal: a diagram needs Chromium and none was launched');
+  return drawDiagrams(doc, theme, b, onWarn);
 }
 
 // The four fields both ingesters accept as overrides. Exported as its own
@@ -348,8 +366,9 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
   // Launched here rather than inside renderPdf so the launch goes through
   // the preflight: a colleague's very first build is usually this single-file
   // path, and it is exactly the run that has no Chromium yet.
-  const browser = formats.includes('pdf') ? await launchBrowser(io) : undefined;
+  const browser = needsBrowser(formats, doc) ? await launchBrowser(io) : undefined;
   try {
+    const drawn = await drawn_(doc, theme, formats, browser, (m) => io.err(`documentor: warning — ${m}`));
     for (const format of formats) {
       const target = join(dir, resolved.plainNames ? `${stem}.${format}` : `${stem}.${theme.id}.${format}`);
       if (resolve(target) === input) {
@@ -357,7 +376,7 @@ export async function runBuild(argv: string[], io: Io): Promise<number> {
         refused = true; // refused — see the exit code contract in src/bin/documentor.ts
         continue; // one colliding format must not stop the others from being written
       }
-      const bytes = await renderTo(format, doc, theme, epochSeconds, (m) => io.err(`documentor: warning — ${m}`), browser);
+      const bytes = await renderTo(format, drawn, theme, epochSeconds, (m) => io.err(`documentor: warning — ${m}`), browser);
       await writeFile(target, bytes);
       io.log(`${target}  (${bytes.length.toLocaleString('en-US')} bytes)`);
     }
@@ -508,7 +527,7 @@ type FileConfig = {
  */
 async function processFile(
   input: string, cfg: FileConfig, outArg: string | undefined, browser: Browser | undefined,
-  onWarn: (m: string) => void,
+  onWarn: (m: string) => void, browserFor?: () => Promise<Browser>,
 ): Promise<FileResult> {
   try {
     const ext = extname(input).toLowerCase();
@@ -537,13 +556,14 @@ async function processFile(
     await mkdir(outDir, { recursive: true });
     const written: string[] = [];
     let refusedReason: string | undefined;
+    const drawn = await drawn_(doc, cfg.theme, cfg.formats, browser ?? browserFor, onWarn);
     for (const [i, format] of cfg.formats.entries()) {
       const target = targets[i]!;
       if (target === resolve(input)) {
         refusedReason = `refusing to overwrite the input file ${input}`;
         continue; // one colliding format must not stop the others from being written
       }
-      const bytes = await renderTo(format, doc, cfg.theme, epochSeconds, onWarn, browser);
+      const bytes = await renderTo(format, drawn, cfg.theme, epochSeconds, onWarn, browser);
       await writeFile(target, bytes);
       written.push(target);
     }
@@ -799,8 +819,12 @@ async function runBuildBatch(
   // newPage=0 before this fix), and a batch that omits pdf everywhere
   // should not fail with an "install chromium" message a single-file build
   // of the same input would never have hit.
-  const needsBrowser = [...perFile.values()].some((cfg) => cfg.formats.includes('pdf'));
-  const browser = needsBrowser ? await launchBrowser(io) : undefined;
+  // A Word file needs one too when its source carries a diagram, since the
+  // picture is drawn in Chromium — known only after ingest, so a batch that
+  // writes Word alone launches it as soon as any file asks (see drawn_).
+  const anyPdf = [...perFile.values()].some((cfg) => cfg.formats.includes('pdf'));
+  let browser = anyPdf ? await launchBrowser(io) : undefined;
+  const browserFor = async (): Promise<Browser> => (browser ??= await launchBrowser(io));
   const results: FileResult[] = [];
   let sidecarCount = 0;
   try {
@@ -824,7 +848,7 @@ async function runBuildBatch(
         io.err(`documentor: ${file} — refused: ${reason}`);
         continue;
       }
-      const result = await processFile(file, cfg, args.out, browser, (m) => io.err(`documentor: warning — ${file}: ${m}`));
+      const result = await processFile(file, cfg, args.out, browser, (m) => io.err(`documentor: warning — ${file}: ${m}`), browserFor);
       results.push(result);
       if (result.kind === 'failed') io.err(`documentor: ${file} — failed: ${result.reason}`);
       else if (result.kind === 'refused') io.err(`documentor: ${file} — refused: ${result.reason}`);

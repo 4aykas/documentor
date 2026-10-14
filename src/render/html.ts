@@ -199,6 +199,13 @@ function block(b: Block, size: ColSizing): string {
       return imageMarkup(b.src, b.alt, b.widthPt);
     case 'code':
       return `<pre><code>${escapeHtml(b.text)}</code></pre>`;
+    // The SVG is Mermaid's own output, drawn under securityLevel 'strict' by
+    // render/diagrams.ts, so it is inlined as markup rather than escaped.
+    // Sized by a cap rather than a width: a layout whose column is narrower
+    // than the theme's (a grid track, a sidebar) shrinks it, and a fixed
+    // width would push that column wider than the page instead.
+    case 'diagram':
+      return `<figure class="diagram">${b.svg.replace(/^<svg/, `<svg style="max-width: ${b.wPt}pt"`)}</figure>`;
     case 'quote':
       return `<blockquote>${b.paras.map((p) => `<p>${inline(p)}</p>`).join('')}</blockquote>`;
     case 'rule':
@@ -554,6 +561,8 @@ figure{ margin: 0 0 10pt; break-inside: avoid; }
 .img-placeholder-box{ border: 0.75pt solid var(--rule); color: var(--muted); padding: 10pt 12pt; font-size: ${(ty.bodyPt * 0.95).toFixed(1)}pt; }
 .img-placeholder-host{ display: block; margin-top: 3pt; font-size: ${(ty.bodyPt * 0.85).toFixed(1)}pt; }
 img{ max-width: 100%; height: auto; }
+figure.diagram{ margin: 4pt 0 12pt; max-width: 100%; }
+figure.diagram svg{ display: block; width: 100%; height: auto; }
 table{ width: 100%; max-width: ${colWidthPt}pt; border-collapse: collapse; margin: 0 0 12pt; font-size: ${(ty.bodyPt * 0.95).toFixed(1)}pt; }
 /* A row that splits across a page break loses its meaning; a whole table that
    cannot fit one page still has to break, so only the rows are protected. */
