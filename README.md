@@ -247,13 +247,23 @@ mindmap
 ```
 ````
 
-- **Drawn, not filled.** Boxes are the sheet inside a brand outline with a
-  small radius, edges are straight muted lines, edge and message labels sit
-  in the muted ink at the nodes' size, stores get a faint tint, and a mind
-  map, timeline or pie paints its branches with one hue running from the
-  brand toward the sheet. Labels are set in the theme's body face, wrapped
-  at a width that keeps most to two or three lines; a long sequence message
-  wraps between its lifelines instead of pushing them apart.
+- **One grey system, one accent.** Every colour comes from the theme's
+  sheet, ink and brand. Structure is ink mixed into the sheet at fixed
+  strengths — a box 3.5%, its outline 22%, a line 50%, secondary text 62%,
+  the scheme beautiful-mermaid derives its themes from — and the brand is
+  spent on what carries direction or emphasis: arrowheads, the first
+  series, a highlighted point. A mind map, timeline or pie runs one hue from
+  the brand toward the sheet; series in a chart, a sankey or a git graph
+  step through the brand and neutrals that differ in lightness. Edge labels
+  sit on small chips in the secondary ink. Labels are set in the theme's
+  body face, wrapped to two or three lines; a long sequence message wraps
+  between its lifelines.
+- **Where Mermaid ignores a theme, the drawing is corrected.** A sankey's
+  fixed colour scheme and a journey's actor colours (read before any
+  configuration applies) are repainted after drawing, a quadrant chart's
+  point colour is named instead of the `hsl(0, 0%, NaN%)` Mermaid derives,
+  a gantt axis is thinned to about nine dates, and a pie or quadrant chart
+  is held to part of the column instead of filling it.
 - **Labels at the body size.** A diagram is laid out at the theme's body
   size, so the scale it needs to fit the column is the size its labels print
   at. A left-to-right flowchart that would shrink below that is drawn

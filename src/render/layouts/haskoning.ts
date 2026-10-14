@@ -50,7 +50,7 @@ body{ font-size: 9.4pt; line-height: 1.5 }
 .h-sec{ margin: 0 0 8mm; -webkit-box-decoration-break: clone; box-decoration-break: clone }
 .h-sec.tint-1{ background: ${H.sky}; padding: 8mm 8mm 5mm }
 .h-sec.tint-2{ background: ${H.mint}; padding: 8mm 8mm 5mm }
-.h-crumb{ font-size: 7.6pt; font-weight: 700 }
+.h-crumb{ font-size: 7.6pt; font-weight: 700; break-after: avoid }
 .h-crumb u{ text-decoration-thickness: .2mm; text-underline-offset: .8mm }
 .h-title{ font-size: 23pt; line-height: 1.12; font-weight: 700; margin: 2.4mm 0 4mm; break-after: avoid }
 h2{ font-size: 15pt; line-height: 1.2; font-weight: 700; margin: 6mm 0 2mm }

@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser } from 'playwright-core';
 import type { Block, Doc } from '../../src/ir/types.js';
-import { diagramVars, drawDiagrams, hasDiagrams, leftToRight } from '../../src/render/diagrams.js';
+import { diagramTokens, diagramVars, drawDiagrams, hasDiagrams, kindOf, leftToRight } from '../../src/render/diagrams.js';
+import * as tint from '../../src/render/tint.js';
 import { renderPdf } from '../../src/render/pdf.js';
 import { renderDocx } from '../../src/render/docx.js';
 import { renderMarkdown } from '../../src/render/md.js';
@@ -142,6 +143,31 @@ describe('every renderer places the drawn diagram', () => {
   });
 });
 
+describe('types Mermaid colours by itself', () => {
+  it('names a source\'s type past frontmatter and comments', () => {
+    expect(kindOf('---\nconfig:\n  layout: elk\n---\n%% c\nflowchart LR\n  A-->B')).toBe('flowchart');
+    expect(kindOf('sankey-beta\nA,B,1')).toBe('sankey-beta');
+  });
+
+  it('sankey nodes and links take the theme\'s series, not Tableau\'s', async () => {
+    const [d] = diagrams(await draw('```mermaid\nsankey-beta\nA,B,4\nA,C,2\n```\n'));
+    const fills = [...d!.svg.matchAll(/<rect[^>]*fill="([^"]+)"/g)].map((m) => m[1]!.toUpperCase());
+    const series = diagramTokens(theme).series;
+    expect(fills.length).toBeGreaterThan(0);
+    for (const f of fills) expect(series).toContain(f);
+  });
+
+  it('journey actors take the theme\'s series, not Mermaid\'s green and cyan', async () => {
+    const [d] = diagrams(await draw('```mermaid\njourney\n  section S\n    Task: 5: Ann, Bob\n```\n'));
+    expect(d!.svg).not.toMatch(/#8FBC8F|#7CFC00|#00FFFF/i);
+  });
+
+  it('caps a pie at part of the column', async () => {
+    const [d] = diagrams(await draw('```mermaid\npie\n  "A" : 3\n  "B" : 1\n```\n'));
+    expect(d!.wPt).toBeLessThanOrEqual((595.28 - theme.page.marginPt * 2) * 0.6 + 0.01);
+  });
+});
+
 describe('a left-to-right flow too wide for the column', () => {
   it('is turned top-down by its header line alone', () => {
     expect(leftToRight('flowchart LR\n  A --> B')).toBe('flowchart TD\n  A --> B');
@@ -162,12 +188,25 @@ describe('a left-to-right flow too wide for the column', () => {
 });
 
 describe('diagramVars', () => {
-  it('paints in the theme: brand edges, ink text, the sheet behind edge labels', () => {
+  it('draws structure in ink mixed into the sheet and spends the brand on arrowheads and the first branch', () => {
     const v = diagramVars(theme);
-    expect(v['primaryBorderColor']).toBe('#DA291C');
+    const t = diagramTokens(theme);
+    expect(v['primaryColor']).toBe(t.surface);
+    expect(v['primaryBorderColor']).toBe(t.stroke);
+    expect(v['lineColor']).toBe(t.line);
+    expect(v['arrowheadColor']).toBe('#DA291C');
     expect(v['primaryTextColor']).toBe(theme.colors.ink);
     expect(v['edgeLabelBackground']).toBe(theme.colors.paper);
     expect(v['cScale0']).toBe('#DA291C');
+    // the quadrant point Mermaid would otherwise print as hsl(0, 0%, NaN%)
+    expect(v['quadrantPointFill']).toBe('#DA291C');
+  });
+
+  it('keeps the grey system in order: a box is fainter than its outline, the outline than a line, a line than text', () => {
+    const { luminance } = tint;
+    const t = diagramTokens(theme);
+    const order = [t.surface, t.stroke, t.line, t.textSec, theme.colors.ink].map(luminance);
+    for (let i = 1; i < order.length; i++) expect(order[i]!).toBeLessThan(order[i - 1]!);
   });
 
   it('labels each branch fill in whichever of ink and white reads on it', () => {

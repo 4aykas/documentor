@@ -46,52 +46,82 @@ function mix(a: string, b: string, t: number): string {
 }
 
 /**
- * Mermaid's `base` theme variables, read off the theme. Nodes are the sheet
- * inside a brand outline; lines are the theme's muted ink; notes and
- * activations carry a faint brand tint; the branch scale a mindmap, timeline
- * or pie paints with runs from the
- * brand at full strength toward the sheet, so every diagram in a document is
- * one hue, the way the heatmap is. Each fill's label colour is computed by
- * contrast rather than assumed. On a dark sheet the brand is brandOnDark when
- * the theme has one: the light-sheet brand on near-black is what that field's
- * own comment warns against.
+ * Every colour a diagram uses, derived from three of the theme's: the sheet,
+ * the ink and the brand. Structure is ink mixed into the sheet at fixed
+ * strengths — a box is 3.5% ink, its outline 22%, a line 50%, secondary text
+ * 62% — so a drawing reads as one calm grey system, and the brand is spent
+ * once, on what carries direction or emphasis: arrowheads, the first series,
+ * a highlighted point. The fixed-strength scheme is the one beautiful-mermaid
+ * (lukilabs, MIT) derives its themes from.
+ */
+export function diagramTokens(theme: Theme) {
+  const c = theme.colors;
+  const { dark, brand } = sheetOf(c);
+  const paper = c.paper, ink = c.ink;
+  const ink_ = (t: number) => mix(ink, paper, t);
+  const tint = (t: number) => mix(brand, paper, t);
+  return {
+    dark, paper, ink, brand, tint,
+    surface: ink_(0.035), stroke: ink_(0.22), line: ink_(0.5), textSec: ink_(0.62), faint: ink_(0.08),
+    /** Categorical series: the brand, then neutrals and brand shades that
+     *  stay apart in lightness, so a series is told by more than hue. */
+    series: [brand, ink_(0.62), tint(0.45), ink_(0.3), mix(brand, ink, 0.6), tint(0.22), ink_(0.45), tint(0.7)],
+  };
+}
+
+/**
+ * Mermaid's `base` theme variables, from diagramTokens. The branch scale a
+ * mindmap, timeline or pie paints with runs from the brand at full strength
+ * toward the sheet, so every diagram in a document is one hue, the way the
+ * heatmap is; each fill's label colour is computed by contrast. On a dark
+ * sheet the brand is brandOnDark when the theme has one.
  */
 export function diagramVars(theme: Theme): Record<string, string> {
-  const c = theme.colors;
-  const paper = c.paper;
-  const { dark, brand } = sheetOf(c);
-  const ink = c.ink;
-  const tint = (t: number) => mix(brand, paper, t);
+  const t = diagramTokens(theme);
+  const { paper, ink, brand, tint, dark } = t;
   const label = (fill: string) => readableOn(fill, ink) === ink ? ink : (dark ? '#000000' : '#FFFFFF');
-  // A box is drawn, not filled: the sheet inside a brand outline, the way a
-  // drafted figure reads. Tint is kept for what is set apart — a note, an
-  // activation — so the eye finds those first.
-  const node = paper;
   const v: Record<string, string> = {
     background: paper,
     fontFamily: familyStack(theme.font),
     fontSize: `${(theme.type.bodyPt * 4 / 3).toFixed(1)}px`,
-    primaryColor: node, primaryBorderColor: brand, primaryTextColor: ink,
-    secondaryColor: tint(0.24), secondaryBorderColor: brand, secondaryTextColor: ink,
-    tertiaryColor: mix(c.muted, paper, 0.08), tertiaryBorderColor: c.rule, tertiaryTextColor: ink,
-    mainBkg: node, nodeBorder: brand, nodeTextColor: ink, textColor: ink, titleColor: ink,
-    lineColor: c.muted, edgeLabelBackground: paper,
-    clusterBkg: tint(0.05), clusterBorder: c.rule,
-    actorBkg: node, actorBorder: brand, actorTextColor: ink, actorLineColor: c.muted,
-    signalColor: ink, signalTextColor: ink, labelBoxBkgColor: node, labelBoxBorderColor: brand,
-    labelTextColor: ink, loopTextColor: ink, noteBkgColor: tint(0.06), noteBorderColor: brand, noteTextColor: ink,
-    activationBkgColor: tint(0.24), activationBorderColor: brand,
-    pieStrokeColor: paper, pieOuterStrokeColor: c.rule, pieTitleTextColor: ink,
+    primaryColor: t.surface, primaryBorderColor: t.stroke, primaryTextColor: ink,
+    secondaryColor: tint(0.12), secondaryBorderColor: t.stroke, secondaryTextColor: ink,
+    tertiaryColor: t.faint, tertiaryBorderColor: t.stroke, tertiaryTextColor: ink,
+    mainBkg: t.surface, nodeBorder: t.stroke, nodeTextColor: ink, textColor: ink, titleColor: ink,
+    lineColor: t.line, arrowheadColor: brand, edgeLabelBackground: paper,
+    clusterBkg: paper, clusterBorder: t.stroke,
+    actorBkg: t.surface, actorBorder: t.stroke, actorTextColor: ink, actorLineColor: t.stroke,
+    signalColor: t.line, signalTextColor: t.textSec, labelBoxBkgColor: t.surface, labelBoxBorderColor: t.stroke,
+    labelTextColor: ink, loopTextColor: t.textSec, noteBkgColor: tint(0.07), noteBorderColor: tint(0.4), noteTextColor: ink,
+    activationBkgColor: t.faint, activationBorderColor: t.stroke,
+    // state and ER diagrams
+    transitionColor: t.line, transitionLabelColor: t.textSec, stateLabelColor: ink, labelColor: ink,
+    attributeBackgroundColorOdd: paper, attributeBackgroundColorEven: t.surface,
+    // quadrant chart: Mermaid derives the point colour from a value it never
+    // set, and prints hsl(0, 0%, NaN%) — black. Every slot is named here.
+    quadrant1Fill: tint(0.1), quadrant2Fill: tint(0.18), quadrant3Fill: t.surface, quadrant4Fill: tint(0.05),
+    quadrant1TextFill: ink, quadrant2TextFill: ink, quadrant3TextFill: ink, quadrant4TextFill: ink,
+    quadrantPointFill: brand, quadrantPointTextFill: ink, quadrantXAxisTextFill: t.textSec, quadrantYAxisTextFill: t.textSec,
+    quadrantInternalBorderStrokeFill: t.stroke, quadrantExternalBorderStrokeFill: t.stroke, quadrantTitleFill: ink,
+    // journey faces and git graph labels
+    faceColor: t.surface, commitLabelColor: ink, commitLabelBackground: t.surface, tagLabelColor: ink,
+    tagLabelBackground: t.surface, tagLabelBorder: t.stroke,
+    pieStrokeColor: paper, pieOuterStrokeColor: t.stroke, pieTitleTextColor: ink,
     pieLegendTextColor: ink, pieSectionTextColor: ink,
     // Mermaid draws slices at 70% over the sheet, so a slice never matched
     // its own legend swatch.
     pieOpacity: '1',
   };
+  t.series.forEach((s, i) => {
+    v[`git${i}`] = s;
+    v[`gitBranchLabel${i}`] = label(s);
+    v[`gitInv${i}`] = paper;
+  });
   // Twelve steps, full brand to its palest, then back up: a long branch list
   // alternates strong and pale neighbours instead of fading into the sheet.
   const steps = [1, 0.62, 0.38, 0.22, 0.82, 0.5, 0.3, 0.16, 0.9, 0.7, 0.44, 0.26];
-  steps.forEach((t, i) => {
-    const fill = tint(t);
+  steps.forEach((s, i) => {
+    const fill = tint(s);
     v[`cScale${i}`] = fill;
     v[`cScaleLabel${i}`] = label(fill);
     v[`cScalePeer${i}`] = brand;
@@ -100,8 +130,41 @@ export function diagramVars(theme: Theme): Record<string, string> {
     v[`cScaleInv${i}`] = mix(brand, ink, 0.7);
     v[`pie${i + 1}`] = fill;
   });
-  v['pieSectionTextColor'] = ink;
+  // A journey's task boxes, section by section: faint tints, not Mermaid's
+  // navy and purple.
+  [0.1, 0.18, 0.06, 0.26, 0.14, 0.04, 0.22, 0.08].forEach((s, i) => { v[`fillType${i}`] = tint(s); });
   return v;
+}
+
+/** The diagram type a source declares: its first word after any frontmatter. */
+export function kindOf(source: string): string {
+  const lines = source.split('\n');
+  let i = 0;
+  if (lines[0]?.trim() === '---') i = lines.findIndex((l, j) => j > 0 && l.trim() === '---') + 1;
+  while (i < lines.length && (lines[i]!.trim() === '' || lines[i]!.trim().startsWith('%%'))) i++;
+  return (lines[i] ?? '').trim().split(/[\s;]/)[0] ?? '';
+}
+
+/** Configuration a type takes outside themeVariables. */
+function kindConfig(kind: string, theme: Theme): Record<string, unknown> {
+  const t = diagramTokens(theme);
+  switch (kind) {
+    case 'xychart-beta':
+    case 'xychart':
+      return { themeVariables: { ...diagramVars(theme), xyChart: {
+        // Bars are the brand tinted, so a line drawn over them in the full
+        // brand stays the one thing that reads first.
+        backgroundColor: t.paper, titleColor: t.ink, plotColorPalette: [t.tint(0.5), t.brand, ...t.series.slice(1)].join(', '),
+        xAxisLabelColor: t.textSec, xAxisTitleColor: t.textSec, xAxisTickColor: t.stroke, xAxisLineColor: t.stroke,
+        yAxisLabelColor: t.textSec, yAxisTitleColor: t.textSec, yAxisTickColor: t.stroke, yAxisLineColor: t.stroke,
+      } } };
+    case 'journey':
+      return { journey: { actorColours: t.series, sectionFills: [0.1, 0.18, 0.06, 0.26].map(t.tint), sectionColours: [t.ink] } };
+    case 'gitGraph':
+      return { gitGraph: { rotateCommitLabel: false } };
+    default:
+      return {};
+  }
 }
 
 /**
@@ -113,23 +176,30 @@ export function diagramVars(theme: Theme): Record<string, string> {
  * corners its author chose), and edge and message labels the theme's muted
  * ink at the nodes' size but not their weight.
  */
-export function diagramCss(theme: Theme): string {
-  const c = theme.colors;
-  return `
-.node rect, .node polygon, .node circle, .node ellipse, .node path { stroke-width: 1.25px; }
-.node rect:not([rx]) { rx: 3px; ry: 3px; }
-.node .label text, .node .label tspan { font-weight: 600; }
-.flowchart-link, .edgePath .path { stroke-width: 1.1px; }
-.marker, .arrowheadPath, marker path { fill: ${c.muted}; stroke: ${c.muted}; }
-.edgeLabel text, .edgeLabel tspan, .messageText, .loopText, .loopText tspan, .labelText, .labelText tspan { fill: ${c.muted} !important; }
-.edgeLabel rect, .labelBkg { fill: ${c.paper}; opacity: 1; }
-.cluster rect { stroke-dasharray: 4 3; rx: 4px; ry: 4px; }
-rect.actor { stroke-width: 1.25px; rx: 3px; ry: 3px; }
-text.actor, text.actor tspan { font-weight: 600; }
+export function diagramCss(theme: Theme, kind = ''): string {
+  const t = diagramTokens(theme);
+  const base = `
+.node rect, .node polygon, .node circle, .node ellipse, .node path { stroke-width: 1px; }
+.node rect:not([rx]) { rx: 4px; ry: 4px; }
+.flowchart-link, .edgePath .path, .transition, .relationshipLine { stroke-width: 1px; }
+.marker, .arrowheadPath, marker path { fill: ${t.brand}; stroke: ${t.brand}; }
+.edgeLabel text, .edgeLabel tspan, .messageText, .loopText, .loopText tspan, .labelText, .labelText tspan { fill: ${t.textSec} !important; font-size: 0.86em; }
+.edgeLabel rect, .labelBkg { fill: ${t.paper}; stroke: ${t.faint}; stroke-width: 1px; rx: 2px; ry: 2px; opacity: 1; }
+.cluster rect { stroke-dasharray: 3 3; rx: 4px; ry: 4px; }
+rect.actor { stroke-width: 1px; rx: 4px; ry: 4px; }
 .actor-line { stroke-dasharray: 2 3; }
-.note { stroke-width: 1px; }
+.note { stroke-width: 1px; rx: 2px; ry: 2px; }
 .labelBox { stroke-width: 1px; }
+.messageLine0, .messageLine1 { stroke-width: 1px; }
 `;
+  // Types that draw with hard-coded colours rather than theme variables.
+  const extra: Record<string, string> = {
+    timeline: `line { stroke: ${t.line}; } path { stroke-width: 1px; }`,
+    gantt: `.grid .tick line { stroke: ${t.faint}; } .grid path { stroke: ${t.stroke}; } .task { stroke-width: 1px; } .today { display: none; }`,
+    gitGraph: `.branch { stroke-width: 1px; stroke-dasharray: 2 3; } .commit-label-bkg { stroke: ${t.stroke}; }`,
+    journey: `.task-line { stroke: ${t.stroke}; } .face { stroke: ${t.line}; } .mouth { stroke: ${t.line}; }`,
+  };
+  return base + (extra[kind] ?? '');
 }
 
 /**
@@ -239,8 +309,17 @@ export async function drawDiagrams(doc: Doc, theme: Theme, browser: Browser, onW
     };
     drawn = [];
     const fitOf = (r: { w: number; h: number }) => Math.min(1, colPt / (r.w * 0.75), maxHPt / (r.h * 0.75));
+    const series = diagramTokens(theme).series;
     for (const [i, b] of sources.entries()) {
-      let result = await renderOne(page, config, `dg${i}`, drawable(b.text));
+      const kind = kindOf(b.text);
+      const cfg = { ...config, ...kindConfig(kind, theme), themeCSS: diagramCss(theme, kind) };
+      // What no theme variable reaches is fixed in the page after drawing:
+      // sankey's nodes and links take their colours from a fixed scheme,
+      // journey reads its actor colours before any configuration is applied
+      // (a Mermaid bug), and a gantt axis prints one label per tick however
+      // close the ticks are.
+      const recolor = { kind, series, paper: theme.colors.paper };
+      let result = await renderOne(page, cfg, `dg${i}`, drawable(b.text), recolor);
       // A left-to-right flow too wide for the column is drawn again top-down,
       // and kept when that prints its labels larger: the direction is layout,
       // the words are the author's either way.
@@ -248,7 +327,7 @@ export async function drawDiagrams(doc: Doc, theme: Theme, browser: Browser, onW
       let triedDown = false;
       if (!('error' in result) && across !== null && fitOf(result) < 0.85) {
         triedDown = true;
-        const down = await renderOne(page, config, `dg${i}`, drawable(across));
+        const down = await renderOne(page, cfg, `dg${i}`, drawable(across), recolor);
         if (!('error' in down) && fitOf(down) > fitOf(result) * 1.15) {
           onWarn(`diagram ${i + 1} (${b.lang}) is drawn top-down: left to right it would print its labels at about `
             + `${(theme.type.bodyPt * fitOf(result)).toFixed(1)}pt, top-down at ${(theme.type.bodyPt * fitOf(down)).toFixed(1)}pt`);
@@ -290,8 +369,13 @@ export function leftToRight(source: string): string | null {
 
 type Rendered = { svg: string; w: number; h: number } | { error: string };
 
-/** One source drawn into the page's host, trimmed to its ink. */
-async function renderOne(page: Page, config: object, id: string, source: string): Promise<Rendered> {
+/**
+ * One source drawn into the page's host, trimmed to its ink. `recolor` fixes
+ * what no theme variable reaches, by type: a sankey's distinct node fills
+ * mapped in order onto the series (links and gradient stops with them), a
+ * journey's actor dots, a gantt axis thinned to about nine labels.
+ */
+async function renderOne(page: Page, config: object, id: string, source: string, recolor: { kind: string; series: string[]; paper: string } | null = null): Promise<Rendered> {
       // A string, not a closure: this project's tsconfig has no DOM lib.
       return await page.evaluate(`(async () => {
         const m = globalThis.mermaid;
@@ -302,6 +386,37 @@ async function renderOne(page: Page, config: object, id: string, source: string)
           const { svg } = await m.render(${JSON.stringify(id)}, ${JSON.stringify(source)});
           host.innerHTML = svg;
           const el = host.querySelector('svg');
+          const fix = ${JSON.stringify(recolor)};
+          const palette = fix && fix.kind.startsWith('sankey') ? fix.series : null;
+          if (fix && fix.kind === 'journey') {
+            for (const c of el.querySelectorAll('circle[class*="actor-"]')) {
+              const n = Number((c.getAttribute('class').match(/actor-(\\d+)/) || [0, 0])[1]);
+              c.setAttribute('fill', fix.series[n % fix.series.length]);
+              c.setAttribute('stroke', fix.paper);
+            }
+          }
+          if (fix && fix.kind === 'gantt') {
+            const ticks = [...el.querySelectorAll('.grid .tick text')];
+            const every = Math.ceil(ticks.length / 9);
+            if (every > 1) ticks.forEach((t, i) => { if (i % every) t.remove(); });
+          }
+          if (palette) {
+            const map = new Map();
+            for (const r of el.querySelectorAll('rect[fill]')) {
+              const f = r.getAttribute('fill').toLowerCase();
+              if (!map.has(f)) map.set(f, palette[map.size % palette.length]);
+              r.setAttribute('fill', map.get(f));
+            }
+            for (const s of el.querySelectorAll('stop')) {
+              const f = (s.getAttribute('stop-color') || '').toLowerCase();
+              if (map.has(f)) s.setAttribute('stop-color', map.get(f));
+            }
+            for (const p of el.querySelectorAll('path[stroke]')) {
+              const f = p.getAttribute('stroke').toLowerCase();
+              if (map.has(f)) p.setAttribute('stroke', map.get(f));
+              p.setAttribute('stroke-opacity', '0.4');
+            }
+          }
           const box = el.getBBox();
           const pad = 4;
           const w = Math.ceil(box.width + pad * 2), h = Math.ceil(box.height + pad * 2);
@@ -330,6 +445,13 @@ function place(doc: Doc, drawn: Drawn[], theme: Theme, colPt: number, maxHPt: nu
     let hPt = d.hPx * 0.75;
     const fit = Math.min(1, colPt / wPt, maxHPt / hPt);
     wPt *= fit; hPt *= fit;
+    // A chart Mermaid draws at a fixed size, whatever it holds, would
+    // otherwise take the whole column: a pie of four slices half a page.
+    const cap = { pie: 0.6, quadrantChart: 0.72 }[kindOf(b.text)];
+    if (cap !== undefined && wPt > colPt * cap) {
+      const s = (colPt * cap) / wPt;
+      wPt *= s; hPt *= s;
+    }
     // Labels are laid out at the body size; a picture scaled far below it
     // prints them smaller than anything else on the page.
     if (fit < 0.75) {
