@@ -65,6 +65,8 @@ export function leftToRight(source: string): string | null {
  * it: an `accDescr: …` line or an `accDescr { … }` block, which Mermaid
  * writes into the SVG as `<desc>`.
  */
-export function hasDescription(source: string): boolean {
+export function hasDescription(source: string, lang = 'mermaid'): boolean {
+  // A ```chart fence describes itself with a `desc` line.
+  if (lang.toLowerCase() === 'chart') return /^\s*desc[ \t]+\S/m.test(source);
   return /^\s*accDescr\s*[:{]/m.test(source);
 }

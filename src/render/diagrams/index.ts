@@ -17,20 +17,24 @@ import type { Browser } from 'playwright-core';
 import type { Block, Doc } from '../../ir/types.js';
 import { PAGE_PT, type Theme } from '../../theme/types.js';
 import { findingLine, findings, measureScript, type Measured } from './checks.js';
-import { configFor, mermaidConfig, renderOne } from './mermaid/render.js';
+import { familyStack } from '../fonts.js';
+import { drawChart, stringsOf } from './chart/draw.js';
+import { measureWidths } from './chart/measure.js';
+import { parseChart } from './chart/parse.js';
+import { configFor, mermaidConfig, renderOne, type Rendered } from './mermaid/render.js';
 import { drawable, kindOf, leftToRight } from './mermaid/source.js';
 import { openDiagramPage } from './page.js';
 import { place, type Drawn } from './place.js';
-import { typeByHead } from './registry.js';
+import { ENGINE_LANG, engineOf, typeByHead } from './registry.js';
 import { diagramTokens, diagramVars } from './tokens.js';
 
 export { diagramCss } from './mermaid/render.js';
 export { drawable, hasDescription, headerLine, kindOf, leftToRight } from './mermaid/source.js';
-export { REGISTRY, typeByHead, typeOf, type DiagramType } from './registry.js';
+export { REGISTRY, engineOf, typeByHead, typeOf, type DiagramType } from './registry.js';
 export { diagramTokens, diagramVars, distinct, type DiagramTokens } from './tokens.js';
 
 /** The fence languages this pass draws. Anything else stays a code block. */
-export const DIAGRAM_LANGS: ReadonlySet<string> = new Set(['mermaid']);
+export const DIAGRAM_LANGS: ReadonlySet<string> = new Set(Object.values(ENGINE_LANG));
 
 type Code = Extract<Block, { t: 'code' }>;
 
@@ -70,6 +74,30 @@ export async function drawDiagrams(doc: Doc, theme: Theme, browser: Browser, onW
     const series = tokens.series;
     for (const [i, b] of sources.entries()) {
       const kind = kindOf(b.text);
+      const engine = engineOf(b.lang);
+      const type = typeByHead(kind, engine);
+      const name = type?.id ?? (kind || b.lang);
+      /** The kept drawing is in the host: measure it as laid out, judge it,
+       *  and photograph it for Word. */
+      const keep = async (result: Extract<Rendered, { svg: string }>, triedDown: boolean) => {
+        const counts = Object.fromEntries(Object.entries(type?.budget ?? {}).map(([k, v]) => [k, v.count]));
+        const measured = await page.evaluate(measureScript(counts)) as Measured;
+        for (const f of findings(measured, type, kind)) onWarn(findingLine(i + 1, name, f));
+        const shot = await (await page.$('#host svg'))!.screenshot({ type: 'png', omitBackground: false });
+        drawn.push({ svg: result.svg, png: `data:image/png;base64,${shot.toString('base64')}`, wPx: result.w, hPx: result.h, triedDown, title: result.title, desc: result.desc });
+      };
+      if (engine === 'chart') {
+        // documentor's own engine: parsed and laid out here, at the column's
+        // width and the body size, so it never needs scaling.
+        const parsed = parseChart(b.text);
+        if (!parsed.ok) { drawn.push({ error: parsed.error }); continue; }
+        const family = familyStack(theme.font);
+        const widths = await measureWidths(page, stringsOf(parsed.chart), family, bodyPx);
+        const chart = drawChart(parsed.chart, { widthPx: colPt * 4 / 3, bodyPx, family, tokens, id: `dg${i}` }, widths);
+        await page.evaluate(`document.getElementById('host').innerHTML = ${JSON.stringify(chart.svg)}`);
+        await keep({ ...chart, title: parsed.chart.title ?? '', desc: parsed.chart.desc ?? '' }, false);
+        continue;
+      }
       const cfg = configFor(kind, config, tokens, vars);
       // What no theme variable reaches is fixed in the page after drawing:
       // sankey's nodes and links take their colours from a fixed scheme,
@@ -87,7 +115,7 @@ export async function drawDiagrams(doc: Doc, theme: Theme, browser: Browser, onW
         triedDown = true;
         const down = await renderOne(page, cfg, `dg${i}`, drawable(across), recolor);
         if (!('error' in down) && fitOf(down) > fitOf(result) * 1.15) {
-          onWarn(`diagram ${i + 1} (${typeByHead(kind)?.id ?? (kind || b.lang)}) is drawn top-down: left to right it would print its labels at about `
+          onWarn(`diagram ${i + 1} (${name}) is drawn top-down: left to right it would print its labels at about `
             + `${(theme.type.bodyPt * fitOf(result)).toFixed(1)}pt, top-down at ${(theme.type.bodyPt * fitOf(down)).toFixed(1)}pt`);
           result = down;
         } else {
@@ -97,13 +125,7 @@ export async function drawDiagrams(doc: Doc, theme: Theme, browser: Browser, onW
         }
       }
       if ('error' in result) { drawn.push(result); continue; }
-      // The kept drawing is in the host: measure it as laid out and judge it.
-      const type = typeByHead(kind);
-      const counts = Object.fromEntries(Object.entries(type?.budget ?? {}).map(([k, b]) => [k, b.count]));
-      const measured = await page.evaluate(measureScript(counts)) as Measured;
-      for (const f of findings(measured, type, kind)) onWarn(findingLine(i + 1, type?.id ?? (kind || b.lang), f));
-      const shot = await (await page.$('#host svg'))!.screenshot({ type: 'png', omitBackground: false });
-      drawn.push({ svg: result.svg, png: `data:image/png;base64,${shot.toString('base64')}`, wPx: result.w, hPx: result.h, triedDown, title: result.title, desc: result.desc });
+      await keep(result, triedDown);
     }
   } finally {
     await page.close();

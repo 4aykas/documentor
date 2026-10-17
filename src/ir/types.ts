@@ -45,7 +45,7 @@ export type Block =
   // header word no record claims. `title` and `desc` are the author's
   // accTitle and accDescr, as Mermaid wrote them into the SVG; absent when
   // the fence has none (no description is ever made up).
-  | { t: 'diagram'; lang: 'mermaid'; kind: string; source: string; svg: string; png: string; wPt: number; hPt: number;
+  | { t: 'diagram'; lang: 'mermaid' | 'chart'; kind: string; source: string; svg: string; png: string; wPt: number; hPt: number;
       title?: string; desc?: string }
   | { t: 'quote'; paras: Inline[][] }
   | { t: 'rule' }

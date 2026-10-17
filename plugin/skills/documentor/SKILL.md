@@ -57,6 +57,12 @@ Know these before promising anything to the user:
   shape. Page furniture (a letterhead, a footer) is never removed unless the
   sidecar's `pdfChrome` field says where — run `inspect` first and relay
   its advisory rather than guessing a value.
+- **A chart with numbers is a ```` ```chart ```` fence** (`bar`, `dumbbell`,
+  `waterfall`; grammar in the repo's `docs/diagrams/chart.md`), not a Mermaid
+  `xychart`, whenever a value can be negative or totals must add up. Copy the
+  document's numbers exactly as written; a waterfall whose totals do not
+  reconcile is refused with the difference named — report it to the user,
+  never adjust a number to make it fit.
 - **A diagram is drawn from a ```` ```mermaid ```` fence, and only from one.**
   Any Mermaid type works (flowchart, sequence, mindmap, timeline, gantt,
   pie, quadrantChart, xychart, sankey, …); the colours and faces come from

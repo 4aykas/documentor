@@ -8,7 +8,8 @@ import { parseInspectArgs } from '../../src/cli/inspect.js';
 import { parseSetupArgs } from '../../src/cli/setup.js';
 import { parseProofArgs } from '../../src/cli/proof.js';
 import { parseThemeArgs } from '../../src/cli/theme.js';
-import { REGISTRY } from '../../src/render/diagrams/registry.js';
+import { ENGINE_LANG, REGISTRY } from '../../src/render/diagrams/registry.js';
+import { CHART_KINDS, ROW_WORDS, SETTINGS } from '../../src/render/diagrams/chart/parse.js';
 
 // Guardrail for a defect this project has shipped three times in one week:
 // documentation that outlived the code it described (README claiming .docx
@@ -265,29 +266,53 @@ describe('CLI flags named in the docs are flags the parser actually accepts', ()
 // ---------------------------------------------------------------------------
 // 3. The README's diagram table vs. REGISTRY.
 //
-// What this depends on: the table whose header row is "| Type | Mermaid
-// header |", read until the first line that is not a table row. Each row's
-// first cell is a record's label; its second cell names the record's
-// canonical (first) header word in backticks. Both directions are checked,
+// What this depends on: the table whose header row is "| Type | Fence |
+// Header |", read until the first line that is not a table row. Each row's
+// first cell is a record's label, its second the fence language of the
+// record's engine, its third the record's canonical (first) header word, both
+// in backticks. Both directions are checked,
 // so a type added to the registry without a README row fails as surely as a
 // row naming a type that no longer exists.
 // ---------------------------------------------------------------------------
 
-function diagramTable(md: string): { label: string; head: string }[] {
+function diagramTable(md: string): { label: string; fence: string; head: string }[] {
   const lines = md.split('\n');
-  const at = lines.findIndex((l) => /^\|\s*Type\s*\|\s*Mermaid header\s*\|\s*$/.test(l));
-  if (at === -1) throw new Error('could not find the README diagram table (header row "| Type | Mermaid header |")');
-  const rows: { label: string; head: string }[] = [];
+  const at = lines.findIndex((l) => /^\|\s*Type\s*\|\s*Fence\s*\|\s*Header\s*\|\s*$/.test(l));
+  if (at === -1) throw new Error('could not find the README diagram table (header row "| Type | Fence | Header |")');
+  const rows: { label: string; fence: string; head: string }[] = [];
   for (const l of lines.slice(at + 2)) {
     if (!l.startsWith('|')) break;
-    const [label, head] = l.split('|').slice(1, 3).map((c) => c.trim());
-    rows.push({ label: label!, head: head!.replace(/`/g, '') });
+    const [label, fence, head] = l.split('|').slice(1, 4).map((c) => c.trim().replace(/`/g, ''));
+    rows.push({ label: label!, fence: fence!, head: head! });
   }
   return rows;
 }
 
+// ---------------------------------------------------------------------------
+// 4. docs/diagrams/chart.md's keyword table vs. the chart parser's own tables
+//    (CHART_KINDS, SETTINGS, ROW_WORDS, and the row suffix `focus`), both
+//    directions: a keyword the parser learns without a row here fails, and so
+//    does a row the parser does not read. Read by the table's header row,
+//    "| Keyword | Types | Meaning |"; each first cell is one backticked word.
+// ---------------------------------------------------------------------------
+
+describe('the chart reference documents exactly the words the parser reads', () => {
+  it('lists every keyword once, and nothing else', () => {
+    const doc = readFileSync(join(ROOT, 'docs', 'diagrams', 'chart.md'), 'utf8').split('\n');
+    const at = doc.findIndex((l) => /^\|\s*Keyword\s*\|\s*Types\s*\|\s*Meaning\s*\|\s*$/.test(l));
+    expect(at, 'the keyword table header row').toBeGreaterThan(-1);
+    const listed: string[] = [];
+    for (const l of doc.slice(at + 2)) {
+      if (!l.startsWith('|')) break;
+      listed.push(l.split('|')[1]!.trim().replace(/`/g, ''));
+    }
+    const known = new Set<string>([...CHART_KINDS, ...Object.values(SETTINGS).flat(), ...Object.values(ROW_WORDS).flat(), 'focus']);
+    expect([...listed].sort()).toEqual([...known].sort());
+  });
+});
+
 describe('README diagram table agrees with the registry', () => {
   it('has one row per registered type, in registry order, naming its canonical header', () => {
-    expect(diagramTable(README)).toEqual(REGISTRY.map((d) => ({ label: d.label, head: d.heads[0] })));
+    expect(diagramTable(README)).toEqual(REGISTRY.map((d) => ({ label: d.label, fence: ENGINE_LANG[d.engine], head: d.heads[0] })));
   });
 });

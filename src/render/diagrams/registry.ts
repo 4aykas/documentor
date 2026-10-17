@@ -7,7 +7,7 @@
 import { kindOf } from './mermaid/source.js';
 import { distinct, type DiagramTokens } from './tokens.js';
 
-export type Engine = 'mermaid';
+export type Engine = 'mermaid' | 'chart';
 
 /** A step renderOne runs in the page after Mermaid has drawn, for what no
  *  theme variable reaches. */
@@ -96,12 +96,26 @@ export const REGISTRY: readonly DiagramType[] = [
     } },
   { id: 'block', engine: 'mermaid', heads: ['block-beta', 'block'], label: 'Block',
     budget: {}, focusMax: 2 },
+  // documentor's own engines (docs/adr/0008): one focus mark at most.
+  { id: 'bar', engine: 'chart', heads: ['bar'], label: 'Bar chart',
+    budget: { bars: { max: 12, count: 'rect[data-role="bar"]' } }, focusMax: 1 },
+  { id: 'dumbbell', engine: 'chart', heads: ['dumbbell'], label: 'Dumbbell',
+    budget: { rows: { max: 10, count: 'circle[data-role="after"]' } }, focusMax: 1 },
+  { id: 'waterfall', engine: 'chart', heads: ['waterfall'], label: 'Waterfall',
+    budget: { bars: { max: 8, count: 'rect[data-role]' } }, focusMax: 1 },
 ];
 
-const BY_HEAD = new Map(REGISTRY.flatMap((d) => d.heads.map((h) => [h, d] as const)));
+/** The fence language each engine draws. */
+export const ENGINE_LANG: Readonly<Record<Engine, string>> = { mermaid: 'mermaid', chart: 'chart' };
 
-/** The type a header word selects, or undefined when no record claims it. */
-export const typeByHead = (head: string): DiagramType | undefined => BY_HEAD.get(head);
+const BY_HEAD = new Map<string, DiagramType>(REGISTRY.flatMap((d) => d.heads.map((h) => [`${d.engine}:${h}`, d] as const)));
+
+/** The type a header word selects in one engine (Mermaid unless named), or
+ *  undefined when no record claims it. */
+export const typeByHead = (head: string, engine: Engine = 'mermaid'): DiagramType | undefined => BY_HEAD.get(`${engine}:${head}`);
+
+/** The engine a fence language selects. */
+export const engineOf = (lang: string): Engine => (lang.toLowerCase() === 'chart' ? 'chart' : 'mermaid');
 
 /** The type a source declares, or undefined when no record claims its header. */
-export const typeOf = (source: string): DiagramType | undefined => typeByHead(kindOf(source));
+export const typeOf = (source: string, lang = 'mermaid'): DiagramType | undefined => typeByHead(kindOf(source), engineOf(lang));

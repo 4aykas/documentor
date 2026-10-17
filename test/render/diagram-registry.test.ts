@@ -14,12 +14,12 @@ import { loadTheme } from '../../src/theme/resolve.js';
 const GALLERY = readFileSync(fileURLToPath(new URL('../fixtures/diagram-gallery.md', import.meta.url)), 'utf8');
 
 /** The gallery's sections: each `## ` heading and the first fence under it. */
-function sections(md: string): { heading: string; fence: string }[] {
+function sections(md: string): { heading: string; lang: string; fence: string }[] {
   return md.split(/^## /m).slice(1).map((s) => {
     const heading = s.slice(0, s.indexOf('\n')).trim();
-    const fence = /^```mermaid\n([\s\S]*?)^```$/m.exec(s);
-    if (fence === null) throw new Error(`gallery section "${heading}" has no mermaid fence`);
-    return { heading, fence: fence[1]! };
+    const fence = /^```(mermaid|chart)\n([\s\S]*?)^```$/m.exec(s);
+    if (fence === null) throw new Error(`gallery section "${heading}" has no diagram fence`);
+    return { heading, lang: fence[1]!, fence: fence[2]! };
   });
 }
 
@@ -62,6 +62,6 @@ describe('the diagram registry', () => {
   it('matches the gallery: one section per type, in order, each headed with its label', () => {
     const got = sections(GALLERY);
     expect(got.map((s) => s.heading)).toEqual(REGISTRY.map((d) => d.label));
-    for (const s of got) expect(typeOf(s.fence)?.label, s.heading).toBe(s.heading);
+    for (const s of got) expect(typeOf(s.fence, s.lang)?.label, s.heading).toBe(s.heading);
   });
 });

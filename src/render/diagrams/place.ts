@@ -4,7 +4,7 @@ import type { Block, Doc } from '../../ir/types.js';
 import type { Theme } from '../../theme/types.js';
 import { findingLine } from './checks.js';
 import { kindOf, leftToRight } from './mermaid/source.js';
-import { typeByHead } from './registry.js';
+import { engineOf, typeOf } from './registry.js';
 
 type Code = Extract<Block, { t: 'code' }>;
 
@@ -29,7 +29,7 @@ export function place(doc: Doc, drawn: Drawn[], theme: Theme, colPt: number, max
     // A chart Mermaid draws at a fixed size, whatever it holds, would
     // otherwise take the whole column: a pie of four slices half a page.
     // The cap never takes the labels below three quarters of the body size.
-    const cap = typeByHead(kindOf(b.text))?.mermaid?.widthCap;
+    const cap = typeOf(b.text, b.lang)?.mermaid?.widthCap;
     if (cap !== undefined && wPt > colPt * cap) {
       const s = Math.max((colPt * cap) / wPt, Math.min(1, 0.75 / fit));
       wPt *= s; hPt *= s;
@@ -38,7 +38,7 @@ export function place(doc: Doc, drawn: Drawn[], theme: Theme, colPt: number, max
     // at is the size they print at; far below it they are the smallest text
     // on the page.
     const scale = wPt / (d.wPx * 0.75);
-    const type = typeByHead(kindOf(b.text));
+    const type = typeOf(b.text, b.lang);
     // The cap can set the scale to exactly 0.75, which floating point puts a
     // hair below; that is the limit, not past it.
     if (scale < 0.75 - 1e-9) {
@@ -61,7 +61,7 @@ export function place(doc: Doc, drawn: Drawn[], theme: Theme, colPt: number, max
         message: `labels print at about ${(theme.type.bodyPt * scale).toFixed(1)}pt against ${theme.type.bodyPt}pt body text; ${advice}` }));
     }
     return {
-      t: 'diagram', lang: 'mermaid', kind: type?.id ?? '', source: b.text, svg: d.svg, png: d.png, wPt: round(wPt), hPt: round(hPt),
+      t: 'diagram', lang: engineOf(b.lang), kind: type?.id ?? '', source: b.text, svg: d.svg, png: d.png, wPt: round(wPt), hPt: round(hPt),
       ...(d.title ? { title: d.title } : {}), ...(d.desc ? { desc: d.desc } : {}),
     };
   });

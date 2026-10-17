@@ -181,11 +181,11 @@ function countBlocks(blocks: readonly Block[]): Counts {
       case 'code':
         if (!isDiagramSource(b)) { c.code++; break; }
         c.diagrams++;
-        if (!hasDescription(b.text)) c.undescribedDiagrams++;
+        if (!hasDescription(b.text, b.lang)) c.undescribedDiagrams++;
         break;
       case 'diagram':
         c.diagrams++;
-        if (!hasDescription(b.source)) c.undescribedDiagrams++;
+        if (!hasDescription(b.source, b.lang)) c.undescribedDiagrams++;
         break;
       case 'quote': c.quotes++; break;
       case 'rule': c.rules++; break;

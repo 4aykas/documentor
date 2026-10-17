@@ -194,3 +194,43 @@ block-beta
   A --> B
   B --> C
 ```
+
+## Bar chart
+
+```chart
+bar
+title Change in hours against the plan, by discipline
+unit %
+mark +10 Tolerance
+Mechanical     +6.5
+Electrical     +11.2  focus
+Structural     -4.0
+Architecture   -8.5
+```
+
+## Dumbbell
+
+```chart
+dumbbell
+title Planned and booked hours, by discipline
+unit h
+before Planned
+after Booked
+Mechanical    1,200  1,278
+Electrical      860    956
+Structural      640    614
+```
+
+## Waterfall
+
+```chart
+waterfall
+title From planned to booked hours
+unit h
+axis 2,000
+total Planned        2,700
+step  Mechanical      +78
+step  Electrical      +96  focus
+step  Structural      -26
+total Booked         2,848
+```

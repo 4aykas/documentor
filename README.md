@@ -233,27 +233,32 @@ deliberate rather than unfinished:
 ## Diagrams
 
 A ```` ```mermaid ```` fence in a Markdown source is drawn, not printed as code,
-by [Mermaid](https://mermaid.js.org). These types are drawn in the theme's own
-colours and proofed in every theme; another type Mermaid knows is drawn with
-the shared settings only.
+by [Mermaid](https://mermaid.js.org); a ```` ```chart ```` fence is a bar,
+dumbbell or waterfall chart drawn by documentor itself from the numbers the
+author wrote ([`docs/diagrams/chart.md`](docs/diagrams/chart.md)). These types
+are drawn in the theme's own colours and proofed in every theme; another type
+Mermaid knows is drawn with the shared settings only.
 
-| Type | Mermaid header |
-|:--|:--|
-| Flowchart | `flowchart` |
-| Sequence | `sequenceDiagram` |
-| Class | `classDiagram` |
-| State | `stateDiagram-v2` |
-| Entity relationship | `erDiagram` |
-| Mind map | `mindmap` |
-| Timeline | `timeline` |
-| Gantt | `gantt` |
-| Pie | `pie` |
-| Quadrant | `quadrantChart` |
-| XY chart | `xychart-beta` |
-| Journey | `journey` |
-| Sankey | `sankey-beta` |
-| Git graph | `gitGraph` |
-| Block | `block-beta` |
+| Type | Fence | Header |
+|:--|:--|:--|
+| Flowchart | `mermaid` | `flowchart` |
+| Sequence | `mermaid` | `sequenceDiagram` |
+| Class | `mermaid` | `classDiagram` |
+| State | `mermaid` | `stateDiagram-v2` |
+| Entity relationship | `mermaid` | `erDiagram` |
+| Mind map | `mermaid` | `mindmap` |
+| Timeline | `mermaid` | `timeline` |
+| Gantt | `mermaid` | `gantt` |
+| Pie | `mermaid` | `pie` |
+| Quadrant | `mermaid` | `quadrantChart` |
+| XY chart | `mermaid` | `xychart-beta` |
+| Journey | `mermaid` | `journey` |
+| Sankey | `mermaid` | `sankey-beta` |
+| Git graph | `mermaid` | `gitGraph` |
+| Block | `mermaid` | `block-beta` |
+| Bar chart | `chart` | `bar` |
+| Dumbbell | `chart` | `dumbbell` |
+| Waterfall | `chart` | `waterfall` |
 
 Why they look the way they do is recorded in [`docs/adr/`](docs/adr/README.md).
 

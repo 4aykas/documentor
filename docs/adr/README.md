@@ -45,3 +45,4 @@ What it costs and what it makes possible; what a later change must respect.
 | [0005](0005-every-type-is-a-registry-record.md) | Every diagram type is one registry record, and the canon is tested | accepted |
 | [0006](0006-diagrams-are-checked-by-machine.md) | Diagrams are checked by machine, and a finding warns | accepted |
 | [0007](0007-a-diagram-description-is-the-authors.md) | A diagram's description is the author's, and travels with it | accepted |
+| [0008](0008-charts-are-drawn-from-declared-numbers.md) | Charts that carry numbers are drawn by documentor, from the numbers the author declared | accepted |
