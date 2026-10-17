@@ -118,7 +118,9 @@ function checkBlock(b: unknown, where: string): void {
       if (typeof n['text'] !== 'string') fail(where, 'code needs a string text');
       return;
     case 'diagram': {
-      if (n['lang'] !== 'mermaid' && n['lang'] !== 'chart') fail(where, `diagram lang must be "mermaid" or "chart", got ${JSON.stringify(n['lang'])}`);
+      if (!['mermaid', 'chart', 'axonometric'].includes(n['lang'] as string)) {
+        fail(where, `diagram lang must be "mermaid", "chart" or "axonometric", got ${JSON.stringify(n['lang'])}`);
+      }
       // Which ids exist is the drawing pass's registry; the IR only needs a string.
       if (typeof n['kind'] !== 'string') fail(where, `diagram needs a string kind, got ${JSON.stringify(n['kind'])}`);
       for (const k of ['title', 'desc']) {

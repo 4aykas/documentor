@@ -18,7 +18,7 @@ import { loadTheme } from '../../src/theme/resolve.js';
 // browser computes it, not what the SVG's attributes say.
 
 const GALLERY = readFileSync(fileURLToPath(new URL('../fixtures/diagram-gallery.md', import.meta.url)), 'utf8');
-const FENCES = [...GALLERY.matchAll(/^```(mermaid|chart)$/gm)].length;
+const FENCES = [...GALLERY.matchAll(/^```(mermaid|chart|axonometric)$/gm)].length;
 
 /** Mermaid's own colours, as rgb() the browser reports. */
 const DEFAULTS: Record<string, string> = {

@@ -17,7 +17,7 @@ const GALLERY = readFileSync(fileURLToPath(new URL('../fixtures/diagram-gallery.
 function sections(md: string): { heading: string; lang: string; fence: string }[] {
   return md.split(/^## /m).slice(1).map((s) => {
     const heading = s.slice(0, s.indexOf('\n')).trim();
-    const fence = /^```(mermaid|chart)\n([\s\S]*?)^```$/m.exec(s);
+    const fence = /^```(mermaid|chart|axonometric)\n([\s\S]*?)^```$/m.exec(s);
     if (fence === null) throw new Error(`gallery section "${heading}" has no diagram fence`);
     return { heading, lang: fence[1]!, fence: fence[2]! };
   });

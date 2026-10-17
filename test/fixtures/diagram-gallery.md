@@ -234,3 +234,27 @@ step  Electrical      +96  focus
 step  Structural      -26
 total Booked         2,848
 ```
+
+## Exploded axonometric
+
+```axonometric
+exploded
+title Air handling unit, exploded
+part Roof panel       120 x 80 x 6
+part Fan section      60 x 70 x 30  level 2  at 0 5
+part Coil section     50 x 70 x 30  level 2  at 65 5  focus
+part Base frame      120 x 80 x 12
+```
+
+## Axonometric plan
+
+```axonometric
+plan
+title Plant room, level 1
+plate 30 x 20
+room  Switchroom     0  0  12 x 8
+room  Plant hall    12  0  18 x 20  focus
+room  Store          0  8  12 x 12
+block Chiller       16  4   8 x 4  h 2.5  in Plant hall
+block Pumps         16 12   6 x 3  h 1    in Plant hall
+```

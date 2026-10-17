@@ -235,7 +235,10 @@ deliberate rather than unfinished:
 A ```` ```mermaid ```` fence in a Markdown source is drawn, not printed as code,
 by [Mermaid](https://mermaid.js.org); a ```` ```chart ```` fence is a bar,
 dumbbell or waterfall chart drawn by documentor itself from the numbers the
-author wrote ([`docs/diagrams/chart.md`](docs/diagrams/chart.md)). These types
+author wrote ([`docs/diagrams/chart.md`](docs/diagrams/chart.md)); an
+```` ```axonometric ```` fence is an exploded view or a floor plan seen from
+above at an angle, drawn from the geometry the author declared
+([`docs/diagrams/axonometric.md`](docs/diagrams/axonometric.md)). These types
 are drawn in the theme's own colours and proofed in every theme; another type
 Mermaid knows is drawn with the shared settings only.
 
@@ -259,6 +262,8 @@ Mermaid knows is drawn with the shared settings only.
 | Bar chart | `chart` | `bar` |
 | Dumbbell | `chart` | `dumbbell` |
 | Waterfall | `chart` | `waterfall` |
+| Exploded axonometric | `axonometric` | `exploded` |
+| Axonometric plan | `axonometric` | `plan` |
 
 Why they look the way they do is recorded in [`docs/adr/`](docs/adr/README.md).
 

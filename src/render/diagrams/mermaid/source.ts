@@ -66,7 +66,7 @@ export function leftToRight(source: string): string | null {
  * writes into the SVG as `<desc>`.
  */
 export function hasDescription(source: string, lang = 'mermaid'): boolean {
-  // A ```chart fence describes itself with a `desc` line.
-  if (lang.toLowerCase() === 'chart') return /^\s*desc[ \t]+\S/m.test(source);
+  // A ```chart or ```axonometric fence describes itself with a `desc` line.
+  if (lang.toLowerCase() === 'chart' || lang.toLowerCase() === 'axonometric') return /^\s*desc[ \t]+\S/m.test(source);
   return /^\s*accDescr\s*[:{]/m.test(source);
 }

@@ -21,6 +21,8 @@ import { familyStack } from '../fonts.js';
 import { drawChart, stringsOf } from './chart/draw.js';
 import { measureWidths } from './chart/measure.js';
 import { parseChart } from './chart/parse.js';
+import { axoStrings, drawAxo } from './axonometric/draw.js';
+import { parseAxo } from './axonometric/parse.js';
 import { configFor, mermaidConfig, renderOne, type Rendered } from './mermaid/render.js';
 import { drawable, kindOf, leftToRight } from './mermaid/source.js';
 import { openDiagramPage } from './page.js';
@@ -86,6 +88,19 @@ export async function drawDiagrams(doc: Doc, theme: Theme, browser: Browser, onW
         const shot = await (await page.$('#host svg'))!.screenshot({ type: 'png', omitBackground: false });
         drawn.push({ svg: result.svg, png: `data:image/png;base64,${shot.toString('base64')}`, wPx: result.w, hPx: result.h, triedDown, title: result.title, desc: result.desc });
       };
+      if (engine === 'axonometric') {
+        // Declared geometry, one projection: parsed, measured, laid out and
+        // drawn here, at the column's width.
+        const parsed = parseAxo(b.text);
+        if (!parsed.ok) { drawn.push({ error: parsed.error }); continue; }
+        const family = familyStack(theme.font);
+        const widths = await measureWidths(page, axoStrings(parsed.axo), family, bodyPx);
+        const fig = drawAxo(parsed.axo, { widthPx: colPt * 4 / 3, bodyPx, family, tokens, id: `dg${i}` }, widths);
+        if ('error' in fig) { drawn.push(fig); continue; }
+        await page.evaluate(`document.getElementById('host').innerHTML = ${JSON.stringify(fig.svg)}`);
+        await keep({ ...fig, title: parsed.axo.title ?? '', desc: parsed.axo.desc ?? '' }, false);
+        continue;
+      }
       if (engine === 'chart') {
         // documentor's own engine: parsed and laid out here, at the column's
         // width and the body size, so it never needs scaling.

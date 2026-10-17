@@ -30,7 +30,7 @@ try {
   await page.setContent('<div id="host"></div>');
   let n = 0;
   for (const b of doc.blocks) {
-    if (b.t === 'code' && (b.lang === 'mermaid' || b.lang === 'chart')) {
+    if (b.t === 'code' && ['mermaid', 'chart', 'axonometric'].includes(b.lang ?? '')) {
       n++;
       console.log(`\n#${n} not drawn`);
       for (const w of warnings.filter((x) => x.startsWith(`diagram ${n} `))) console.log(`  ${w}`);

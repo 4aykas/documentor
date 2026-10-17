@@ -65,6 +65,12 @@ Know these before promising anything to the user:
   never adjust a number to make it fit. Write thousands with a comma, an
   apostrophe or a thin space, never a plain space (`12 500` is refused). A
   chart describes itself with `title` and `desc` lines, not `accTitle`.
+- **An assembly taken apart, or a floor or site from above, is an
+  ```` ```axonometric ```` fence** (`exploded`, `plan`; grammar in the
+  repo's `docs/diagrams/axonometric.md`) — but when a Revit model exists, ask
+  for its exported view as an image instead. Sizes come from the document or
+  the user, never invented; a refusal names the line (off the plate,
+  overlapping rooms, no clear leader) — relay it and propose the fix it names.
 - **Any other diagram is a ```` ```mermaid ```` fence.**
   Any Mermaid type works (flowchart, sequence, mindmap, timeline, gantt,
   pie, quadrantChart, xychart, sankey, …); the colours and faces come from

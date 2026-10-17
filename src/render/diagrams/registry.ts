@@ -7,7 +7,7 @@
 import { kindOf } from './mermaid/source.js';
 import { distinct, type DiagramTokens } from './tokens.js';
 
-export type Engine = 'mermaid' | 'chart';
+export type Engine = 'mermaid' | 'chart' | 'axonometric';
 
 /** A step renderOne runs in the page after Mermaid has drawn, for what no
  *  theme variable reaches. */
@@ -103,10 +103,15 @@ export const REGISTRY: readonly DiagramType[] = [
     budget: { rows: { max: 10, count: 'circle[data-role="after"]' } }, focusMax: 1 },
   { id: 'waterfall', engine: 'chart', heads: ['waterfall'], label: 'Waterfall',
     budget: { bars: { max: 8, count: 'rect[data-role]' } }, focusMax: 1 },
+  // Axonometric figures from declared geometry (docs/adr/0009).
+  { id: 'exploded', engine: 'axonometric', heads: ['exploded'], label: 'Exploded axonometric',
+    budget: { parts: { max: 6, count: 'g[data-axo="part"]' } }, focusMax: 1 },
+  { id: 'plan', engine: 'axonometric', heads: ['plan'], label: 'Axonometric plan',
+    budget: { rooms: { max: 8, count: 'g[data-axo="room"]' }, blocks: { max: 40, count: 'g[data-axo="block"]' } }, focusMax: 1 },
 ];
 
 /** The fence language each engine draws. */
-export const ENGINE_LANG: Readonly<Record<Engine, string>> = { mermaid: 'mermaid', chart: 'chart' };
+export const ENGINE_LANG: Readonly<Record<Engine, string>> = { mermaid: 'mermaid', chart: 'chart', axonometric: 'axonometric' };
 
 const BY_HEAD = new Map<string, DiagramType>(REGISTRY.flatMap((d) => d.heads.map((h) => [`${d.engine}:${h}`, d] as const)));
 
@@ -115,7 +120,10 @@ const BY_HEAD = new Map<string, DiagramType>(REGISTRY.flatMap((d) => d.heads.map
 export const typeByHead = (head: string, engine: Engine = 'mermaid'): DiagramType | undefined => BY_HEAD.get(`${engine}:${head}`);
 
 /** The engine a fence language selects. */
-export const engineOf = (lang: string): Engine => (lang.toLowerCase() === 'chart' ? 'chart' : 'mermaid');
+export const engineOf = (lang: string): Engine => {
+  const l = lang.toLowerCase();
+  return l === 'chart' ? 'chart' : l === 'axonometric' ? 'axonometric' : 'mermaid';
+};
 
 /** The type a source declares, or undefined when no record claims its header. */
 export const typeOf = (source: string, lang = 'mermaid'): DiagramType | undefined => typeByHead(kindOf(source), engineOf(lang));

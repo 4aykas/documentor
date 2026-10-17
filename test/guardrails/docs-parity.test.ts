@@ -10,6 +10,7 @@ import { parseProofArgs } from '../../src/cli/proof.js';
 import { parseThemeArgs } from '../../src/cli/theme.js';
 import { ENGINE_LANG, REGISTRY } from '../../src/render/diagrams/registry.js';
 import { CHART_KINDS, ROW_WORDS, SETTINGS } from '../../src/render/diagrams/chart/parse.js';
+import { AXO_ELEMENTS, AXO_KINDS, AXO_OPTIONS, AXO_SETTINGS } from '../../src/render/diagrams/axonometric/parse.js';
 
 // Guardrail for a defect this project has shipped three times in one week:
 // documentation that outlived the code it described (README claiming .docx
@@ -307,6 +308,23 @@ describe('the chart reference documents exactly the words the parser reads', () 
       listed.push(l.split('|')[1]!.trim().replace(/`/g, ''));
     }
     const known = new Set<string>([...CHART_KINDS, ...Object.values(SETTINGS).flat(), ...Object.values(ROW_WORDS).flat(), 'focus']);
+    expect([...listed].sort()).toEqual([...known].sort());
+  });
+});
+
+// The same both-ways check for docs/diagrams/axonometric.md against the
+// axonometric parser's tables.
+describe('the axonometric reference documents exactly the words the parser reads', () => {
+  it('lists every keyword once, and nothing else', () => {
+    const doc = readFileSync(join(ROOT, 'docs', 'diagrams', 'axonometric.md'), 'utf8').split('\n');
+    const at = doc.findIndex((l) => /^\|\s*Keyword\s*\|\s*Types\s*\|\s*Meaning\s*\|\s*$/.test(l));
+    expect(at, 'the keyword table header row').toBeGreaterThan(-1);
+    const listed: string[] = [];
+    for (const l of doc.slice(at + 2)) {
+      if (!l.startsWith('|')) break;
+      listed.push(l.split('|')[1]!.trim().replace(/`/g, ''));
+    }
+    const known = new Set<string>([...AXO_KINDS, ...Object.values(AXO_SETTINGS).flat(), ...Object.values(AXO_ELEMENTS).flat(), ...Object.values(AXO_OPTIONS).flat()]);
     expect([...listed].sort()).toEqual([...known].sort());
   });
 });
