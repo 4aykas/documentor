@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { chromium, type Browser } from 'playwright-core';
 import type { Block, Doc } from '../../src/ir/types.js';
-import { drawDiagrams, kindOf } from '../../src/render/diagrams.js';
+import { drawDiagrams, kindOf } from '../../src/render/diagrams/index.js';
 import { buildHtml } from '../../src/render/html.js';
 import { ingestMarkdown } from '../../src/ingest/md.js';
 import { loadTheme } from '../../src/theme/resolve.js';

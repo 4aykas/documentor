@@ -10,7 +10,7 @@ import { validateDoc, type Doc } from '../ir/validate.js';
 import { renderMarkdown } from '../render/md.js';
 import { renderPdf } from '../render/pdf.js';
 import { renderDocx } from '../render/docx.js';
-import { drawDiagrams, hasDiagrams } from '../render/diagrams.js';
+import { drawDiagrams, hasDiagrams } from '../render/diagrams/index.js';
 import { loadTheme, type Theme } from '../theme/resolve.js';
 import { resolveEpoch } from './timestamp.js';
 import { resolveConfig, SidecarResolutionError, type ConfigFlags, DEFAULT_THEME, DEFAULT_TO } from './config.js';

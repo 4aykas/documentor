@@ -200,7 +200,7 @@ function block(b: Block, size: ColSizing): string {
     case 'code':
       return `<pre><code>${escapeHtml(b.text)}</code></pre>`;
     // The SVG is Mermaid's own output, drawn under securityLevel 'strict' by
-    // render/diagrams.ts, so it is inlined as markup rather than escaped.
+    // render/diagrams/, so it is inlined as markup rather than escaped.
     // Sized by a cap rather than a width: a layout whose column is narrower
     // than the theme's (a grid track, a sidebar) shrinks it, and a fixed
     // width would push that column wider than the page instead.

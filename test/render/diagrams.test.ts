@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser } from 'playwright-core';
 import type { Block, Doc } from '../../src/ir/types.js';
-import { diagramTokens, diagramVars, drawDiagrams, hasDiagrams, kindOf, leftToRight } from '../../src/render/diagrams.js';
+import { diagramTokens, diagramVars, drawDiagrams, hasDiagrams, kindOf, leftToRight } from '../../src/render/diagrams/index.js';
 import * as tint from '../../src/render/tint.js';
 import { renderPdf } from '../../src/render/pdf.js';
 import { renderDocx } from '../../src/render/docx.js';

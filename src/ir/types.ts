@@ -36,7 +36,7 @@ export type Block =
   | { t: 'image'; src: string; alt: string; widthPt?: number }
   | { t: 'code'; lang?: string; text: string }
   // A diagram the author wrote as text (a ```mermaid fence) after
-  // render/diagrams.ts has drawn it. No ingester produces one: the drawing
+  // render/diagrams/ has drawn it. No ingester produces one: the drawing
   // pass swaps a code block for it before rendering. `source` is the fence
   // verbatim, so Markdown writes it back and nothing the author wrote is
   // lost; `svg` is what HTML/PDF inline, `png` (a data: URI of the same

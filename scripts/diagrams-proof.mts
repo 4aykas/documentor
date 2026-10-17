@@ -1,6 +1,6 @@
 // Draw the diagram gallery (test/fixtures/diagram-gallery.md) under each theme
 // named, print how every diagram lands on the page, and lay each PDF out on
-// one proof sheet — the loop a change to render/diagrams.ts is judged in.
+// one proof sheet — the loop a change to render/diagrams/ is judged in.
 //
 //   npm run diagrams:proof                     plain, tebin, haskoning
 //   npm run diagrams:proof -- rams dreamscape  any themes
@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 import { ingestMarkdown } from '../src/ingest/md.js';
-import { drawDiagrams, kindOf } from '../src/render/diagrams.js';
+import { drawDiagrams, kindOf } from '../src/render/diagrams/index.js';
 import { renderPdf } from '../src/render/pdf.js';
 import { loadTheme } from '../src/theme/resolve.js';
 import { runProof } from '../src/cli/proof.js';

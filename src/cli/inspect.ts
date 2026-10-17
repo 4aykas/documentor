@@ -19,7 +19,7 @@
 // exists to prevent (see docs/superpowers/specs/2026-08-12-sidecar-design.md,
 // "Verification": "inspect reads the sidecar too, and by the same rules").
 
-import { isDiagramSource } from '../render/diagrams.js';
+import { isDiagramSource } from '../render/diagrams/index.js';
 import { basename, extname, resolve } from 'node:path';
 import { stat } from 'node:fs/promises';
 import { canEmbedInDocx } from '../render/docx.js';
@@ -54,7 +54,7 @@ export type Counts = {
   heatmaps: number;
   images: number;
   code: number;
-  /** Code fences build will draw as a picture (see render/diagrams.ts),
+  /** Code fences build will draw as a picture (see render/diagrams/),
    *  counted here instead of under `code`. */
   diagrams: number;
   quotes: number;

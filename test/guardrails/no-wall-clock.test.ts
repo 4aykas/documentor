@@ -43,7 +43,7 @@ describe('reproducibility guardrails', () => {
       text.split('\n').forEach((line, i) => {
         if (line.trimStart().startsWith('*') || line.trimStart().startsWith('//')) return;
         // An origin under the reserved .invalid TLD (RFC 2606) can never
-        // resolve: render/diagrams.ts serves Mermaid's modules from one,
+        // resolve: render/diagrams/page.ts serves Mermaid's modules from one,
         // answered by a route from node_modules, which is still no fetch.
         const host = (u: string) => { try { return new URL(u).hostname; } catch { return u; } };
         const urls = [...line.matchAll(/https?:\/\/[^'"`\s]+/g)].filter((m) => !host(m[0]).endsWith('.invalid'));
