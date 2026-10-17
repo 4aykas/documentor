@@ -7,6 +7,7 @@ import { FORMATS, READABLE_EXTS, parseArgs } from '../../src/cli/build.js';
 import { parseInspectArgs } from '../../src/cli/inspect.js';
 import { parseSetupArgs } from '../../src/cli/setup.js';
 import { parseProofArgs } from '../../src/cli/proof.js';
+import { parseDiagramArgs } from '../../src/cli/diagram.js';
 import { parseThemeArgs } from '../../src/cli/theme.js';
 import { ENGINE_LANG, REGISTRY } from '../../src/render/diagrams/registry.js';
 import { CHART_KINDS, ROW_WORDS, SETTINGS } from '../../src/render/diagrams/chart/parse.js';
@@ -233,7 +234,7 @@ function isKnownOption(parse: (argv: string[]) => unknown, flag: string): boolea
 function assertFlagsKnown(source: string, flags: readonly string[]): void {
   const unknown = flags.filter(
     (f) => !isKnownOption(parseArgs, f) && !isKnownOption(parseInspectArgs, f) && !isKnownOption(parseThemeArgs, f)
-      && !isKnownOption(parseSetupArgs, f) && !isKnownOption(parseProofArgs, f),
+      && !isKnownOption(parseSetupArgs, f) && !isKnownOption(parseProofArgs, f) && !isKnownOption(parseDiagramArgs, f),
   );
   expect(
     unknown,

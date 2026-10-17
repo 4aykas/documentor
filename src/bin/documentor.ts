@@ -8,6 +8,7 @@ import { runContract } from '../cli/contract.js';
 import { runTheme, THEME_USAGE_LINE } from '../cli/theme.js';
 import { nodeTooOld } from '../cli/preflight.js';
 import { runProof, PROOF_USAGE_LINE } from '../cli/proof.js';
+import { runDiagram, DIAGRAM_USAGE_LINE } from '../cli/diagram.js';
 
 // The --to list is derived from build.ts's own FORMATS, not copied, so this
 // text cannot go stale the way it did when docx was wired in but the string
@@ -20,6 +21,7 @@ const USAGE = `documentor — re-issue an existing document as a well-typeset on
   documentor contract <data.json> [--to ${[...FORMATS].join(',')}] [--theme plain] [--out <dir>]
 ${THEME_USAGE_LINE}
 ${PROOF_USAGE_LINE}
+${DIAGRAM_USAGE_LINE}
   documentor setup [--with-deps]
   documentor doctor
 
@@ -53,6 +55,11 @@ whoever writes themes/<id>/theme.json from it.
 
 proof lays every page of a PDF side by side on one PNG, beside the PDF,
 so a layout is checked by looking at one image.
+
+diagram draws the first diagram fence of a Markdown file (mermaid, chart or
+axonometric) as a standalone SVG, beside the file by default, for a figure
+that goes somewhere other than a document. --width lays it out to a column
+of that many points. Exit 1: drawn, with a D- finding; 3: refused.
 
 The first command that writes a PDF installs the Chromium build this copy
 launches, if it is not there yet (one time, about 150 MB); setup does the
@@ -111,6 +118,7 @@ try {
   else if (command === 'contract') code = await runContract(rest, io);
   else if (command === 'theme') code = await runTheme(rest, io);
   else if (command === 'proof') code = await runProof(rest, io);
+  else if (command === 'diagram') code = await runDiagram(rest, io);
   else if (command === 'setup') code = runSetup(rest, io);
   else if (command === 'doctor') code = await runDoctor(io);
   else if (command === undefined || command === '--help' || command === '-h') { io.log(USAGE); code = command === undefined ? 2 : 0; }

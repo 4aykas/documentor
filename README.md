@@ -664,6 +664,24 @@ layout is checked in one look rather than page by page. It draws the pages
 with the same PDF engine documentor reads PDFs with, inside the Chromium it
 prints with, so it needs nothing else installed.
 
+### A diagram on its own
+
+```bash
+documentor diagram chart.md                   # chart.svg beside it
+documentor diagram chart.md --theme tebin --width 400 --out figure.svg --png figure.png
+```
+
+`diagram` draws the first ```` ```mermaid ````, ```` ```chart ```` or
+```` ```axonometric ```` fence of a Markdown file as a standalone SVG, for a
+figure that goes somewhere other than a documentor document: a post's image,
+a slide. It runs the same checks a build does and prints their warnings.
+`--width` lays the diagram out to a column of that many points instead of the
+theme's own; a narrower column draws the text larger relative to the figure,
+for a picture shown bigger than a page column. Exit codes: 0 drawn clean;
+1 drawn, with a `D-` finding; 2 a usage error or no fence; 3 the fence was
+refused, and nothing is written. Another repository should call this
+command rather than import documentor's source.
+
 ### Refreshing the TEBIN brand theme
 
 `themes/tebin/theme.json` is generated, not hand-edited. Its only input is
