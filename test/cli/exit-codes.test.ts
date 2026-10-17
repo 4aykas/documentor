@@ -72,15 +72,18 @@ describe('the exit-code contract', () => {
     // point into the clone.
     const dir = mkdtempSync(join(tmpdir(), 'documentor-initcwd-'));
     writeFileSync(join(dir, 'note.md'), '# Note\n\nHello.\n');
-    // ROOT ends in a separator, and on Windows a trailing \ before the quote
-    // would escape the quote.
-    const root = ROOT.replace(/[\\/]+$/, '');
-    const r = spawnSync('npm', ['run', '-s', '--prefix', process.platform === 'win32' ? `"${root}"` : root, 'documentor', '--', 'build', 'note.md', '--to', 'md'],
-      // npm reads INIT_CWD and its npm_config_* settings from the environment
-      // it inherits, and this suite runs under npx, which set them: the
-      // child must start as one typed in a shell would.
-      { cwd: dir, encoding: 'utf8', shell: process.platform === 'win32', env: Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'INIT_CWD' && !/^npm_/i.test(k))) });
-    expect(r.status, r.stderr).toBe(0);
+    // Started the way npm starts the `documentor` script, rather than through
+    // npm itself: which npm a child finds on the PATH is the machine's
+    // business (on CI's Windows image it was npm 10, which this package's
+    // devEngines refuses), and not what this test is about.
+    // Node and tsx directly: npx would set npm_lifecycle_event to its own.
+    const r = spawnSync(process.execPath, [join(ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs'), BIN, 'build', 'note.md', '--to', 'md'], {
+      cwd: ROOT, encoding: 'utf8',
+      // Windows names are case-blind: an inherited Npm_Lifecycle_Event or
+      // init_cwd would stand beside these and one of the two would win.
+      env: { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(npm_lifecycle_event|init_cwd)$/i.test(k))), npm_lifecycle_event: 'documentor', INIT_CWD: dir },
+    });
+    expect(r.status, `stdout: ${r.stdout}\nstderr: ${r.stderr}`).toBe(0);
     expect(existsSync(join(dir, 'note.plain.md'))).toBe(true);
   });
 });
