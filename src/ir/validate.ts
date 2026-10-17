@@ -119,6 +119,8 @@ function checkBlock(b: unknown, where: string): void {
       return;
     case 'diagram': {
       if (n['lang'] !== 'mermaid') fail(where, `diagram lang must be "mermaid", got ${JSON.stringify(n['lang'])}`);
+      // Which ids exist is the drawing pass's registry; the IR only needs a string.
+      if (typeof n['kind'] !== 'string') fail(where, `diagram needs a string kind, got ${JSON.stringify(n['kind'])}`);
       if (typeof n['source'] !== 'string' || n['source'] === '') fail(where, 'diagram needs a non-empty source');
       if (typeof n['svg'] !== 'string' || !n['svg'].startsWith('<svg')) fail(where, 'diagram needs svg markup');
       if (typeof n['png'] !== 'string' || !n['png'].startsWith('data:image/png;base64,')) fail(where, 'diagram needs a PNG data: URI');

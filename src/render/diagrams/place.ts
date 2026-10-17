@@ -46,7 +46,7 @@ export function place(doc: Doc, drawn: Drawn[], theme: Theme, colPt: number, max
       onWarn(`diagram ${k} (${b.lang}) is scaled to fit the page, so its labels print at about ${(theme.type.bodyPt * scale).toFixed(1)}pt `
         + `against ${theme.type.bodyPt}pt body text; ${advice}`);
     }
-    return { t: 'diagram', lang: 'mermaid', source: b.text, svg: d.svg, png: d.png, wPt: round(wPt), hPt: round(hPt) };
+    return { t: 'diagram', lang: 'mermaid', kind: typeByHead(kindOf(b.text))?.id ?? '', source: b.text, svg: d.svg, png: d.png, wPt: round(wPt), hPt: round(hPt) };
   });
   return { ...doc, blocks };
 }

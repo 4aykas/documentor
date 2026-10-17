@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { REGISTRY, leftToRight, typeByHead, typeOf } from '../../src/render/diagrams/index.js';
+import { chromium } from 'playwright-core';
+import { ingestMarkdown } from '../../src/ingest/md.js';
+import { REGISTRY, drawDiagrams, leftToRight, typeByHead, typeOf } from '../../src/render/diagrams/index.js';
+import { loadTheme } from '../../src/theme/resolve.js';
 
 // The registry is the one list of what documentor draws (docs/adr/0005).
 // This holds it consistent with itself and with the gallery, the fixture
@@ -38,6 +41,19 @@ describe('the diagram registry', () => {
       for (const h of d.heads) {
         expect(leftToRight(`${h} LR\n  a`) !== null, `${d.id} (${h})`).toBe(d.mermaid?.turnsDown === true);
       }
+    }
+  });
+
+  it('gives each drawn diagram its type\'s id as kind, and "" to a header no record claims', async () => {
+    const browser = await chromium.launch();
+    try {
+      const unknown = '```mermaid\nnotADiagram\n```\n';
+      const doc = await drawDiagrams(ingestMarkdown(GALLERY + unknown).doc, await loadTheme('plain'), browser, () => {});
+      const kinds = doc.blocks.flatMap((b) => (b.t === 'diagram' ? [b.kind] : []));
+      expect(kinds).toEqual(REGISTRY.map((d) => d.id));
+      expect(doc.blocks.at(-1)?.t).toBe('code'); // Mermaid refused it, so it stays its source
+    } finally {
+      await browser.close();
     }
   });
 

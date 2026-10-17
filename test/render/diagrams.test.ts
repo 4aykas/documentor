@@ -229,11 +229,12 @@ describe('diagramVars', () => {
 });
 
 describe('validateDoc', () => {
-  const base = { t: 'diagram', lang: 'mermaid', source: 'pie\n "a" : 1', svg: '<svg></svg>', png: 'data:image/png;base64,AA==', wPt: 10, hPt: 10 };
+  const base = { t: 'diagram', lang: 'mermaid', kind: 'pie', source: 'pie\n "a" : 1', svg: '<svg></svg>', png: 'data:image/png;base64,AA==', wPt: 10, hPt: 10 };
   const doc = (b: object) => ({ meta: { title: 'T', lang: 'en' }, blocks: [b] });
   it('accepts a complete diagram', () => expect(() => validateDoc(doc(base))).not.toThrow());
   it.each([
     ['lang', { lang: 'plantuml' }],
+    ['kind', { kind: undefined }],
     ['source', { source: '' }],
     ['svg', { svg: '<div>' }],
     ['png', { png: 'data:image/jpeg;base64,AA==' }],

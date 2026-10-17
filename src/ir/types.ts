@@ -40,8 +40,10 @@ export type Block =
   // pass swaps a code block for it before rendering. `source` is the fence
   // verbatim, so Markdown writes it back and nothing the author wrote is
   // lost; `svg` is what HTML/PDF inline, `png` (a data: URI of the same
-  // picture) what Word embeds, both at wPt × hPt on the page.
-  | { t: 'diagram'; lang: 'mermaid'; source: string; svg: string; png: string; wPt: number; hPt: number }
+  // picture) what Word embeds, both at wPt × hPt on the page. `kind` is the
+  // id of the type's record in render/diagrams/registry.ts, or '' for a
+  // header word no record claims.
+  | { t: 'diagram'; lang: 'mermaid'; kind: string; source: string; svg: string; png: string; wPt: number; hPt: number }
   | { t: 'quote'; paras: Inline[][] }
   | { t: 'rule' }
   | { t: 'pagebreak' };
