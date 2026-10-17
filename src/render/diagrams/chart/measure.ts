@@ -8,6 +8,11 @@ import type { Page } from 'playwright-core';
 import type { Widths } from './draw.js';
 
 export async function measureWidths(page: Page, strings: { regular: string[]; bold: string[] }, family: string, px: number): Promise<Widths> {
+  // A face's weights load on first use, and the page has only asked for the
+  // regular one; measured before its semibold is in, a label is measured in
+  // a stand-in face and drawn wider (Inter in lionfocus, 2026-10-17).
+  const first = JSON.stringify(family.split(',')[0]!.trim());
+  await page.evaluate(`Promise.all(['400', '600'].map((wt) => document.fonts.load(wt + ' ${px}px ' + ${first}))).then(() => document.fonts.ready)`);
   const got = await page.evaluate(`(() => {
     // The SVG namespace, a name and not an address: nothing is fetched.
     const ns = 'http' + '://www.w3.org/2000/svg';

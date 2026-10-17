@@ -32,6 +32,15 @@ comes back to that.
   diagram registry work (an unrecorded type Mermaid refused anyway; a
   determinism test whose shapes used no randomness). `npm run red` is how:
   one exact replacement, the test must fail, the file is restored.
+- **A defect a review finds joins `test/fixtures/diagram-hostile.md`.** The
+  fix lands with the fence that showed it, headed with what it must do, so
+  the next change cannot bring it back unseen.
+- **A check reads what the drawing declares, not which engine drew it.** An
+  engine marks its own geometry (`data-role`, `data-box`, `data-for`) and the
+  shared checks read those declarations; a selector that names one engine's
+  internals belongs with that engine.
+- **A plan lists where it departs from its spec.** Compare the spec with the
+  code; a departure missing from the plan's "Deviations" is a finding.
 - **Say when drawings change.** A change that alters any gallery diagram's
   bytes (`npm run diagrams:hash -- --compare`) says so in its message, and
   which ones; a stylesheet rule shared by every diagram changes them all.

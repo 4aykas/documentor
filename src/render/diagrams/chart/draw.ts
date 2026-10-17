@@ -199,15 +199,20 @@ function drawDumbbell(c: Chart, x: Ctx): string {
   const t = o.tokens;
   let top = titleBlock(c, x);
   // legend: hollow before, filled after, in the author's names
+  // Both entries on one line when they fit; otherwise each on its own, its
+  // name wrapped to the column.
   const rDot = F * 0.36;
-  let lx = 0;
-  const ly = top + F * 0.5;
-  x.parts.push(`<circle cx="${r1(lx + rDot)}" cy="${r1(ly)}" r="${r1(rDot)}" fill="${t.paper}" stroke="${t.ink}" stroke-width="1.25"/>`);
-  x.parts.push(text(lx + rDot * 2 + F * 0.35, ly + F * 0.35, c.before!, { fill: t.textSec, cls: 'legend' }));
-  lx += rDot * 2 + F * 0.35 + w(c.before!) + F * 1.2;
-  x.parts.push(`<circle cx="${r1(lx + rDot)}" cy="${r1(ly)}" r="${r1(rDot)}" fill="${t.ink}" stroke="${t.ink}" stroke-width="1.25"/>`);
-  x.parts.push(text(lx + rDot * 2 + F * 0.35, ly + F * 0.35, c.after!, { fill: t.textSec, cls: 'legend' }));
-  top += lineH * 1.4;
+  const key = rDot * 2 + F * 0.35;
+  const oneLine = key * 2 + w(c.before!) + w(c.after!) + F * 1.2 <= o.widthPx;
+  let lx = 0, ly = top + F * 0.5;
+  for (const [name, filled] of [[c.before!, false], [c.after!, true]] as const) {
+    const lines = wrap(name, o.widthPx - key, w);
+    x.parts.push(`<circle cx="${r1(lx + rDot)}" cy="${r1(ly)}" r="${r1(rDot)}" fill="${filled ? t.ink : t.paper}" stroke="${t.ink}" stroke-width="1.25"/>`);
+    lines.forEach((l, i) => x.parts.push(text(lx + key, ly + F * 0.35 + i * lineH, l, { fill: t.textSec, cls: 'legend' })));
+    if (oneLine) lx += key + w(name) + F * 1.2;
+    else ly += lines.length * lineH;
+  }
+  top = (oneLine ? ly : ly - lineH) + lineH * 0.9;
   const ticks = ticksOf(c);
   const labelCol = Math.max(Math.min(Math.max(...c.rows.map((r) => w(r.label))), o.widthPx * 0.36), widestWord(c, w));
   const valueW = Math.max(...c.rows.flatMap((r) => r.values.map((v) => w(v.text, true)))) + rDot + F * 0.45;
@@ -261,9 +266,14 @@ function drawWaterfall(c: Chart, x: Ctx): string {
   const tickW = Math.max(...ticks.labels.map((l) => w(l)));
   const left = tickW + F * 0.7;
   const n = c.rows.length;
-  const pitch = (o.widthPx - left) / n;
+  // The last value is centred on the last bar: leave it room to the right.
+  const valueW = Math.max(...c.rows.map((r) => w(r.values[0]!.text, true)));
+  const pitch = Math.min((o.widthPx - left) / n, (o.widthPx - left - valueW / 2 - 2) / (n - 0.5));
   const barW = pitch * 0.62;
-  const plotTop = top + lineH * 1.3;
+  // Values wider than their column alternate between two rows, so two
+  // neighbours never print on top of each other.
+  const stagger = valueW > pitch - F * 0.4;
+  const plotTop = top + lineH * (stagger ? 2.3 : 1.3);
   const plotH = F * 15;
   const base = plotTop + plotH;
   const sy = (v: number) => base - ((v - ticks.lo) / (ticks.hi - ticks.lo)) * plotH;
@@ -287,8 +297,9 @@ function drawWaterfall(c: Chart, x: Ctx): string {
     if (r.role === 'total' && c.axis) x.parts.push(breakMark(bx + barW / 2, base - F * 0.9, t, F));
     // value: totals and increases above, decreases below
     const down = r.role === 'step' && v.value < 0;
-    const below = down && yBot + F * 1.15 <= base - F * 0.25;
-    const vy = below ? yBot + F * 1.15 : yTop - F * 0.4;
+    const lift = stagger && i % 2 === 1 ? lineH : 0;
+    const below = down && yBot + F * 1.15 + lift <= base - F * 0.25;
+    const vy = below ? yBot + F * 1.15 + lift : yTop - F * 0.4 - lift;
     x.parts.push(text(bx + barW / 2, vy, v.text, { anchor: 'middle', bold: true, fill: r.focus ? t.brand : t.ink, cls: 'value' }));
     // carry: the level after this bar, across the gap to the next
     if (i < n - 1) {
