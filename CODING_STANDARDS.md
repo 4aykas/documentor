@@ -30,7 +30,11 @@ comes back to that.
   message says how that was checked. A fixture the code refuses before it
   reaches the branch proves nothing: two such tests passed review in the
   diagram registry work (an unrecorded type Mermaid refused anyway; a
-  determinism test whose shapes used no randomness).
+  determinism test whose shapes used no randomness). `npm run red` is how:
+  one exact replacement, the test must fail, the file is restored.
+- **Say when drawings change.** A change that alters any gallery diagram's
+  bytes (`npm run diagrams:hash -- --compare`) says so in its message, and
+  which ones; a stylesheet rule shared by every diagram changes them all.
 
 ## Recorded decisions
 

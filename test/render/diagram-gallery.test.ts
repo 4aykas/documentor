@@ -52,19 +52,26 @@ describe.each(['plain', 'tebin', 'haskoning'])('the diagram gallery under %s', (
     try {
       await page.setContent(await buildHtml(doc, theme));
       const painted = await page.evaluate(`[...document.querySelectorAll('figure.diagram')].map((f, i) => {
-        const seen = new Set();
+        // Each colour with the first element that paints it, so a failure
+        // names its culprit (a <style> inheriting black, 2026-10-17).
+        const seen = new Map();
         for (const el of f.querySelectorAll('svg *')) {
           const s = getComputedStyle(el);
           if (s.display === 'none' || s.visibility === 'hidden') continue;
-          for (const v of [s.fill, s.stroke, el.getAttribute('stop-color') && s.stopColor]) if (v && v.startsWith('rgb')) seen.add(v.replace(/rgba\\((\\d+), (\\d+), (\\d+), 1\\)/, 'rgb($1, $2, $3)'));
+          const who = '<' + el.tagName.toLowerCase() + (el.getAttribute('class') ? ' class="' + el.getAttribute('class') + '"' : '') + '>';
+          for (const v of [s.fill, s.stroke, el.getAttribute('stop-color') && s.stopColor]) {
+            if (!v || !v.startsWith('rgb')) continue;
+            const c = v.replace(/rgba\\((\\d+), (\\d+), (\\d+), 1\\)/, 'rgb($1, $2, $3)');
+            if (!seen.has(c)) seen.set(c, who);
+          }
         }
         return [...seen];
-      })`) as string[][];
+      })`) as [string, string][][];
       // A theme whose own ink is pure black paints text in it rightly.
       const n = parseInt(theme.colors.ink.slice(1), 16);
       const ink = `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
       offenders.push(...painted.flatMap((colours, i) =>
-        colours.filter((c) => c in DEFAULTS && c !== ink).map((c) => `${kindOf(drawn[i]!.source)}: ${DEFAULTS[c]} ${c}`)));
+        colours.filter(([c]) => c in DEFAULTS && c !== ink).map(([c, who]) => `${kindOf(drawn[i]!.source)}: ${DEFAULTS[c]} ${c} on ${who}`)));
       expect(offenders).toEqual([]);
     } finally {
       await page.close();

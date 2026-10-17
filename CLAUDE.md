@@ -7,7 +7,10 @@
   `src/render/diagrams/registry.ts`) drawn per theme, a table of each
   diagram's printed label size, and one proof sheet each. A change that must
   not alter any drawing: `npm run diagrams:hash -- --out before.json` first,
-  `-- --compare before.json` after.
+  `-- --compare before.json` after. What a drawing holds (warnings, counts,
+  groups, computed colours): `npm run diagrams:inspect -- <file.md>`.
+- **Show a guard test red** with `npm run red -- <file> --find … --replace …
+  -- <vitest args>`.
 - **Decisions** are ADRs in `docs/adr/`; read the one a change touches.
 - **Checks:** `npm run typecheck` and `npm test`. Pixel baselines are a
   separate, machine-bound instrument: `npm run test:pixels` (see its header).
