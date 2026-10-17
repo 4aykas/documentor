@@ -13,8 +13,9 @@ size.
 
 - A diagram is laid out at the theme's body size, so the scale it needs to
   fit the column is the size its labels print at.
-- A left-to-right flowchart or timeline that would shrink below 85 % of the
-  column is drawn again top-down, and the top-down drawing is kept when it
+- A left-to-right flowchart or timeline whose fit to the page (the smaller of
+  column width and 72 % of the text block's height, over its own size) is
+  below 85 % is drawn again top-down, and the top-down drawing is kept when it
   prints the labels at least 15 % larger; the build says so.
 - A drawing still scaled below three quarters of the body size gets a
   warning naming the size and what would help.

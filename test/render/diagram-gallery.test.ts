@@ -82,4 +82,17 @@ describe('the diagram gallery, drawn twice', () => {
     const once = async () => diagrams(await drawDiagrams(ingestMarkdown(GALLERY).doc, theme, browser, () => {})).map((d) => d.svg);
     expect(await once()).toEqual(await once());
   });
+
+  // The generator is reset for each diagram, so a diagram's bytes do not
+  // depend on what was drawn before it in the same document. Ids carry the
+  // diagram's index (dg0, dg1), so they are normalised before comparing.
+  it('draws a diagram the same whatever precedes it', async () => {
+    const theme = await loadTheme('plain');
+    const er = /^## Entity relationship\n+(```mermaid\n[\s\S]*?\n```)$/m.exec(GALLERY)![1]!;
+    const svgs = async (md: string) => diagrams(await drawDiagrams(ingestMarkdown(md).doc, theme, browser, () => {}))
+      .map((d) => d.svg.replace(/dg\d+/g, 'dg'));
+    const [alone] = await svgs(`${er}\n`);
+    const [, second] = await svgs(`${er}\n\n${er}\n`);
+    expect(second).toBe(alone);
+  });
 });

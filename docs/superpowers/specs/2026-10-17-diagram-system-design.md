@@ -128,7 +128,10 @@ interface DiagramType {
 
 A fence whose header word no record claims is still handed to Mermaid (an
 unknown type is Mermaid's to accept or refuse, as today) and drawn with the
-shared configuration; the build notes that the type has no record.
+shared configuration. Phase 0 keeps today's behaviour (no note); phase 1
+adds a `D-UNRECORDED` finding, so an author knows the type is not proofed.
+`typeOf` reads the header with Mermaid's `kindOf`; when the chart and
+axonometric engines arrive it dispatches by fence language first.
 
 ### IR
 
@@ -138,8 +141,10 @@ shared configuration; the build notes that the type has no record.
     title?: string; desc?: string }
 ```
 
-`kind` is the registry id. `validate.ts` checks `lang` and that `kind` is a
-registered id (or `''` for an unrecorded Mermaid type). Markdown writes the
+`kind` is the registry id, or `''` for an unrecorded Mermaid type.
+`validate.ts` checks `lang` and that `kind` is a string; which ids exist is the
+drawing pass's business, held by `diagram-registry.test.ts`, so `ir/` does not
+depend on `render/`. Markdown writes the
 fence back verbatim, so every new fence round-trips like a Mermaid one.
 
 ## Canon
@@ -200,6 +205,7 @@ Each finding has a code and goes through `onWarn` as
 | `D-SMALL` | labels print below three quarters of body size (today's warning, moved here) |
 | `D-BUDGET` | the drawing exceeds its type's budget |
 | `D-FOCUS` | more focus marks than the type allows |
+| `D-UNRECORDED` | a Mermaid type no registry record claims: drawn, but not proofed or corrected |
 
 **Budget.** Limits live in the registry. Mermaid types are counted on the
 drawn SVG by selector (`.node`, `.edgePath`, `.actor`…), so the count does not

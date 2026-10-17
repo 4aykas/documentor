@@ -1,7 +1,8 @@
-// Every diagram type documentor draws, one record each — the only list of
-// them (docs/adr/0005). What a type needs beyond the shared configuration
-// lives in its record, not in a switch somewhere in the engine; the gallery,
-// README and the authoring references are checked against this list.
+// Every diagram type documentor draws, one record each (docs/adr/0005). What
+// a type needs beyond the shared configuration lives in its record, not in a
+// switch somewhere in the engine; the gallery and README are checked against
+// this list. Mermaid's own per-type configuration keys and theme variables
+// stay where Mermaid's vocabulary is (mermaid/render.ts, tokens.ts).
 
 import { kindOf } from './mermaid/source.js';
 import { distinct, type DiagramTokens } from './tokens.js';

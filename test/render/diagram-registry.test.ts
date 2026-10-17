@@ -44,14 +44,16 @@ describe('the diagram registry', () => {
     }
   });
 
-  it('gives each drawn diagram its type\'s id as kind, and "" to a header no record claims', async () => {
+  it('gives each drawn diagram its type\'s id as kind, and "" to a type Mermaid draws but no record claims', async () => {
     const browser = await chromium.launch();
     try {
-      const unknown = '```mermaid\nnotADiagram\n```\n';
-      const doc = await drawDiagrams(ingestMarkdown(GALLERY + unknown).doc, await loadTheme('plain'), browser, () => {});
+      // A type Mermaid accepts and the registry does not list, so the
+      // unrecorded path is actually drawn rather than refused by Mermaid.
+      const unrecorded = '```mermaid\npacket-beta\n  0-15: "Source port"\n  16-31: "Destination port"\n```\n';
+      expect(typeOf('packet-beta')).toBeUndefined();
+      const doc = await drawDiagrams(ingestMarkdown(GALLERY + unrecorded).doc, await loadTheme('plain'), browser, () => {});
       const kinds = doc.blocks.flatMap((b) => (b.t === 'diagram' ? [b.kind] : []));
-      expect(kinds).toEqual(REGISTRY.map((d) => d.id));
-      expect(doc.blocks.at(-1)?.t).toBe('code'); // Mermaid refused it, so it stays its source
+      expect(kinds).toEqual([...REGISTRY.map((d) => d.id), '']);
     } finally {
       await browser.close();
     }
