@@ -1,8 +1,10 @@
 # Writing a ```` ```chart ```` fence
 
 A chart documentor draws itself, from the numbers you write: a **bar**
-chart, a **dumbbell** (two values per row) or a **waterfall** (a total
-bridged to another by signed steps). Use it where a Mermaid `xychart` would
+chart, a **grouped** bar (several named quantities per row), a **dumbbell**
+(one quantity at two moments per row) or a **waterfall** (a total bridged to
+another by signed steps). Two quantities side by side are a grouped bar, not
+a dumbbell: a dumbbell says "before and after". Use it where a Mermaid `xychart` would
 start its bars at the axis bottom instead of zero, or where a budget bridge
 must add up. Why it exists: [ADR 0008](../adr/0008-charts-are-drawn-from-declared-numbers.md).
 
@@ -38,12 +40,14 @@ with `focus` gives it the accent; one row at most.
 | Keyword | Types | Meaning |
 |:--|:--|:--|
 | `bar` | — | first line: horizontal bars from zero, negative to the left |
+| `grouped` | — | first line: one thin bar per series in each row, from zero |
+| `series` | grouped | `series <name>`: one line per series, two to four, before the rows; a row then has one value per series, `-` for none |
 | `dumbbell` | — | first line: two values per row, joined by a line |
 | `waterfall` | — | first line: totals bridged by signed steps |
 | `title` | all | printed above the chart, and its accessible title |
 | `desc` | all | the accessible description (alt text); not printed |
 | `unit` | all | printed under the axis |
-| `mark` | bar | `mark <number> <label>`: a dashed reference line, two at most |
+| `mark` | bar, grouped | `mark <number> <label>`: a dashed reference line, two at most |
 | `axis` | dumbbell, waterfall | `axis <number>`: start the value axis above zero; the chart then shows a break mark |
 | `before` | dumbbell | the name of the first value (hollow dot) |
 | `after` | dumbbell | the name of the second value (filled dot) |

@@ -68,3 +68,13 @@ declared bar or dot. Tick labels for a 2.5 step printed wrong values; they
 now carry the step's decimals. Generated charts are tested in a light and a
 dark theme with marks, axes, focus rows, negative dumbbells and decreases
 that reach the axis.
+
+**2026-10-17 — the grouped bar.** Admitted as the fourth chart type, under
+the registry's rule that a type is a figure a real document needed: the
+marketing post `data-centre-urea` shows diesel and urea volume per project,
+one project with urea only. A dumbbell would say "before and after"; a bar
+holds one value. A grouped bar names two to four `series`, then a row has
+one value per series, `-` for none, which draws and prints nothing. Series
+are told by colour (dark grey, the brand, then the categorical steps) and a
+legend; a negative value is its series' colour hollow. A focused row marks
+its label, so one row is one focus mark however many bars it has.

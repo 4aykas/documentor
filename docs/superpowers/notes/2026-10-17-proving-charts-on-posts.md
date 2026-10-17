@@ -13,6 +13,7 @@ existed. Checked against them now:
    named series per row, each optional. It meets the registry's rule — a
    real document needed it and no type draws it — so it is the next chart
    type, with a test that a missing value draws nothing rather than zero.
+   **Done the same day:** `grouped`, ADR 0008's amendment.
 2. **The three-gates flow (2026-10-20) is a Mermaid flowchart**, and drawn
    by documentor it raises `D-BUDGET` (10 nodes) and `D-SMALL` (too tall),
    both correct: the hand-drawn graphic splits the gates into a side column,

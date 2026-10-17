@@ -6,8 +6,8 @@
 // why. Values are printed exactly as written; they are parsed under one
 // convention, and summed exactly (scaled integers), never in binary floats.
 
-export type ChartKind = 'bar' | 'dumbbell' | 'waterfall';
-export const CHART_KINDS: readonly ChartKind[] = ['bar', 'dumbbell', 'waterfall'];
+export type ChartKind = 'bar' | 'grouped' | 'dumbbell' | 'waterfall';
+export const CHART_KINDS: readonly ChartKind[] = ['bar', 'grouped', 'dumbbell', 'waterfall'];
 
 /** A number as the author wrote it, and its exact value. */
 export type Num = {
@@ -36,6 +36,8 @@ export type Chart = {
   before?: string;
   after?: string;
   marks: { value: Num; label: string }[];
+  /** A grouped bar's series names, in column order. */
+  series: string[];
   rows: Row[];
 };
 
@@ -44,6 +46,7 @@ export type Parsed = { ok: true; chart: Chart } | { ok: false; error: string };
 /** The settings each type accepts, besides its rows. */
 export const SETTINGS: Readonly<Record<ChartKind, readonly string[]>> = {
   bar: ['title', 'desc', 'unit', 'mark'],
+  grouped: ['title', 'desc', 'unit', 'mark', 'series'],
   dumbbell: ['title', 'desc', 'unit', 'axis', 'before', 'after'],
   waterfall: ['title', 'desc', 'unit', 'axis'],
 };
@@ -51,7 +54,7 @@ const ALL_SETTINGS = new Set(Object.values(SETTINGS).flat());
 
 /** Row keywords a type takes (a bar or dumbbell row has none). */
 export const ROW_WORDS: Readonly<Record<ChartKind, readonly string[]>> = {
-  bar: [], dumbbell: [], waterfall: ['total', 'step'],
+  bar: [], grouped: [], dumbbell: [], waterfall: ['total', 'step'],
 };
 
 const MINUS = '−';
@@ -71,6 +74,10 @@ export function parseNumber(token: string): Num | null {
   if (digits.replace(/^0+/, '').length > 15) return null;
   return { text: token, value: Number(exact) / 10 ** frac.length, exact, decimals: frac.length, signed: sign !== undefined, sep };
 }
+
+/** A grouped bar's missing value: written `-`, drawn as nothing, printed as nothing. */
+export const MISSING: Num = { text: '', value: Number.NaN, exact: 0n, decimals: 0, signed: false, sep: '' };
+export const isMissing = (n: Num) => Number.isNaN(n.value);
 
 /** Exact values at one common scale, for sums. */
 function scaled(nums: Num[]): { at: (n: Num) => bigint; scale: number } {
@@ -97,7 +104,7 @@ export function parseChart(source: string): Parsed {
     return fail(i, `a chart starts with its type, one of ${CHART_KINDS.join(', ')}; got ${JSON.stringify(head)}`);
   }
   const kind = head as ChartKind;
-  const chart: Chart = { kind, marks: [], rows: [] };
+  const chart: Chart = { kind, marks: [], series: [], rows: [] };
   const seen = new Set<string>();
   for (let n = i + 1; n < lines.length; n++) {
     const line = lines[n]!;
@@ -111,12 +118,17 @@ export function parseChart(source: string): Parsed {
       return fail(n, `${word} is not a ${kind} setting; a ${kind} takes ${SETTINGS[kind].join(', ')}`);
     }
     if ((SETTINGS[kind] as readonly string[]).includes(word)) {
-      if (word !== 'mark' && seen.has(word)) return fail(n, `${word} is set twice`);
+      if (word !== 'mark' && word !== 'series' && seen.has(word)) return fail(n, `${word} is set twice`);
       seen.add(word);
       if (word === 'axis') {
         const v = parseNumber(rest);
         if (v === null) return fail(n, `axis takes one number, got ${JSON.stringify(rest)}`);
         chart.axis = v;
+      } else if (word === 'series') {
+        if (chart.rows.length) return fail(n, 'a grouped bar names its series before its rows');
+        if (rest === '') return fail(n, 'series needs a name');
+        if (chart.series.includes(rest)) return fail(n, `the series "${rest}" is named twice`);
+        chart.series.push(rest);
       } else if (word === 'mark') {
         const [tok, ...label] = rest.split(/[ \t]+/);
         const v = parseNumber(tok ?? '');
@@ -138,14 +150,23 @@ export function parseChart(source: string): Parsed {
     }
     const focus = t.at(-1) === 'focus';
     if (focus) t = t.slice(0, -1);
-    const want = kind === 'dumbbell' ? 2 : 1;
-    const nums = t.slice(-want).map(parseNumber);
+    if (kind === 'grouped' && chart.series.length < 2) return fail(n, 'a grouped bar names two to four series first, one "series <name>" line each');
+    const want = kind === 'dumbbell' ? 2 : kind === 'grouped' ? chart.series.length : 1;
+    // In a grouped bar, `-` says a row has no value in that series.
+    const read = (x: string) => (kind === 'grouped' && (x === '-' || x === '\u2013') ? MISSING : parseNumber(x));
+    const nums = t.slice(-want).map(read);
     const label = t.slice(0, -want).join(' ');
     if (t.length <= want || nums.some((x) => x === null)) {
-      const bad = t.slice(-want).find((x) => parseNumber(x) === null);
+      // Too few tokens is a missing label or value, whatever the tokens are.
+      const bad = t.length <= want ? undefined : t.slice(-want).find((x) => read(x) === null);
       return fail(n, bad !== undefined
         ? `${JSON.stringify(bad)} is not a number this chart can read (digits, an optional sign, thousands in groups of three, a point for decimals)`
-        : `a ${kind} row needs a label and ${want === 2 ? 'two numbers' : 'a number'}`);
+        : `a ${kind} row needs a label and ${want === 1 ? 'a number' : `${want} numbers`}`);
+    }
+    if (nums.every((x) => x !== null && isMissing(x))) return fail(n, 'a row needs at least one value');
+    // The label's own last word: a number there would be read as a value.
+    if (kind === 'grouped' && t.length > want && read(t[t.length - want - 1]!) !== null && chart.series.length > 1) {
+      return fail(n, `the label ends in "${t[t.length - want - 1]}", which reads as a value: a grouped row has exactly ${want} values after its label; end the label with a word`);
     }
     // "Personnel 12 500" is a label and 500, or 12,500 written with a plain
     // space: refused rather than guessed. A thin space or a comma says which.
@@ -158,6 +179,7 @@ export function parseChart(source: string): Parsed {
   }
   if (chart.rows.length === 0) return fail(lines.length - 1, `a ${kind} needs at least one row`);
   if (chart.marks.length > 2) return fail(chart.rows[0]!.line, 'a bar chart takes at most two marks');
+  if (kind === 'grouped' && chart.series.length > 4) return fail(chart.rows[0]!.line, 'a grouped bar takes at most four series');
   if (kind === 'dumbbell' && (!chart.before || !chart.after)) {
     return fail(i, 'a dumbbell names its two values with "before <name>" and "after <name>"');
   }
@@ -168,7 +190,7 @@ export function parseChart(source: string): Parsed {
       return fail(i, 'a waterfall that runs below zero is not drawn: its totals would stand on a baseline the steps cross');
     }
   }
-  const levels = kind === 'waterfall' ? runningLevels(chart) : chart.rows.flatMap((r) => r.values.map((v) => v.value));
+  const levels = kind === 'waterfall' ? runningLevels(chart) : chart.rows.flatMap((r) => r.values.filter((v) => !isMissing(v)).map((v) => v.value));
   if (chart.axis && levels.some((v) => v < chart.axis!.value)) {
     return fail(i, `axis ${chart.axis.text} lies above a value the chart must show; start it at or below ${Math.min(...levels)}`);
   }

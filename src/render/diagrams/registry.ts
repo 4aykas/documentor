@@ -99,6 +99,10 @@ export const REGISTRY: readonly DiagramType[] = [
   // documentor's own engines (docs/adr/0008): one focus mark at most.
   { id: 'bar', engine: 'chart', heads: ['bar'], label: 'Bar chart',
     budget: { bars: { max: 12, count: 'rect[data-role="bar"]' } }, focusMax: 1 },
+  // Several named quantities per row (the urea post, 2026-10-17: diesel and
+  // urea volume per project), any of them absent.
+  { id: 'grouped', engine: 'chart', heads: ['grouped'], label: 'Grouped bar',
+    budget: { bars: { max: 24, count: 'rect[data-role="bar"]' } }, focusMax: 1 },
   { id: 'dumbbell', engine: 'chart', heads: ['dumbbell'], label: 'Dumbbell',
     budget: { rows: { max: 10, count: 'circle[data-role="after"]' } }, focusMax: 1 },
   { id: 'waterfall', engine: 'chart', heads: ['waterfall'], label: 'Waterfall',

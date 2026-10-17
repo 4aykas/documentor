@@ -208,6 +208,19 @@ Structural     -4.0
 Architecture   -8.5
 ```
 
+## Grouped bar
+
+```chart
+grouped
+title Diesel and urea storage, by project
+unit m³
+series Diesel
+series Urea (DEF)
+Multi-level data centre    300  40
+Expansion zone             500  30  focus
+Urea distribution            -  50
+```
+
 ## Dumbbell
 
 ```chart

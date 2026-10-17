@@ -234,7 +234,7 @@ deliberate rather than unfinished:
 
 A ```` ```mermaid ```` fence in a Markdown source is drawn, not printed as code,
 by [Mermaid](https://mermaid.js.org); a ```` ```chart ```` fence is a bar,
-dumbbell or waterfall chart drawn by documentor itself from the numbers the
+grouped bar, dumbbell or waterfall chart drawn by documentor itself from the numbers the
 author wrote ([`docs/diagrams/chart.md`](docs/diagrams/chart.md)); an
 ```` ```axonometric ```` fence is an exploded view or a floor plan seen from
 above at an angle, drawn from the geometry the author declared
@@ -260,6 +260,7 @@ Mermaid knows is drawn with the shared settings only.
 | Git graph | `mermaid` | `gitGraph` |
 | Block | `mermaid` | `block-beta` |
 | Bar chart | `chart` | `bar` |
+| Grouped bar | `chart` | `grouped` |
 | Dumbbell | `chart` | `dumbbell` |
 | Waterfall | `chart` | `waterfall` |
 | Exploded axonometric | `axonometric` | `exploded` |

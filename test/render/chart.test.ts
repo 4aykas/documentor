@@ -56,6 +56,18 @@ describe('parseChart', () => {
     expect(refused('waterfall\ntotal A 10\nstep B -30\ntotal C -20\n')).toMatch(/runs below zero/);
   });
 
+  it('reads a grouped bar, one value per series, - for none', () => {
+    const c = ok('grouped\nseries Diesel\nseries Urea\nMulti-level 300 40\nUrea only - 50 focus\n');
+    expect(c.series).toEqual(['Diesel', 'Urea']);
+    expect(c.rows.map((r) => r.values.map((v) => v.text))).toEqual([['300', '40'], ['', '50']]);
+    expect(refused('grouped\nseries A\nX 1\n')).toMatch(/names two to four series first/);
+    expect(refused('grouped\nseries A\nseries B\nX 1\n')).toMatch(/needs a label and 2 numbers/);
+    expect(refused('grouped\nseries A\nseries B\nX - -\n')).toMatch(/at least one value/);
+    expect(refused('grouped\nseries A\nseries B\nBay 2 300 40\n')).toMatch(/the label ends in "2"/);
+    expect(refused('grouped\nseries A\nseries B\nX 1 2\nseries C\n')).toMatch(/series before its rows/);
+    expect(refused('bar\nX -\n')).toMatch(/is not a number/);
+  });
+
   it('reconciles a waterfall exactly, in decimals', () => {
     ok('waterfall\ntotal A 0.1\nstep B +0.2\ntotal C 0.3\n');
     expect(refused('waterfall\ntotal A 100\nstep B +10\ntotal C 111\n')).toMatch(/line 4: the total 111 does not equal the running sum 110 \(difference 1\)/);
@@ -184,6 +196,22 @@ describe('layout the review found wrong (2026-10-17)', () => {
     expect(warn.filter((m) => / D-/.test(m))).toEqual([]);
   });
 
+  it('draws a grouped bar: a bar per present value, from zero, one focus mark per row', async () => {
+    const warn: string[] = [];
+    const [d] = await draw(['grouped\nseries Diesel\nseries Urea\nMulti-level 300 40\nExpansion 500 -30 focus\nUrea only - 50'], warn);
+    const bars = [...d!.svg.matchAll(/<rect x="([\d.]+)" y="[\d.]+" width="([\d.]+)"[^>]*data-role="bar" data-value="([^"]*)" data-name="([^"]*)" data-series="([^"]*)"/g)]
+      .map((m) => ({ x: +m[1]!, w: +m[2]!, value: m[3], name: m[4], series: m[5] }));
+    expect(bars.map((b) => `${b.name}/${b.series}=${b.value}`)).toEqual(['Multi-level/Diesel=300', 'Multi-level/Urea=40', 'Expansion/Diesel=500', 'Expansion/Urea=-30', 'Urea only/Urea=50']);
+    // Every bar the SVG holds, whatever its coordinates: a "-" draws none.
+    expect((d!.svg.match(/data-role="bar"/g) ?? []).length).toBe(5);
+    expect(d!.svg).not.toContain('NaN');
+    const zero = Number(/<line x1="([\d.]+)"[^>]*data-zero/.exec(d!.svg)![1]);
+    for (const b of bars) expect(Math.min(Math.abs(b.x - zero), Math.abs(b.x + b.w - zero)), b.name).toBeLessThan(0.6);
+    expect([...d!.svg.matchAll(/data-legend="([^"]*)"/g)].map((m) => m[1])).toEqual(['Diesel', 'Urea']);
+    expect((d!.svg.match(/class="[^"]*\bfocus\b/g) ?? []).length).toBe(1);
+    expect(warn.filter((m) => / D-/.test(m))).toEqual([]);
+  });
+
   it('prints a decrease that ends near the axis above its bar, not on it', async () => {
     const warn: string[] = [];
     await draw(['waterfall\ntotal Budget 1,000\nstep Cut -980\ntotal Left 20'], warn);
@@ -211,6 +239,10 @@ describe.each(['plain', 'lionfocus'])('charts the parser accepts, under %s', (th
       const mark = rnd() < 0.5 ? `mark +${fmt(n(1, 60_000))} Limit\n` : '';
       // Units as long as real ones: a one-letter unit never reaches a tick.
       fences.push(`bar\ntitle Generated bar ${k}\nunit hours of design work\n${mark}${rows.join('\n')}`);
+      const series = ['Design', 'Build', 'Operate', 'Retrofit'].slice(0, n(2, 4));
+      const groupRows = Array.from({ length: n(2, 6) }, () => `${label()} ${series.map(() => (rnd() < 0.15 ? '-' : fmt(n(-2000, 9000)))).join(' ')}`)
+        .map((r) => (r.split(' ').slice(-series.length).every((v) => v === '-') ? r.replace(/-$/, '1') : r));
+      fences.push(`grouped\ntitle Generated grouped ${k}\nunit hours of design work\n${series.map((s) => `series ${s}`).join('\n')}\n${groupRows.join('\n')}`);
       const pairs = Array.from({ length: n(2, 6) }, () => `${label()} ${fmt(n(-3000, 5000))} ${fmt(n(-3000, 5000))}`);
       fences.push(`dumbbell\ntitle Generated dumbbell ${k}\nunit hours of design work\nbefore Plan\nafter Actual\n${pairs.join('\n')}`);
       const start = n(5_000, 200_000);

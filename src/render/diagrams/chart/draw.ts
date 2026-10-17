@@ -9,8 +9,8 @@
 // row marked focus takes the brand. Values print exactly as written; axis
 // ticks are computed chrome, in the convention of the chart's own numbers.
 
-import type { DiagramTokens } from '../tokens.js';
-import { runningLevels, type Chart, type Num } from './parse.js';
+import { mix, type DiagramTokens } from '../tokens.js';
+import { isMissing, runningLevels, type Chart, type Num } from './parse.js';
 
 export type Widths = (s: string, bold?: boolean) => number;
 export type DrawOptions = { widthPx: number; bodyPx: number; family: string; tokens: DiagramTokens; id: string };
@@ -23,10 +23,10 @@ export function stringsOf(c: Chart): { regular: string[]; bold: string[] } {
   for (const r of c.rows) {
     regular.add(r.label);
     words(r.label).forEach((w) => regular.add(w));
-    r.values.forEach((v) => bold.add(v.text));
+    r.values.forEach((v) => { if (!isMissing(v)) bold.add(v.text); });
   }
   for (const m of c.marks) { regular.add(m.label); bold.add(m.value.text); }
-  for (const s of [c.unit, c.before, c.after]) if (s) regular.add(s);
+  for (const s of [c.unit, c.before, c.after, ...c.series]) if (s) { regular.add(s); s.split(' ').forEach((w) => regular.add(w)); }
   if (c.title) { bold.add(c.title); words(c.title).forEach((w) => bold.add(w)); }
   if (c.axis) regular.add(c.axis.text);
   for (const t of ticksOf(c).labels) regular.add(t);
@@ -44,7 +44,7 @@ function niceStep(range: number, n: number): number {
 
 /** The value domain and its tick values and labels. */
 export function ticksOf(c: Chart): { lo: number; hi: number; values: number[]; labels: string[] } {
-  const vals = c.kind === 'waterfall' ? runningLevels(c) : c.rows.flatMap((r) => r.values.map((v) => v.value));
+  const vals = c.kind === 'waterfall' ? runningLevels(c) : c.rows.flatMap((r) => r.values.filter((v) => !isMissing(v)).map((v) => v.value));
   const all = [...vals, ...c.marks.map((m) => m.value.value)];
   const floor = c.axis ? c.axis.value : 0;
   let lo = c.axis ? floor : Math.min(0, ...all);
@@ -58,7 +58,7 @@ export function ticksOf(c: Chart): { lo: number; hi: number; values: number[]; l
   // An axis start off the step gets its own label; a tick too close above it
   // would print on top of it, so that tick goes.
   if (c.axis && values[0] !== lo) values.splice(0, values[0]! - lo < step * 0.6 ? 1 : 0, lo);
-  const first = c.rows[0]!.values[0]!;
+  const first = c.rows.flatMap((r) => r.values).find((v) => !isMissing(v))!;
   const decimals = (String(+step.toPrecision(12)).split('.')[1] ?? '').length;
   return { lo, hi, values, labels: values.map((v) => (c.axis && v === lo ? c.axis.text : formatLike(v, decimals, first))) };
 }
@@ -136,25 +136,49 @@ function barPaint(t: DiagramTokens, positive: boolean, focus: boolean, total = f
 
 // ------------------------------------------------------------------ bar
 
+/** A grouped bar's series fill, in column order: dark grey, then the brand,
+ *  then the categorical steps; identity by colour, named in the legend. */
+function seriesFill(t: DiagramTokens, i: number): string {
+  return i === 0 ? mix(t.ink, t.paper, 0.72) : i === 1 ? t.brand : t.series[i] ?? t.series.at(-1)!;
+}
+
 function drawBar(c: Chart, x: Ctx): string {
   const { o, w, F, lineH } = x;
   const t = o.tokens;
-  const top = titleBlock(c, x);
+  let top = titleBlock(c, x);
+  const grouped = c.kind === 'grouped';
+  const S = grouped ? c.series.length : 1;
+  if (grouped) {
+    // Legend: a swatch and the series name, on one line while they fit.
+    const sw = F * 0.75, gapW = F * 1.1;
+    let lx = 0, ly = top + F * 0.75;
+    c.series.forEach((name, i) => {
+      const need = sw + F * 0.35 + w(name);
+      if (lx > 0 && lx + need > o.widthPx) { lx = 0; ly += lineH; }
+      x.parts.push(`<rect x="${r1(lx)}" y="${r1(ly - sw / 2)}" width="${r1(sw)}" height="${r1(sw)}" rx="1.5" fill="${seriesFill(t, i)}" data-legend="${esc(name)}"/>`);
+      x.parts.push(text(lx + sw + F * 0.35, ly + F * 0.35, name, { fill: t.textSec, cls: 'legend' }));
+      lx += need + gapW;
+    });
+    top = ly + lineH * 0.9;
+  }
   const ticks = ticksOf(c);
+  const present = c.rows.flatMap((r) => r.values.filter((v) => !isMissing(v)));
   const labelCol = Math.max(Math.min(Math.max(...c.rows.map((r) => w(r.label))), o.widthPx * 0.4), widestWord(c, w));
   const gap = F * 0.8;
-  const valueW = Math.max(...c.rows.map((r) => w(r.values[0]!.text, true))) + F * 0.45;
-  const hasNeg = c.rows.some((r) => r.values[0]!.value < 0), hasPos = c.rows.some((r) => r.values[0]!.value > 0);
+  const valueW = Math.max(...present.map((v) => w(v.text, true))) + F * 0.45;
+  const hasNeg = present.some((v) => v.value < 0), hasPos = present.some((v) => v.value > 0);
   const half = Math.max(...ticks.labels.map((l) => w(l))) / 2;
   const x0 = labelCol + gap + Math.max(hasNeg ? valueW : 0, half);
   const x1 = o.widthPx - Math.max(hasPos ? valueW : 0, half);
   const sx = (v: number) => x0 + ((v - ticks.lo) / (ticks.hi - ticks.lo)) * (x1 - x0);
   const markBand = c.marks.length ? lineH * 1.1 : 0;
-  const barH = F * 1.15, rowGap = F * 0.55;
+  // A grouped row's bars sit a text line apart, so their values never touch.
+  const barH = grouped ? F * 0.95 : F * 1.15, inner = grouped ? F * 0.35 : 0, rowGap = F * (grouped ? 0.8 : 0.55);
+  const stackH = S * barH + (S - 1) * inner;
   let y = top + markBand;
   const rows = c.rows.map((r) => {
     const lines = wrap(r.label, labelCol, w);
-    const h = Math.max(lines.length * lineH, barH) + rowGap;
+    const h = Math.max(lines.length * lineH, stackH) + rowGap;
     const row = { r, lines, y, h };
     y += h;
     return row;
@@ -170,14 +194,22 @@ function drawBar(c: Chart, x: Ctx): string {
     x.parts.push(text(mx + (anchor === 'end' ? -4 : 4), plotTop - F * 0.35, `${m.label} ${m.value.text}`, { anchor, fill: t.textSec, cls: 'mark' }));
   }
   for (const { r, lines, y: ry, h } of rows) {
-    const v = r.values[0]!;
     const cy = ry + (h - rowGap) / 2;
-    lines.forEach((l, i) => x.parts.push(text(0, cy - ((lines.length - 1) * lineH) / 2 + i * lineH + F * 0.35, l, { fill: t.ink, cls: 'label' })));
-    const a = sx(Math.min(0, v.value)), b = sx(Math.max(0, v.value));
-    x.parts.push(`<rect x="${r1(a)}" y="${r1(cy - barH / 2)}" width="${r1(Math.max(b - a, 0.5))}" height="${r1(barH)}" rx="1.5" ${barPaint(t, v.value >= 0, r.focus)}`
-      + `${r.focus ? ' class="focus"' : ''} data-role="bar" data-value="${esc(v.text)}" data-name="${esc(r.label)}"/>`);
-    const neg = v.value < 0;
-    x.parts.push(text(neg ? a - F * 0.35 : b + F * 0.35, cy + F * 0.35, v.text, { anchor: neg ? 'end' : 'start', bold: true, fill: r.focus ? t.brand : t.ink, cls: 'value' }));
+    // A grouped row's focus is its label: one mark per row, however many bars.
+    lines.forEach((l, i) => x.parts.push(text(0, cy - ((lines.length - 1) * lineH) / 2 + i * lineH + F * 0.35, l, { fill: r.focus && grouped ? t.brand : t.ink, bold: r.focus && grouped, cls: r.focus && grouped && i === 0 ? 'label focus' : 'label' })));
+    r.values.forEach((v, si) => {
+      if (isMissing(v)) return;
+      const by = cy - stackH / 2 + si * (barH + inner);
+      const a = sx(Math.min(0, v.value)), b = sx(Math.max(0, v.value));
+      const paint = grouped
+        // A series is told by its colour; a negative value is that colour hollow.
+        ? (v.value >= 0 ? `fill="${seriesFill(t, si)}" stroke="${seriesFill(t, si)}" stroke-width="1"` : `fill="${t.paper}" stroke="${seriesFill(t, si)}" stroke-width="1.25"`)
+        : barPaint(t, v.value >= 0, r.focus);
+      x.parts.push(`<rect x="${r1(a)}" y="${r1(by)}" width="${r1(Math.max(b - a, 0.5))}" height="${r1(barH)}" rx="1.5" ${paint}`
+        + `${r.focus && !grouped ? ' class="focus"' : ''} data-role="bar" data-value="${esc(v.text)}" data-name="${esc(r.label)}"${grouped ? ` data-series="${esc(c.series[si]!)}"` : ''}/>`);
+      const neg = v.value < 0;
+      x.parts.push(text(neg ? a - F * 0.35 : b + F * 0.35, by + barH / 2 + F * 0.35, v.text, { anchor: neg ? 'end' : 'start', bold: true, fill: r.focus ? t.brand : t.ink, cls: 'value' }));
+    });
   }
   x.parts.push(`<line x1="${r1(sx(0))}" y1="${r1(plotTop)}" x2="${r1(sx(0))}" y2="${r1(plotBottom)}" stroke="${t.ink}" stroke-width="1" data-zero=""/>`);
   // The unit has its own line under the tick labels, at the right edge.
@@ -317,7 +349,7 @@ function drawWaterfall(c: Chart, x: Ctx): string {
 
 export function drawChart(c: Chart, o: DrawOptions, w: Widths): { svg: string; w: number; h: number } {
   const x: Ctx = { o, w, F: o.bodyPx, lineH: o.bodyPx * 1.3, parts: [] };
-  const svg = c.kind === 'bar' ? drawBar(c, x) : c.kind === 'dumbbell' ? drawDumbbell(c, x) : drawWaterfall(c, x);
+  const svg = c.kind === 'bar' || c.kind === 'grouped' ? drawBar(c, x) : c.kind === 'dumbbell' ? drawDumbbell(c, x) : drawWaterfall(c, x);
   const [, W, H] = /width="(\d+)" height="(\d+)"/.exec(svg)!;
   return { svg, w: Number(W), h: Number(H) };
 }

@@ -57,7 +57,8 @@ Know these before promising anything to the user:
   shape. Page furniture (a letterhead, a footer) is never removed unless the
   sidecar's `pdfChrome` field says where — run `inspect` first and relay
   its advisory rather than guessing a value.
-- **A chart with numbers is a ```` ```chart ```` fence** (`bar`, `dumbbell`,
+- **A chart with numbers is a ```` ```chart ```` fence** (`bar`, `grouped`
+  for several quantities per row, `dumbbell` for one quantity at two moments,
   `waterfall`; grammar in the repo's `docs/diagrams/chart.md`), not a Mermaid
   `xychart`, whenever a value can be negative or totals must add up. Copy the
   document's numbers exactly as written; a waterfall whose totals do not
