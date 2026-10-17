@@ -299,7 +299,9 @@ mindmap
   at. A left-to-right flowchart or timeline that would shrink below that is
   drawn top-down when that prints larger, and the build says so; anything still
   scaled below three quarters of the body size gets a warning naming the
-  size. The words are never changed, only the layout.
+  size. The words are never changed, only the layout. documentor's own
+  charts and axonometric figures are laid out at the column's width and the
+  body size, so they never scale.
 - **ELK on request.** Flowcharts use dagre. A diagram whose own frontmatter
   says `layout: elk` is laid out with ELK instead, for orthogonal edges and
   aligned rows, which suits architecture drawings.
@@ -312,13 +314,15 @@ mindmap
   resolve, answered from the installed packages; every other request is
   refused. A Word-only build of a document with a diagram launches Chromium
   for that reason.
-- **A fence Mermaid cannot parse stays its source.** It prints as a code
-  block, and the build warns which diagram it was and what the parser said.
+- **A fence that cannot be drawn stays its source.** It prints as a code
+  block, and the build warns which diagram it was and why: what Mermaid's
+  parser said, or the line of a chart or a figure that could not be read, did
+  not add up, or could not stand.
 - **Never wider than the column.** A diagram is scaled down to the text
   column and to most of a page's height, never cropped.
 - **Described by the author.** A Mermaid fence's own `accTitle:` and
-  `accDescr:` (a line, or an `accDescr { … }` block), or a chart's `title` and
-  `desc`, stay in the SVG as its title and description for screen readers,
+  `accDescr:` (a line, or an `accDescr { … }` block), or a chart's or a
+  figure's `title` and `desc`, stay in the SVG as its title and description for screen readers,
   and become the picture's alt text in Word.
   A diagram without them is named in Word by its type only; `inspect`
   counts it under `undescribedDiagrams`. PDFs are not tagged yet
@@ -326,14 +330,16 @@ mindmap
 - **One focus, marked by the author.** A node marked `:::focus` (in a state
   diagram, `class X focus`) is outlined in the brand on a faint brand fill.
   Two at most: the accent reads only when it is kept for what the diagram is
-  about.
+  about. In a chart or an axonometric figure, `focus` ends a row or an
+  element line, one at most.
 - **Every drawing is checked, and a finding warns.** After drawing, each
   diagram is measured as the browser lays it out, and the build warns with a
   code: `D-SMALL` labels print below three quarters of the body size (with
   advice for what binds, the column or the page height), `D-COLLIDE` two
-  labels overlap, `D-COVER` an edge label sits on a box, `D-CLIP` a label runs
+  labels overlap, `D-COVER` an edge label sits on a box or a chart's label on
+  a bar, `D-CLIP` a label runs
   past the drawing, `D-BUDGET` more nodes, edges, lifelines or tasks than the
-  type reads well with, `D-FOCUS` more than two focus marks, `D-UNRECORDED` a
+  type reads well with, `D-FOCUS` more focus marks than the type allows, `D-UNRECORDED` a
   Mermaid type documentor does not proof. A finding never changes the
   drawing or fails the build.
 
