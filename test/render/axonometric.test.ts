@@ -16,7 +16,8 @@ describe('parseAxo', () => {
   const refused = (s: string) => { const p = parseAxo(s); expect(p.ok, s).toBe(false); return p.ok ? '' : p.error; };
   it('reads both types', () => {
     const e = parseAxo('exploded\npart Lid 10 x 8 x 1\npart Body 10 x 8 x 4 focus\n');
-    expect(e.ok && e.axo.kind === 'exploded' && e.axo.parts.map((p) => [p.label, p.level, p.focus])).toEqual([['Lid', 1, false], ['Body', 2, true]]);
+    expect(e.ok && e.axo.kind === 'exploded' && e.axo.parts.map((p) => [p.label, p.focus])).toEqual([['Lid', false], ['Body', true]]);
+    expect(e.ok && e.axo.kind === 'exploded' && new Set(e.axo.parts.map((p) => p.level)).size).toBe(2);
     const p = parseAxo('plan\nplate 10 x 10\nroom Hall 0 0 10 x 5\nblock Desk 1 1 2 x 1 h 0.8 in Hall\n');
     expect(p.ok && p.axo.kind === 'plan' && p.axo.items.map((r) => [r.kind, r.label, r.inRoom ?? ''])).toEqual([['room', 'Hall', ''], ['block', 'Desk', 'Hall']]);
   });
@@ -32,6 +33,22 @@ describe('parseAxo', () => {
     expect(refused('plan\nplate 10 x 10\nblock Desk 1 1 1 x 1\n')).toMatch(/needs its height/);
     expect(refused('plan\nplate 10 x 10\nplate 5 x 5\nroom A 0 0 1 x 1\n')).toMatch(/plate is set twice/);
     expect(refused('exploded\npart Lid 10 x 8 x 1 colour red\n')).toMatch(/"colour" is not a part option/);
+  });
+
+  it('refuses what the review found it accepted (2026-10-17)', () => {
+    // A block standing in a room without saying so would vanish under its floor.
+    expect(refused('plan\nplate 10 x 10\nblock Desk 3 3 4 x 2 h 0.8\nroom Hall 0 0 10 x 10\n')).toMatch(/stands in "Hall" without saying so/);
+    // Two rooms of one name: a block "in" one could not say which.
+    expect(refused('plan\nplate 20 x 10\nroom Hall 0 0 5 x 5\nroom Hall 10 0 5 x 5\n')).toMatch(/two rooms are called "Hall"/);
+    // Parts side by side inside each other.
+    expect(refused('exploded\npart A 60 x 70 x 30 level 2\npart B 50 x 70 x 30 level 2 at 5 0\n')).toMatch(/overlaps "A" on their level/);
+    expect(refused('plan\nplate 10 x 10\nblock Desk 1 1 1 x 1 h 1 h 2\n')).toMatch(/h is given twice/);
+    expect(refused('plan\nplate 10 x 10\nblock Desk 1 1 1 x 1 h 0\n')).toMatch(/h takes a height above zero/);
+  });
+
+  it('never merges a part without a level into another part\'s level', () => {
+    const e = parseAxo('exploded\npart A 10 x 8 x 1 level 1\npart B 10 x 8 x 1\npart C 10 x 8 x 1 level 2\n');
+    expect(e.ok && e.axo.kind === 'exploded' && new Set(e.axo.parts.map((p) => p.level)).size).toBe(3);
   });
 });
 
@@ -93,7 +110,8 @@ const onOutline = (p: Pt, poly: Pt[]) => poly.some((a, i) => {
 const near = (a: Pt[], b: Pt[]) => a.length === b.length && a.every((p, i) => Math.abs(p[0] - b[i]![0]) < 0.15 && Math.abs(p[1] - b[i]![1]) < 0.15);
 
 const EXPLODED = 'exploded\ntitle Air handling unit\ndesc Four parts, roof on top.\npart Roof panel 120 x 80 x 6\npart Fan section 60 x 70 x 30 level 2 at 0 5\npart Coil section 50 x 70 x 30 level 2 at 65 5 focus\npart Base frame 120 x 80 x 12';
-const PLAN = 'plan\ntitle Plant room\nplate 30 x 20\nroom Switchroom 0 0 12 x 8\nroom Plant hall 12 0 18 x 20 focus\nroom Store 0 8 12 x 12\nblock Chiller 16 4 8 x 4 h 2.5 in Plant hall\nblock Pumps 16 12 6 x 3 h 1 in Plant hall';
+const PLAN = 'plan\ntitle Plant room\nplate 34 x 20\nroom Switchroom 4 0 8 x 8\nroom Plant hall 12 0 18 x 20 focus\nroom Store 0 8 12 x 12\nblock Chiller 16 4 8 x 4 h 2.5 in Plant hall\nblock Pumps 16 12 6 x 3 h 1 in Plant hall\nblock Tank 0 0 3 x 3 h 2';
+
 
 describe.each([['exploded', EXPLODED], ['plan', PLAN]])('a drawn %s', (_, fence) => {
   it('puts every face where its declared box projects', async () => {
@@ -104,6 +122,8 @@ describe.each([['exploded', EXPLODED], ['plan', PLAN]])('a drawn %s', (_, fence)
       const [x, y, z, w, d, h] = g.box as [number, number, number, number, number, number];
       if (g.axo === 'room') {
         expect(near(g.faces['floor']!, [P(x, y, 0), P(x + w, y, 0), P(x + w, y + d, 0), P(x, y + d, 0)]), `${g.name} floor`).toBe(true);
+        expect(near(g.faces['wall-front']!, [P(x, y + d, 0), P(x + w, y + d, 0), P(x + w, y + d, h), P(x, y + d, h)]), `${g.name} front wall`).toBe(true);
+        expect(near(g.faces['wall-back']!, [P(x, y, 0), P(x + w, y, 0), P(x + w, y, h), P(x, y, h)]), `${g.name} back wall`).toBe(true);
         continue;
       }
       expect(near(g.faces['face-top']!, [P(x, y, z + h), P(x + w, y, z + h), P(x + w, y + d, z + h), P(x, y + d, z + h)]), `${g.name} top`).toBe(true);
@@ -122,7 +142,8 @@ describe.each([['exploded', EXPLODED], ['plan', PLAN]])('a drawn %s', (_, fence)
         const [ax, ay, , aw, ad] = a.box as number[], [bx, by, , bw, bd] = b.box as number[];
         const behind = ax! + aw! <= bx! + 1e-9 || ay! + ad! <= by! + 1e-9;
         const meets = outline(P, a.box).some((p) => inside(p, outline(P, b.box))) || outline(P, b.box).some((p) => inside(p, outline(P, a.box)));
-        const nested = a.axo === 'room' || b.axo === 'room';
+        const within = (u: number[], v: number[]) => u[0]! >= v[0]! && u[1]! >= v[1]! && u[0]! + u[3]! <= v[0]! + v[3]! && u[1]! + u[4]! <= v[1]! + v[4]!;
+        const nested = (a.axo === 'room' && within(b.box, a.box)) || (b.axo === 'room' && within(a.box, b.box));
         if (behind && meets && !nested) expect(a.order, `${a.name} before ${b.name}`).toBeLessThan(b.order);
       }
     }
@@ -134,6 +155,42 @@ describe.each([['exploded', EXPLODED], ['plan', PLAN]])('a drawn %s', (_, fence)
     const names = r.groups.filter((g) => g.name).map((g) => g.name);
     for (const n of names) expect(r.texts, n).toContain(n);
     expect(r.texts).toContain(d.title);
+  });
+});
+
+describe.each(['plain', 'lionfocus'])('the faces under %s', (themeId) => {
+  // Light from above: the top is the lightest face and the right the
+  // darkest, on a dark sheet as on a light one.
+  it('shade top lightest, right darkest', async () => {
+    const d = (await drawn(EXPLODED, themeId))!;
+    const page = await browser.newPage();
+    try {
+      await page.setContent(`<div id="host">${d.svg}</div>`);
+      const lum = await page.evaluate(`[...document.querySelectorAll('#host g[data-axo="part"]:not(.focus)')].map((g) => {
+        const l = (c) => { const [r, gg, b] = c.match(/\\d+/g).map(Number).map((v) => v / 255); return 0.2126 * r + 0.7152 * gg + 0.0722 * b; };
+        const f = (cls) => l(getComputedStyle(g.querySelector('.' + cls)).fill);
+        return [f('face-top'), f('face-left'), f('face-right')];
+      })`) as [number, number, number][];
+      expect(lum.length).toBeGreaterThan(0);
+      for (const [top, left, right] of lum) { expect(top).toBeGreaterThan(left); expect(left).toBeGreaterThan(right); }
+    } finally {
+      await page.close();
+    }
+  });
+});
+
+describe('a plan\'s tags', () => {
+  it('are warned about when a name cannot fit its room', async () => {
+    const warn: string[] = [];
+    await drawn('plan\nplate 10 x 4\nroom Corridor connecting the east wing 0 0 3 x 2\nroom WC 3 0 2 x 2', 'plain', warn);
+    // A finding quotes a long name to 32 characters.
+    expect(warn.join('\n')).toMatch(/D-COVER: .*"Corridor connecting the east wi…" runs past its room/);
+  });
+
+  it('step around a block in the middle of their room', async () => {
+    const warn: string[] = [];
+    await drawn('plan\nplate 20 x 14\nroom Plant hall 0 0 20 x 14\nblock Chiller 7 5 6 x 4 h 2.5 in Plant hall', 'plain', warn);
+    expect(warn.filter((m) => / D-/.test(m))).toEqual([]);
   });
 });
 

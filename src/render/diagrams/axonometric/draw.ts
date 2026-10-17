@@ -34,9 +34,13 @@ export function axoStrings(a: Axo): { regular: string[]; bold: string[] } {
 type Tones = { top: string; right: string; left: string; line: string; width: number };
 
 function tones(t: DiagramTokens, focus: boolean): Tones {
+  // The top is the lightest face, the right the darkest. On a light sheet
+  // that is less ink on top; on a dark sheet, where ink is light, more.
+  const [top, left, right] = t.dark ? [0.2, 0.12, 0.06] : [0.04, 0.1, 0.17];
+  const [ft, fl, fr] = t.dark ? [0.34, 0.24, 0.16] : [0.2, 0.24, 0.32];
   return focus
-    ? { top: t.tint(0.2), right: mix(t.brand, t.paper, 0.32), left: mix(t.brand, t.paper, 0.24), line: t.brand, width: 1.25 }
-    : { top: mix(t.ink, t.paper, 0.04), right: mix(t.ink, t.paper, 0.17), left: mix(t.ink, t.paper, 0.1), line: t.line, width: 0.75 };
+    ? { top: mix(t.brand, t.paper, ft), right: mix(t.brand, t.paper, fr), left: mix(t.brand, t.paper, fl), line: t.brand, width: 1.25 }
+    : { top: mix(t.ink, t.paper, top), right: mix(t.ink, t.paper, right), left: mix(t.ink, t.paper, left), line: t.line, width: 0.75 };
 }
 
 /** One box as its three faces, with its geometry declared. */
@@ -94,7 +98,10 @@ function drawExploded(a: Exploded, o: AxoOptions, w: Widths): Drawn {
   const avail = o.widthPx - labelW - lead;
   const b1 = bounds(placed);
   const k = Math.min(avail / (b1.maxX - b1.minX), (o.widthPx * 0.85) / (b1.maxY - b1.minY));
-  if (!(k > 0) || !Number.isFinite(k)) return { error: 'the figure has no size to draw' };
+  if (!(k > 0) || !Number.isFinite(k)) {
+    const widest = placed.reduce((a, p) => (w(p.label, true) > w(a.label, true) ? p : a));
+    return { error: `line ${widest.line + 1}: the label "${widest.label}" leaves no room for the figure; a shorter label would` };
+  }
   const ox = -b1.minX * k, oy = top + lineH * 0.6 - b1.minY * k;
   // Paint bottom level first, back to front within a level.
   const levelsUp = [...order].reverse();
@@ -179,14 +186,31 @@ function drawPlan(a: Plan, o: AxoOptions, w: Widths): Drawn {
     g.push('</g>');
     parts.push(g.join(''));
   }
-  // Tags last: each on its own floor or roof.
+  // Tags last: a block's on its roof; a room's on its own floor, at the
+  // point nearest the floor's centre where the tag stays on the floor and
+  // off every block.
+  const solids = a.items.filter((r) => r.kind === 'block').map((b) => ({ name: b.label, poly: silhouette(b, k).map(([x, y]) => [x + ox, y + oy] as Pt) }));
+  const tagRect = (bx: number, by: number, tw: number): Pt[] => {
+    const [x0, x1, y0, y1] = [bx - tw / 2 - 3, bx + tw / 2 + 3, by - F * 0.75, by + F * 0.35];
+    return [[x0, y0], [(x0 + x1) / 2, y0], [x1, y0], [x1, (y0 + y1) / 2], [x1, y1], [(x0 + x1) / 2, y1], [x0, y1], [x0, (y0 + y1) / 2], [bx, (y0 + y1) / 2]];
+  };
+  const roomSpot = (r: Room, tw: number): Pt => {
+    const floor = [P(r.x, r.y, 0), P(r.x + r.w, r.y, 0), P(r.x + r.w, r.y + r.d, 0), P(r.x, r.y + r.d, 0)].map(([x, y]) => [x + ox, y + oy] as Pt);
+    const spots: Pt[] = [];
+    for (let i = 1; i < 12; i++) for (let j = 1; j < 12; j++) { const [x, y] = P(r.x + (r.w * i) / 12, r.y + (r.d * j) / 12, 0); spots.push([x + ox, y + oy]); }
+    const [cx, cy] = P(r.x + r.w / 2, r.y + r.d / 2, 0);
+    spots.sort((u, v) => Math.hypot(u[0] - cx - ox, u[1] - cy - oy) - Math.hypot(v[0] - cx - ox, v[1] - cy - oy));
+    const ok = spots.find(([bx, by]) => {
+      const rect = tagRect(bx, by, tw);
+      return rect.every((q) => insidePoly(q, floor)) && solids.every((s) => rect.every((q) => !insidePoly(q, s.poly)) && s.poly.every((q) => !insidePoly(q, rect)));
+    });
+    return ok ?? [cx + ox, cy + oy];
+  };
   for (const r of a.items) {
-    const z = r.kind === 'room' ? 0 : r.z + r.h;
-    const [cx, cy] = P(r.x + r.w / 2, r.y + r.d / 2, z);
     const tw = w(r.label, true);
-    const bx = cx + ox, by = cy + oy;
+    const [bx, by] = r.kind === 'room' ? roomSpot(r, tw) : ((q) => [q[0] + ox, q[1] + oy])(P(r.x + r.w / 2, r.y + r.d / 2, r.z + r.h));
     parts.push(`<rect x="${r1(bx - tw / 2 - 3)}" y="${r1(by - F * 0.75)}" width="${r1(tw + 6)}" height="${r1(F * 1.1)}" rx="2" fill="${t.paper}" fill-opacity="0.88" class="axo-tag-ground"/>`);
-    parts.push(`<text x="${r1(bx)}" y="${r1(by + F * 0.12)}" text-anchor="middle" font-weight="600" fill="${r.focus ? t.brand : t.ink}" class="axo-tag">${esc(r.label)}</text>`);
+    parts.push(`<text x="${r1(bx)}" y="${r1(by + F * 0.12)}" text-anchor="middle" font-weight="600" fill="${r.focus ? t.brand : t.ink}" class="axo-tag" data-for="${r.kind}:${esc(r.label)}">${esc(r.label)}</text>`);
   }
   const h = oy + b1.maxY * k + F * 0.6;
   return { svg: wrapSvg(a, o, parts, h, { k, ox, oy }), w: Math.ceil(o.widthPx), h: Math.ceil(h) };

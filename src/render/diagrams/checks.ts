@@ -22,6 +22,12 @@ export type Measured = {
   /** A chart's declared marks (`[data-role]`: bars and dots), which no text
    *  may sit on. Empty for a Mermaid drawing. */
   bars?: Box[];
+  /** An axonometric figure's tags (`text[data-for]`, "room:Name" or
+   *  "block:Name"), its blocks' and parts' faces, and its rooms' floors, as
+   *  screen polygons. Absent for every other drawing. */
+  tags?: (Box & { s: string; for: string })[];
+  solids?: { name: string; polys: [number, number][][] }[];
+  floors?: { name: string; poly: [number, number][] }[];
   /** Matches per budget key, by the selector its record names. */
   counts: Record<string, number>;
   /** Elements marked as the focus (`.focus`). */
@@ -75,6 +81,33 @@ export function cover(m: Measured): Finding[] {
     message: `the edge ${hit.length === 1 ? 'label' : 'labels'} ${some(hit.map((l) => quote(l.s)))} ${hit.length === 1 ? 'sits' : 'sit'} on a box; more room between the boxes or a shorter label would clear it` }];
 }
 
+const inPoly = (p: [number, number], poly: [number, number][]) => {
+  let c = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i]!, [xj, yj] = poly[j]!;
+    if ((yi > p[1]) !== (yj > p[1]) && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) c = !c;
+  }
+  return c;
+};
+/** Points across a box, a pixel in from its edges. */
+const across = (b: Box): [number, number][] => [0.02, 0.5, 0.98].flatMap((u) => [0.1, 0.5, 0.9].map((v) => [b.x + b.w * u, b.y + b.h * v] as [number, number]));
+
+/** An axonometric tag must sit on its own room's floor, and on no other
+ *  element's block or part. */
+export function tagCover(m: Measured): Finding[] {
+  const hits: string[] = [];
+  for (const tag of m.tags ?? []) {
+    const [kind, name] = [tag.for.slice(0, tag.for.indexOf(':')), tag.for.slice(tag.for.indexOf(':') + 1)];
+    const pts = across(tag);
+    const on = (m.solids ?? []).find((s) => s.name !== name && pts.some((q) => s.polys.some((poly) => inPoly(q, poly))));
+    if (on) { hits.push(`${quote(tag.s)} lies on "${on.name}"`); continue; }
+    const floor = kind === 'room' ? (m.floors ?? []).find((f) => f.name === name) : undefined;
+    if (floor && !pts.every((q) => inPoly(q, floor.poly))) hits.push(`${quote(tag.s)} runs past its room`);
+  }
+  return hits.length === 0 ? [] : [{ code: 'D-COVER',
+    message: `${some(hits)}; a shorter name, a larger room or the block moved would clear it` }];
+}
+
 export function budget(m: Measured, t: DiagramType | undefined): Finding[] {
   if (!t) return [];
   const over = Object.entries(t.budget).filter(([k, b]) => (m.counts[k] ?? 0) > b.max)
@@ -96,7 +129,7 @@ export function unrecorded(t: DiagramType | undefined, head: string): Finding[] 
 
 /** Every finding for one drawing, in a fixed order. */
 export function findings(m: Measured, t: DiagramType | undefined, head: string): Finding[] {
-  return [...unrecorded(t, head), ...clip(m), ...collide(m), ...cover(m), ...budget(m, t), ...focus(m, t)];
+  return [...unrecorded(t, head), ...clip(m), ...collide(m), ...cover(m), ...tagCover(m), ...budget(m, t), ...focus(m, t)];
 }
 
 /** The build's line for a finding. */
@@ -129,6 +162,10 @@ export function measureScript(counts: Record<string, string>): string {
     const counts = {};
     for (const k of Object.keys(sel)) counts[k] = svg.querySelectorAll(sel[k]).length;
     const bars = [...svg.querySelectorAll('[data-role]')].map(box).filter(filled);
-    return { w: r0.width, h: r0.height, texts, nodes, edgeLabels, bars, counts, focus: svg.querySelectorAll('.focus').length };
+    const poly = (el) => el.getAttribute('points').split(' ').map((q) => q.split(',').map(Number));
+    const tags = [...svg.querySelectorAll('text[data-for]')].map((t) => ({ ...box(t), s: t.textContent.trim(), for: t.dataset.for }));
+    const solids = [...svg.querySelectorAll('g[data-axo="block"], g[data-axo="part"]')].map((g) => ({ name: g.dataset.name || '', polys: [...g.querySelectorAll(':scope > polygon')].map(poly) }));
+    const floors = [...svg.querySelectorAll('g[data-axo="room"] > polygon.floor')].map((p) => ({ name: p.parentNode.dataset.name || '', poly: poly(p) }));
+    return { w: r0.width, h: r0.height, texts, nodes, edgeLabels, bars, tags, solids, floors, counts, focus: svg.querySelectorAll('.focus').length };
   })()`;
 }

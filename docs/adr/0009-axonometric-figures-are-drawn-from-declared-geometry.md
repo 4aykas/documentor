@@ -48,3 +48,18 @@ declared geometry with one projection, and re-verified by reprojection.
   Revit view shows better comes from Revit.
 - Spec deviation recorded: blocks are always labelled (an unlabelled block
   would drop the author's word), and `round` is not part of the grammar.
+
+## Amendments
+
+**2026-10-17 (review of 86e595d).** "Geometry that cannot stand is refused"
+did not hold everywhere. Refused now: a block standing in a room without
+`in` (it painted under the room's floor and vanished), two rooms of one
+name, parts on one level standing inside each other, an option given twice.
+A part without `level` no longer joins a later `level <n>`: it has a level
+of its own. Faces shaded top-lightest on a light sheet only; the tones now
+follow the sheet, so a dark theme is lit from above too. A room's tag moves
+off the blocks on its floor; a tag on another element's block, or past its
+room, is a `D-COVER`. Tests now check painting order between rooms and free
+blocks, the walls' geometry, the tone order in a light and a dark theme, and
+the tag rules both ways. The spec's "widen the label column" is not done:
+the fence is refused with the advice instead.

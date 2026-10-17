@@ -96,7 +96,9 @@ export function parseAxo(source: string): Parsed {
     // most of that keeps the levels apart, so a part beside another still
     // has a clear way out for its leader.
     if (!seen.has('gap')) gap = (Math.max(...parts.map((p) => p.w)) + Math.max(...parts.map((p) => p.d))) / 2 * 0.8;
-    return { ok: true, axo: { kind, ...text, gap, parts: placeParts(parts) } };
+    const placed = placeParts(parts);
+    if (typeof placed === 'string') return { ok: false, error: placed };
+    return { ok: true, axo: { kind, ...text, gap, parts: placed } };
   }
   if (!plate) return fail(i, 'a plan needs "plate <width> x <depth>" for its floor or site');
   if (items.length === 0) return fail(lines.length - 1, 'a plan needs at least one room or block');
@@ -112,8 +114,11 @@ function partLine(t: string[], line: number): Part | string {
   const [w, d, h] = [num(t[at]), num(t[at + 2]), num(t[at + 4])] as number[];
   if (!(w! > 0 && d! > 0 && h! > 0)) return 'a part has a size above zero in every direction';
   const part: Part = { label: t.slice(0, at).join(' '), x: Number.NaN, y: Number.NaN, z: 0, w: w!, d: d!, h: h!, level: Number.NaN, focus: false, line };
+  const given = new Set<string>();
   for (let k = at + 5; k < t.length; k++) {
-    const o = t[k];
+    const o = t[k]!;
+    if (given.has(o)) return `${o} is given twice`;
+    given.add(o);
     if (o === 'focus') part.focus = true;
     else if (o === 'level' && num(t[k + 1]) !== null) part.level = num(t[++k])!;
     else if (o === 'at' && num(t[k + 1]) !== null && num(t[k + 2]) !== null) { part.x = num(t[++k])!; part.y = num(t[++k])!; }
@@ -129,10 +134,17 @@ function roomLine(kind: 'room' | 'block', t: string[], line: number): Room | str
   const [x, y, w, d] = [num(t[at]), num(t[at + 1]), num(t[at + 2]), num(t[at + 4])] as number[];
   if (!(w! > 0 && d! > 0)) return `a ${kind} has a footprint above zero`;
   const room: Room = { kind, label: t.slice(0, at).join(' '), x: x!, y: y!, z: 0, w: w!, d: d!, h: kind === 'room' ? WALL_H : Number.NaN, focus: false, line };
+  const given = new Set<string>();
   for (let k = at + 5; k < t.length; k++) {
-    const o = t[k];
+    const o = t[k]!;
+    if (given.has(o)) return `${o} is given twice`;
+    given.add(o);
     if (o === 'focus') room.focus = true;
-    else if (o === 'h' && num(t[k + 1]) !== null && num(t[k + 1])! > 0) room.h = num(t[++k])!;
+    else if (o === 'h') {
+      const v = num(t[k + 1]);
+      if (v === null || v <= 0) return `h takes a height above zero, got ${JSON.stringify(t[k + 1] ?? '')}`;
+      room.h = v; k++;
+    }
     else if (o === 'in' && kind === 'block' && k + 1 < t.length) {
       const end = t.at(-1) === 'focus' ? t.length - 1 : t.length;
       room.inRoom = t.slice(k + 1, end).join(' ');
@@ -149,16 +161,23 @@ function roomLine(kind: 'room' | 'block', t: string[], line: number): Room | str
  * side by side and lift together. A part without `at` is centred on the
  * widest footprint.
  */
-function placeParts(parts: Part[]): Part[] {
-  let next = 1;
-  const levelOf = new Map<number, number>();
-  for (const p of parts) {
-    if (Number.isNaN(p.level)) { while (levelOf.has(next)) next++; p.level = next++; }
-    if (!levelOf.has(p.level)) levelOf.set(p.level, levelOf.size);
-  }
+function placeParts(parts: Part[]): Part[] | string {
+  // A part without `level` gets a level of its own that no `level <n>` can
+  // name (a negative key), so it never joins another part's level. Levels
+  // stack in order of first appearance, whatever their numbers.
+  parts.forEach((p, i) => { if (Number.isNaN(p.level)) p.level = -(i + 1); });
   const W = Math.max(...parts.map((p) => p.w)), D = Math.max(...parts.map((p) => p.d));
   for (const p of parts) {
     if (Number.isNaN(p.x)) { p.x = (W - p.w) / 2; p.y = (D - p.d) / 2; }
+  }
+  // Parts side by side must not stand inside each other.
+  for (let a = 0; a < parts.length; a++) {
+    for (let b = a + 1; b < parts.length; b++) {
+      const [pa, pb] = [parts[a]!, parts[b]!];
+      if (pa.level === pb.level && overlaps(pa, pb)) {
+        return `line ${pb.line + 1}: part "${pb.label}" overlaps "${pa.label}" on their level; place them apart with "at <x> <y>"`;
+      }
+    }
   }
   return parts;
 }
@@ -180,6 +199,15 @@ function checkPlan(plate: { w: number; d: number }, items: Room[]): string | nul
         if (overlaps(of[a]!, of[b]!)) return `${at(of[b]!)}: ${kind} "${of[b]!.label}" overlaps "${of[a]!.label}"`;
       }
     }
+  }
+  const rooms = items.filter((r) => r.kind === 'room');
+  for (const [i, r] of rooms.entries()) {
+    const twin = rooms.slice(0, i).find((q) => q.label === r.label);
+    if (twin) return `${at(r)}: two rooms are called "${r.label}"; a block "in" one could not say which`;
+  }
+  for (const b of items.filter((r) => r.kind === 'block' && r.inRoom === undefined)) {
+    const room = rooms.find((r) => overlaps(b, r));
+    if (room) return `${at(b)}: block "${b.label}" stands in "${room.label}" without saying so; write "in ${room.label}", or move it off the room`;
   }
   for (const b of items.filter((r) => r.inRoom !== undefined)) {
     const room = items.find((r) => r.kind === 'room' && r.label === b.inRoom);

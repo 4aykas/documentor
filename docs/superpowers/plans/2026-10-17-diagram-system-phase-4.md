@@ -30,3 +30,5 @@ stand or a label cannot be placed cleanly.
 
 - No `round` (rounded prisms, cylinders): boxes only until a document needs them.
 - Blocks are always labelled: an unlabelled block would drop the author's word.
+- No leader is placed by widening the label column: a figure with no clean
+  leader is refused with the advice to widen the gap.
