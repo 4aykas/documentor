@@ -3,7 +3,7 @@
 **2026-10-17.** First proving material for the diagram system
 (`docs/superpowers/specs/2026-10-17-diagram-system-design.md`, "Proving
 material"): the flow of the 2026-10-20 LinkedIn post, written as a
-` ```mermaid ` fence (`projects/marketing/posts/2026-10-20-three-gates-revit-agent/graphic/three-gates.md`)
+` ```mermaid ` fence (`projects/marketing/posts/2026-10-21-three-gates-revit-agent/graphic/three-gates.md`)
 and built with `--theme tebin` after phase 0 (1d0a2bf). Ten nodes, two
 decisions, one dashed loop — inside the flowchart budget (9 nodes / 12 edges is
 one node over).
