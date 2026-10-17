@@ -164,10 +164,7 @@ export function parseChart(source: string): Parsed {
         : `a ${kind} row needs a label and ${want === 1 ? 'a number' : `${want} numbers`}`);
     }
     if (nums.every((x) => x !== null && isMissing(x))) return fail(n, 'a row needs at least one value');
-    // The label's own last word: a number there would be read as a value.
-    if (kind === 'grouped' && t.length > want && read(t[t.length - want - 1]!) !== null && chart.series.length > 1) {
-      return fail(n, `the label ends in "${t[t.length - want - 1]}", which reads as a value: a grouped row has exactly ${want} values after its label; end the label with a word`);
-    }
+
     // "Personnel 12 500" is a label and 500, or 12,500 written with a plain
     // space: refused rather than guessed. A thin space or a comma says which.
     const before = t[t.length - want - 1];
@@ -180,6 +177,10 @@ export function parseChart(source: string): Parsed {
   if (chart.rows.length === 0) return fail(lines.length - 1, `a ${kind} needs at least one row`);
   if (chart.marks.length > 2) return fail(chart.rows[0]!.line, 'a bar chart takes at most two marks');
   if (kind === 'grouped' && chart.series.length > 4) return fail(chart.rows[0]!.line, 'a grouped bar takes at most four series');
+  if (kind === 'grouped') {
+    const empty = chart.series.findIndex((_, si) => chart.rows.every((r) => isMissing(r.values[si]!)));
+    if (empty !== -1) return fail(chart.rows[0]!.line, `the series "${chart.series[empty]}" has no value in any row; leave it out`);
+  }
   if (kind === 'dumbbell' && (!chart.before || !chart.after)) {
     return fail(i, 'a dumbbell names its two values with "before <name>" and "after <name>"');
   }

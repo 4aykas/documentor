@@ -151,6 +151,17 @@ export async function renderOne(page: Page, config: object, id: string, source: 
               p.setAttribute('stroke-opacity', '0.4');
             }
           }
+          // A step edge ends on a repeated point, a segment of no length, and
+          // the arrowhead then points along no direction at all: sideways.
+          // Repeated points are dropped, so the head follows the last real
+          // segment (docs/adr/0010).
+          for (const p of el.querySelectorAll('path.flowchart-link')) {
+            const d = p.getAttribute('d') || '';
+            if (/[CQSTAcqsta]/.test(d)) continue;
+            const pts = [...d.matchAll(/(-?[\\d.]+),(-?[\\d.]+)/g)].map((m) => m[1] + ',' + m[2]);
+            const kept = pts.filter((q, i) => i === 0 || q !== pts[i - 1]);
+            if (kept.length >= 2 && kept.length < pts.length) p.setAttribute('d', 'M' + kept.join('L'));
+          }
           const box = el.getBBox();
           const pad = 4;
           const w = Math.ceil(box.width + pad * 2), h = Math.ceil(box.height + pad * 2);

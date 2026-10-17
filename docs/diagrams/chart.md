@@ -33,8 +33,12 @@ ends in a 1–3 digit number right before a 3-digit value ("Phase 2 500") is
 refused: it could be 2,500 written with a plain space. A dumbbell row needs
 both its values; one missing reads the label's last number as a value.
 
-A setting is given once (`mark` up to twice); a setting of another chart type
-(`axis` in a bar chart) is refused. Ending a row
+A setting is given once (`mark` up to twice, `series` two to four times); a
+setting of another chart type (`axis` in a bar chart) is refused. A grouped
+row has exactly one value per series after its label, `-` for none, so its
+label may end in a number ("2023"); a series with no value in any row is
+refused. Each column may write thousands its own way; the ticks follow the
+chart's first number. Ending a row
 with `focus` gives it the accent; one row at most.
 
 | Keyword | Types | Meaning |
@@ -91,6 +95,7 @@ level runs below zero.
 ## What the build may say
 
 The chart is checked like every diagram (README, "Every drawing is
-checked"): `D-BUDGET` above 12 bars, 10 dumbbell rows or 8 waterfall bars;
+checked"): `D-BUDGET` above 12 bars, 24 grouped bars, 10 dumbbell rows or 8
+waterfall bars;
 `D-FOCUS` above one focus row; `D-COVER` when a label lands on a bar or dot;
 `D-COLLIDE` when values are too wide for their columns.

@@ -19,7 +19,7 @@ import { PAGE_PT, type Theme } from '../../theme/types.js';
 import { findingLine, findings, measureScript, type Measured } from './checks.js';
 import { familyStack } from '../fonts.js';
 import { drawChart, stringsOf } from './chart/draw.js';
-import { measureWidths } from './chart/measure.js';
+import { loadFaces, measureWidths } from './chart/measure.js';
 import { parseChart } from './chart/parse.js';
 import { axoStrings, drawAxo } from './axonometric/draw.js';
 import { parseAxo } from './axonometric/parse.js';
@@ -120,6 +120,10 @@ export async function drawDiagrams(doc: Doc, theme: Theme, browser: Browser, onW
       // (a Mermaid bug), and a gantt axis prints one label per tick however
       // close the ticks are.
       const recolor = { repaint: typeByHead(kind)?.mermaid?.repaint, series, paper: theme.colors.paper };
+      // Mermaid measures its labels as it lays them out: every weight and
+      // script subset the source's text needs is loaded first (a class title
+      // is bold, a label may be Cyrillic).
+      await loadFaces(page, familyStack(theme.font), bodyPx, b.text);
       let result = await renderOne(page, cfg, `dg${i}`, drawable(b.text), recolor);
       // A left-to-right flow too wide for the column is drawn again top-down,
       // and kept when that prints its labels larger: the direction is layout,

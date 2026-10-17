@@ -7,12 +7,21 @@
 import type { Page } from 'playwright-core';
 import type { Widths } from './draw.js';
 
+/** Load the regular, semibold and bold of a face, every subset `text` needs. */
+export async function loadFaces(page: Page, family: string, px: number, text: string): Promise<void> {
+  const first = JSON.stringify(family.split(',')[0]!.trim());
+  await page.evaluate(`Promise.all(['400', '600', '700'].map((wt) => document.fonts.load(wt + ' ${px}px ' + ${first}, ${JSON.stringify(text || 'A')})))
+    .then(() => document.fonts.ready)`);
+}
+
 export async function measureWidths(page: Page, strings: { regular: string[]; bold: string[] }, family: string, px: number): Promise<Widths> {
   // A face's weights load on first use, and the page has only asked for the
   // regular one; measured before its semibold is in, a label is measured in
   // a stand-in face and drawn wider (Inter in lionfocus, 2026-10-17).
-  const first = JSON.stringify(family.split(',')[0]!.trim());
-  await page.evaluate(`Promise.all(['400', '600'].map((wt) => document.fonts.load(wt + ' ${px}px ' + ${first}))).then(() => document.fonts.ready)`);
+  // A face also comes in script subsets (unicode-range), each loaded only for
+  // text that needs it: loading with the chart's own text brings Cyrillic in
+  // as well as Latin (the review of 2e20fc5).
+  await loadFaces(page, family, px, [...strings.regular, ...strings.bold].join(' '));
   const got = await page.evaluate(`(() => {
     // The SVG namespace, a name and not an address: nothing is fetched.
     const ns = 'http' + '://www.w3.org/2000/svg';

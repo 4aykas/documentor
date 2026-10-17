@@ -338,7 +338,8 @@ mindmap
   code: `D-SMALL` labels print below three quarters of the body size (with
   advice for what binds, the column or the page height), `D-COLLIDE` two
   labels overlap, `D-COVER` an edge label sits on a box or a chart's label on
-  a bar, `D-CLIP` a label runs
+  a bar, `D-CROSS` an edge runs through a box or a label it does not belong
+  to, `D-CLIP` a label runs
   past the drawing, `D-BUDGET` more nodes, edges, lifelines or tasks than the
   type reads well with, `D-FOCUS` more focus marks than the type allows, `D-UNRECORDED` a
   Mermaid type documentor does not proof. A finding never changes the

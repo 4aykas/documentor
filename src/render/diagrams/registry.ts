@@ -57,7 +57,9 @@ export const REGISTRY: readonly DiagramType[] = [
     budget: { lifelines: { max: 5, count: 'line.actor-line' } }, focusMax: 2 },
   { id: 'class', engine: 'mermaid', heads: ['classDiagram', 'classDiagram-v2'], label: 'Class',
     // Notes are g.node too; a class's id carries "classId".
-    budget: { classes: { max: 7, count: 'g.node[id*="-classId-"]' } }, focusMax: 2 },
+    budget: { classes: { max: 7, count: 'g.node[id*="-classId-"]' } }, focusMax: 2,
+    // Elbows leave an inheritance triangle short of the class it points at.
+    mermaid: { curve: 'linear' } },
   { id: 'state', engine: 'mermaid', heads: ['stateDiagram-v2', 'stateDiagram'], label: 'State',
     // A fork or a choice is a statediagram-state with no label; a named
     // state is the one with one.

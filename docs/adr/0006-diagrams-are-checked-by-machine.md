@@ -63,3 +63,8 @@ the rows of an entity or the members of a class.
 **2026-10-17 (review of d266e48).** `D-COVER` also judges documentor's own
 charts: any text on a declared bar or dot (`[data-role]`). For charts it is
 no longer synthetic-only; generated charts are held to it.
+
+**2026-10-17 (review of 0c67f49).** `D-CROSS`: a flowchart edge that runs
+through a node it does not join, or through a label it does not carry
+(cathrynlavery/diagram-design's rule 5). Ends come from Mermaid's edge and
+node ids; a label belongs to the edge that passes nearest its centre.

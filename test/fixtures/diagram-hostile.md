@@ -676,3 +676,94 @@ flowchart TD
   C --> D([Stadium]):::focus
   D --> E((Circle)):::focus
 ```
+## drawn — class inheritance with labelled associations
+
+```mermaid
+classDiagram
+  Animal <|-- Duck
+  Animal <|-- Fish
+  Animal <|-- Zebra
+  Animal : +int age
+  Animal : +isMammal()
+  Duck : +swim()
+  Fish : +swim()
+  Zebra : +run()
+  Duck --> Fish : eats sometimes
+  Zebra "1" --> "*" Fish : ignores
+```
+
+## warned: D-CROSS — an edge through a box it does not join
+
+```mermaid
+flowchart TD
+  A[Start] --> B[Check]
+  B --> B
+  B -->|retry| A
+  B --> C[Done]
+  A --> C
+  A --> D[Other]
+  A --> E[Third]
+```
+
+## drawn — a left-to-right flow with long labels, turned top-down
+
+```mermaid
+flowchart LR
+  A[Request] --> B{Approved?}
+  B -->|yes, after the second review by the steering committee| C[Order]
+  B -->|no, returned to the requester with comments| D[Revise]
+  D --> A
+  B -->|escalate| E[Board]
+  E --> C
+```
+
+## drawn — four series on a pale palette
+
+```chart
+grouped
+title Four series
+series A
+series B
+series C
+series D
+North 5 6 -7 8
+South 3 - 4 2
+```
+
+## drawn — a grouped legend name longer than the line
+
+```chart
+grouped
+series Diesel consumption in litres per month across all the construction and maintenance sites that we operate today in Europe Asia and Africa
+series Urea
+North 300 40
+```
+
+## drawn — years as labels
+
+```chart
+grouped
+series A
+series B
+2023 5 6
+2024 7 8
+```
+
+## refused: has no value in any row — a series with no value
+
+```chart
+grouped
+series A
+series B
+series C
+North 300 - -
+South 200 - -
+```
+
+## drawn — Cyrillic labels
+
+```chart
+bar
+Механіка трубопроводів шахти 1,200
+Електрика 800
+```

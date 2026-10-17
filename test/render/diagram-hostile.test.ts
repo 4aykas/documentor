@@ -61,10 +61,14 @@ describe('the hostile fences', () => {
     const got = await outcome(c.fence, 'lionfocus');
     if (want.kind === 'refused') {
       expect(got.drawn).toBe(false);
+      expect(got.text).toContain(want.detail);
       return;
     }
     expect(got.drawn, got.text).toBe(true);
-    const geometric = (codes: string[]) => codes.filter((x) => ['D-CLIP', 'D-COLLIDE', 'D-COVER'].includes(x));
+    // Another face may add a size finding; it may not add a geometric one,
+    // and it may not lose a geometric one the case is known for.
+    const geometric = (codes: string[]) => codes.filter((x) => ['D-CLIP', 'D-COLLIDE', 'D-COVER', 'D-CROSS'].includes(x));
     expect(geometric(got.codes).filter((x) => !want.codes.includes(x)), got.text).toEqual([]);
+    expect(geometric(want.codes).filter((x) => !got.codes.includes(x)), got.text).toEqual([]);
   });
 });

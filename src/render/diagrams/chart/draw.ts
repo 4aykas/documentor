@@ -9,6 +9,7 @@
 // row marked focus takes the brand. Values print exactly as written; axis
 // ticks are computed chrome, in the convention of the chart's own numbers.
 
+import { luminance } from '../../tint.js';
 import { mix, type DiagramTokens } from '../tokens.js';
 import { isMissing, runningLevels, type Chart, type Num } from './parse.js';
 
@@ -136,10 +137,36 @@ function barPaint(t: DiagramTokens, positive: boolean, focus: boolean, total = f
 
 // ------------------------------------------------------------------ bar
 
-/** A grouped bar's series fill, in column order: dark grey, then the brand,
- *  then the categorical steps; identity by colour, named in the legend. */
-function seriesFill(t: DiagramTokens, i: number): string {
-  return i === 0 ? mix(t.ink, t.paper, 0.72) : i === 1 ? t.brand : t.series[i] ?? t.series.at(-1)!;
+const ratio = (a: string, b: string) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+  return (hi + 0.05) / (lo + 0.05);
+};
+
+/**
+ * A grouped bar's series fills, in column order: dark grey, then the brand,
+ * then brand and grey steps. Each is moved toward the ink until it stands
+ * 3:1 against the sheet (a bar is a graphic a reader must see), and kept only
+ * if its lightness differs from every fill before it, so two series never
+ * look alike (rams' pale yellows, the review of 2e20fc5).
+ */
+export function seriesFills(t: DiagramTokens, n: number): string[] {
+  // Each hue in several lightnesses — itself, toward the sheet, toward the
+  // ink — of which only those 3:1 against the sheet count; then, hue by hue,
+  // the first lightness that stands apart from every fill already taken.
+  const hues = [mix(t.ink, t.paper, 0.72), t.brand, mix(t.brand, t.ink, 0.45), mix(t.ink, t.paper, 0.45), ...t.series];
+  const variants = (c: string) => [c, ...[0.85, 0.7, 0.55].map((k) => mix(c, t.paper, k)), ...[0.25, 0.5, 0.75].map((k) => mix(t.ink, c, k))]
+    .filter((v) => ratio(v, t.paper) >= 3);
+  const out: string[] = [];
+  for (const gap of [0.05, 0.035, 0.02]) {
+    for (const hue of hues) {
+      if (out.length === n) break;
+      const v = variants(hue).find((c) => out.every((k) => Math.abs(luminance(k) - luminance(c)) >= gap));
+      if (v !== undefined) out.push(v);
+    }
+    if (out.length === n) break;
+  }
+  while (out.length < n) out.push(mix(t.ink, t.paper, 1 - out.length * 0.15));
+  return out;
 }
 
 function drawBar(c: Chart, x: Ctx): string {
@@ -148,17 +175,21 @@ function drawBar(c: Chart, x: Ctx): string {
   let top = titleBlock(c, x);
   const grouped = c.kind === 'grouped';
   const S = grouped ? c.series.length : 1;
+  const fills = grouped ? seriesFills(t, S) : [];
   if (grouped) {
     // Legend: a swatch and the series name, on one line while they fit.
     const sw = F * 0.75, gapW = F * 1.1;
     let lx = 0, ly = top + F * 0.75;
     c.series.forEach((name, i) => {
-      const need = sw + F * 0.35 + w(name);
-      if (lx > 0 && lx + need > o.widthPx) { lx = 0; ly += lineH; }
-      x.parts.push(`<rect x="${r1(lx)}" y="${r1(ly - sw / 2)}" width="${r1(sw)}" height="${r1(sw)}" rx="1.5" fill="${seriesFill(t, i)}" data-legend="${esc(name)}"/>`);
-      x.parts.push(text(lx + sw + F * 0.35, ly + F * 0.35, name, { fill: t.textSec, cls: 'legend' }));
-      lx += need + gapW;
+      // A name too long for the line wraps under its swatch.
+      const lines = wrap(name, o.widthPx - sw - F * 0.35, w);
+      const need = sw + F * 0.35 + Math.max(...lines.map((l) => w(l)));
+      if (lx > 0 && (lx + need > o.widthPx || lines.length > 1)) { lx = 0; ly += lineH; }
+      x.parts.push(`<rect x="${r1(lx)}" y="${r1(ly - sw / 2)}" width="${r1(sw)}" height="${r1(sw)}" rx="1.5" fill="${fills[i]}" data-legend="${esc(name)}"/>`);
+      lines.forEach((l, j) => x.parts.push(text(lx + sw + F * 0.35, ly + F * 0.35 + j * lineH, l, { fill: t.textSec, cls: 'legend' })));
+      if (lines.length > 1) { ly += lines.length * lineH; lx = 0; } else lx += need + gapW;
     });
+    if (lx === 0) ly -= lineH;
     top = ly + lineH * 0.9;
   }
   const ticks = ticksOf(c);
@@ -203,7 +234,7 @@ function drawBar(c: Chart, x: Ctx): string {
       const a = sx(Math.min(0, v.value)), b = sx(Math.max(0, v.value));
       const paint = grouped
         // A series is told by its colour; a negative value is that colour hollow.
-        ? (v.value >= 0 ? `fill="${seriesFill(t, si)}" stroke="${seriesFill(t, si)}" stroke-width="1"` : `fill="${t.paper}" stroke="${seriesFill(t, si)}" stroke-width="1.25"`)
+        ? (v.value >= 0 ? `fill="${fills[si]}" stroke="${fills[si]}" stroke-width="1"` : `fill="${t.paper}" stroke="${fills[si]}" stroke-width="1.5"`)
         : barPaint(t, v.value >= 0, r.focus);
       x.parts.push(`<rect x="${r1(a)}" y="${r1(by)}" width="${r1(Math.max(b - a, 0.5))}" height="${r1(barH)}" rx="1.5" ${paint}`
         + `${r.focus && !grouped ? ' class="focus"' : ''} data-role="bar" data-value="${esc(v.text)}" data-name="${esc(r.label)}"${grouped ? ` data-series="${esc(c.series[si]!)}"` : ''}/>`);

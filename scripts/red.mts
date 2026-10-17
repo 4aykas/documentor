@@ -30,10 +30,18 @@ if (hits !== 1) usage(`--find occurs ${hits} times in ${file}; it must occur exa
 let failed: boolean;
 try {
   writeFileSync(file!, text.replace(find!, () => replace!));
-  const r = spawnSync('npx', ['vitest', 'run', ...test], { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', shell: process.platform === 'win32' });
-  failed = r.status !== 0;
-  const summary = (r.stdout + r.stderr).split('\n').filter((l) => /Tests\s|AssertionError/.test(l)).slice(0, 3).join('\n');
-  console.log(summary);
+  // On Windows npx needs a shell, which splits unquoted arguments: `-t "a b"`
+  // would become `-t a` and a file filter `b`, and vitest would fail for
+  // having no test to run. Every argument is quoted for the shell.
+  const win = process.platform === 'win32';
+  const args = ['vitest', 'run', ...test].map((a) => (win ? `"${a.replace(/"/g, '\\"')}"` : a));
+  const r = spawnSync('npx', args, { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', shell: win });
+  const out = r.stdout + r.stderr;
+  // Red means a test ran and failed, not that nothing ran.
+  const ran = /Tests\s+.*\d+ (failed|passed)/.test(out);
+  if (!ran) { console.error(`red: no test ran:\n${out.split('\n').slice(-8).join('\n')}`); writeFileSync(file!, original); process.exit(2); }
+  failed = /Tests\s+.*\d+ failed/.test(out);
+  console.log(out.split('\n').filter((l) => /Tests\s|AssertionError/.test(l)).slice(0, 3).join('\n'));
 } finally {
   writeFileSync(file!, original);
 }

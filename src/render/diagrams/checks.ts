@@ -28,13 +28,19 @@ export type Measured = {
   tags?: (Box & { s: string; for: string })[];
   solids?: { name: string; polys: [number, number][][] }[];
   floors?: { name: string; poly: [number, number][] }[];
+  /** A flowchart's edges as points along them, each with the boxes it may
+   *  touch (its two ends) and the label it carries; and every node box and
+   *  edge label by id. */
+  edges?: { id: string; ends: string[]; pts: [number, number][] }[];
+  boxes?: { id: string; s: string; box: Box }[];
+  labels?: { id: string; s: string; box: Box }[];
   /** Matches per budget key, by the selector its record names. */
   counts: Record<string, number>;
   /** Elements marked as the focus (`.focus`). */
   focus: number;
 };
 
-export type Code = 'D-CLIP' | 'D-COLLIDE' | 'D-COVER' | 'D-SMALL' | 'D-BUDGET' | 'D-FOCUS' | 'D-UNRECORDED';
+export type Code = 'D-CLIP' | 'D-COLLIDE' | 'D-COVER' | 'D-CROSS' | 'D-SMALL' | 'D-BUDGET' | 'D-FOCUS' | 'D-UNRECORDED';
 export type Finding = { code: Code; message: string };
 
 /** How far two boxes overlap along each axis (negative: a gap). */
@@ -108,6 +114,35 @@ export function tagCover(m: Measured): Finding[] {
     message: `${some(hits)}; a shorter name, a larger room or the block moved would clear it` }];
 }
 
+/** An edge passes through a box that is not one of its ends, or through a
+ *  label it does not carry (cathrynlavery/diagram-design's rule 5). */
+export function cross(m: Measured): Finding[] {
+  const inset = (b: Box, k: number): Box => ({ x: b.x + k, y: b.y + k, w: b.w - 2 * k, h: b.h - 2 * k });
+  const inBox = ([x, y]: [number, number], b: Box) => x > b.x && x < b.x + b.w && y > b.y && y < b.y + b.h;
+  const hits = new Set<string>();
+  // A label belongs to the edge that passes nearest its centre: Mermaid sets
+  // it on the edge's middle, so its own edge always runs through it.
+  const edges = m.edges ?? [];
+  const owner = new Map((m.labels ?? []).map((l) => {
+    const c: [number, number] = [l.box.x + l.box.w / 2, l.box.y + l.box.h / 2];
+    const dist = (e: (typeof edges)[number]) => Math.min(...e.pts.map((p) => Math.hypot(p[0] - c[0], p[1] - c[1])));
+    const near = edges.reduce<(typeof edges)[number] | undefined>((a, e) => (a === undefined || dist(e) < dist(a) ? e : a), undefined);
+    return [l.id, near?.id];
+  }));
+  for (const e of edges) {
+    for (const b of m.boxes ?? []) {
+      if (e.ends.includes(b.id)) continue;
+      if (e.pts.some((p) => inBox(p, inset(b.box, 3)))) hits.add(`an edge runs through ${quote(b.s)}`);
+    }
+    for (const l of m.labels ?? []) {
+      if (owner.get(l.id) === e.id) continue;
+      if (e.pts.some((p) => inBox(p, inset(l.box, 2)))) hits.add(`an edge runs through the label ${quote(l.s)}`);
+    }
+  }
+  return hits.size === 0 ? [] : [{ code: 'D-CROSS',
+    message: `${some([...hits])}; another order of the lines, or ELK (layout: elk in the fence's frontmatter), would route around it` }];
+}
+
 export function budget(m: Measured, t: DiagramType | undefined): Finding[] {
   if (!t) return [];
   const over = Object.entries(t.budget).filter(([k, b]) => (m.counts[k] ?? 0) > b.max)
@@ -129,7 +164,7 @@ export function unrecorded(t: DiagramType | undefined, head: string): Finding[] 
 
 /** Every finding for one drawing, in a fixed order. */
 export function findings(m: Measured, t: DiagramType | undefined, head: string): Finding[] {
-  return [...unrecorded(t, head), ...clip(m), ...collide(m), ...cover(m), ...tagCover(m), ...budget(m, t), ...focus(m, t)];
+  return [...unrecorded(t, head), ...clip(m), ...collide(m), ...cover(m), ...tagCover(m), ...cross(m), ...budget(m, t), ...focus(m, t)];
 }
 
 /** The build's line for a finding. */
@@ -166,6 +201,29 @@ export function measureScript(counts: Record<string, string>): string {
     const tags = [...svg.querySelectorAll('text[data-for]')].map((t) => ({ ...box(t), s: t.textContent.trim(), for: t.dataset.for }));
     const solids = [...svg.querySelectorAll('g[data-axo="block"], g[data-axo="part"]')].map((g) => ({ name: g.dataset.name || '', polys: [...g.querySelectorAll(':scope > polygon')].map(poly) }));
     const floors = [...svg.querySelectorAll('g[data-axo="room"] > polygon.floor')].map((p) => ({ name: p.parentNode.dataset.name || '', poly: poly(p) }));
-    return { w: r0.width, h: r0.height, texts, nodes, edgeLabels, bars, tags, solids, floors, counts, focus: svg.querySelectorAll('.focus').length };
+    // A flowchart's edges: Mermaid names an edge L_<from>_<to>_<n> and a node
+    // flowchart-<id>-<n>, so an edge's two ends are known by id.
+    const nodeId = (g) => (/-flowchart-(.+)-\\d+$/.exec(g.id) || [])[1];
+    const boxes = [...svg.querySelectorAll('g.node[id*="-flowchart-"]')].map((g) => ({ id: nodeId(g), s: g.textContent.trim(), box: box(g) }));
+    const ids = boxes.map((b) => b.id).sort((a, b) => b.length - a.length);
+    const edgeEls = [...svg.querySelectorAll('path.flowchart-link[id*="-L_"]')];
+
+    const labelEls = [...svg.querySelectorAll("g.edgeLabel")];
+    const labels = labelEls.map((g, i) => ({ id: 'label' + i, s: g.textContent.trim(), box: box(g) })).filter((l) => l.s && l.box.w > 0.5);
+    const edges = edgeEls.map((p, i) => {
+      const rest = p.id.slice(p.id.indexOf('-L_') + 3).replace(/_\\d+$/, '');
+      const from = ids.find((n) => rest.startsWith(n + '_')) || '';
+      const to = from ? rest.slice(from.length + 1) : '';
+      const len = p.getTotalLength();
+      const pts = [];
+      const ctm = p.getScreenCTM();
+      for (let d = 0; d <= len; d += 3) {
+        const q = p.getPointAtLength(d).matrixTransform(ctm);
+        pts.push([q.x - r0.x, q.y - r0.y]);
+      }
+
+      return { id: p.id, ends: [from, to], pts };
+    });
+    return { w: r0.width, h: r0.height, texts, nodes, edgeLabels, bars, tags, solids, floors, edges, boxes, labels, counts, focus: svg.querySelectorAll('.focus').length };
   })()`;
 }

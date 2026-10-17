@@ -107,7 +107,8 @@ describe('flowchart edges', () => {
   it('have no diagonal segment', async () => {
     const fc = /^## Flowchart\n+(```mermaid\n[\s\S]*?\n```)$/m.exec(GALLERY)![1]!;
     const gates = '```mermaid\nflowchart TD\n  A([New task]) --> B[Recall first]\n  B --> C{Bulk?}\n  C -->|yes| D[Ask]\n  C -->|no| E[Act in batches]\n  D --> E\n  E --> F{Read-back matches?}\n  F -->|no| G[Fix]\n  G -.-> E\n  F -->|yes| H[Report]\n```';
-    const doc = await drawDiagrams(ingestMarkdown(`${fc}\n\n${gates}\n`).doc, await loadTheme('plain'), browser, () => {});
+    const block = /^## Block\n+(```mermaid\n[\s\S]*?\n```)$/m.exec(GALLERY)![1]!;
+    const doc = await drawDiagrams(ingestMarkdown(`${fc}\n\n${gates}\n\n${block}\n`).doc, await loadTheme('plain'), browser, () => {});
     const page = await browser.newPage();
     try {
       await page.setContent(`<div id="host">${doc.blocks.map((b) => (b.t === 'diagram' ? b.svg : '')).join('')}</div>`);
@@ -117,7 +118,10 @@ describe('flowchart edges', () => {
         const d = p.getAttribute('d');
         if (/[CQSTAcqsta]/.test(d)) return [p.id + ' curves'];
         const pts = [...d.matchAll(/(-?[\\d.]+),(-?[\\d.]+)/g)].map((m) => [+m[1], +m[2]]);
-        return pts.slice(1).flatMap((q, i) => Math.abs(q[0] - pts[i][0]) > 0.3 && Math.abs(q[1] - pts[i][1]) > 0.3 ? [p.id + ' segment ' + i] : []);
+        // A segment of no length at the end points the arrowhead nowhere:
+        // it lies sideways (the review of 0c67f49).
+        const last = pts.length > 1 && Math.hypot(pts.at(-1)[0] - pts.at(-2)[0], pts.at(-1)[1] - pts.at(-2)[1]) < 0.3 ? [p.id + ' ends on no length'] : [];
+        return [...last, ...pts.slice(1).flatMap((q, i) => Math.abs(q[0] - pts[i][0]) > 0.3 && Math.abs(q[1] - pts[i][1]) > 0.3 ? [p.id + ' segment ' + i] : [])];
       })`) as string[];
       const edges = await page.evaluate(`document.querySelectorAll('#host path.flowchart-link').length`) as number;
       expect(edges).toBeGreaterThan(8);

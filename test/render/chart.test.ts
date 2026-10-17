@@ -3,8 +3,11 @@ import { chromium, type Browser } from 'playwright-core';
 import { ingestMarkdown } from '../../src/ingest/md.js';
 import type { Block } from '../../src/ir/types.js';
 import { parseChart, parseNumber } from '../../src/render/diagrams/chart/parse.js';
+import { seriesFills } from '../../src/render/diagrams/chart/draw.js';
+import { diagramTokens } from '../../src/render/diagrams/index.js';
+import { luminance } from '../../src/render/tint.js';
 import { drawDiagrams } from '../../src/render/diagrams/index.js';
-import { loadTheme } from '../../src/theme/resolve.js';
+import { loadTheme, resolveTheme } from '../../src/theme/resolve.js';
 
 // The ```chart engine (docs/adr/0008). The parser refuses what it cannot read
 // exactly, and a waterfall that does not reconcile; the drawing carries every
@@ -63,7 +66,10 @@ describe('parseChart', () => {
     expect(refused('grouped\nseries A\nX 1\n')).toMatch(/names two to four series first/);
     expect(refused('grouped\nseries A\nseries B\nX 1\n')).toMatch(/needs a label and 2 numbers/);
     expect(refused('grouped\nseries A\nseries B\nX - -\n')).toMatch(/at least one value/);
-    expect(refused('grouped\nseries A\nseries B\nBay 2 300 40\n')).toMatch(/the label ends in "2"/);
+    // A row has exactly one value per series, so a label may end in a number.
+    // ("Bay 2 300" stays refused: it could be 2,300 with a plain space.)
+    expect(ok('grouped\nseries A\nseries B\n2023 5 6\nBay 2B 300 40\n').rows.map((r) => r.label)).toEqual(['2023', 'Bay 2B']);
+    expect(refused('grouped\nseries A\nseries B\nseries C\nNorth 300 - -\nSouth 200 - -\n')).toMatch(/the series "B" has no value in any row/);
     expect(refused('grouped\nseries A\nseries B\nX 1 2\nseries C\n')).toMatch(/series before its rows/);
     expect(refused('bar\nX -\n')).toMatch(/is not a number/);
   });
@@ -180,6 +186,30 @@ describe('a drawn chart', () => {
   });
 });
 
+describe('a grouped bar\'s series fills', () => {
+  // A bar is a graphic a reader must see: 3:1 against the sheet, and no two
+  // series alike, in every theme with a palette that could fail it.
+  // A brand as pale as rams' series steps, so the 3:1 rule has work to do.
+  it.each(['plain', 'tebin', 'haskoning', 'rams', 'rodchenko', 'lionfocus', 'pale brand'])('stand 3:1 and apart under %s', async (themeId) => {
+    const t = diagramTokens(themeId === 'pale brand' ? resolveTheme({ id: 'pale', colors: { brandOnLight: '#F3E2BA' } }) : await loadTheme(themeId));
+    const fills = seriesFills(t, 4);
+    const ratio = (a: string, b: string) => { const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number]; return (hi + 0.05) / (lo + 0.05); };
+    for (const f of fills) expect(ratio(f, t.paper), f).toBeGreaterThanOrEqual(3);
+    for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) expect(Math.abs(luminance(fills[i]!) - luminance(fills[j]!)), `${i}/${j}`).toBeGreaterThanOrEqual(0.05);
+  });
+});
+
+describe('text in another script', () => {
+  // Cyrillic is its own subset of a face, loaded on first use: measured
+  // before it arrives, the first of two identical charts drew differently.
+  it('draws two identical fences identically under lionfocus', async () => {
+    const fence = '```chart\nbar\nМеханіка трубопроводів шахти 1,200\nЕлектрика 800\n```';
+    const doc = await drawDiagrams(ingestMarkdown(`${fence}\n\n${fence}\n`).doc, await loadTheme('lionfocus'), browser, () => {});
+    const [a, b] = doc.blocks.flatMap((x) => (x.t === 'diagram' ? [x.svg.replace(/dg\d+/g, 'dg')] : []));
+    expect(a).toBe(b);
+  });
+});
+
 describe('layout the review found wrong (2026-10-17)', () => {
   it('labels a tick of 2.5 as 2.5, with one number of decimals along the axis', async () => {
     const [d] = await draw(['bar\nA 11\nB 3']);
@@ -202,6 +232,11 @@ describe('layout the review found wrong (2026-10-17)', () => {
     const bars = [...d!.svg.matchAll(/<rect x="([\d.]+)" y="[\d.]+" width="([\d.]+)"[^>]*data-role="bar" data-value="([^"]*)" data-name="([^"]*)" data-series="([^"]*)"/g)]
       .map((m) => ({ x: +m[1]!, w: +m[2]!, value: m[3], name: m[4], series: m[5] }));
     expect(bars.map((b) => `${b.name}/${b.series}=${b.value}`)).toEqual(['Multi-level/Diesel=300', 'Multi-level/Urea=40', 'Expansion/Diesel=500', 'Expansion/Urea=-30', 'Urea only/Urea=50']);
+    // A row's values sit at least a text line apart (1.2 × body size), so two
+    // neighbours never touch, however close their numbers.
+    const valueYs = [...d!.svg.matchAll(/<text x="[\d.]+" y="([\d.]+)"[^>]*class="value">/g)].map((m) => +m[1]!);
+    const body = (await loadTheme('plain')).type.bodyPt * 4 / 3;
+    expect(valueYs[1]! - valueYs[0]!).toBeGreaterThanOrEqual(body * 1.2 - 0.1);
     // Every bar the SVG holds, whatever its coordinates: a "-" draws none.
     expect((d!.svg.match(/data-role="bar"/g) ?? []).length).toBe(5);
     expect(d!.svg).not.toContain('NaN');
