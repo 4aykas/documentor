@@ -143,6 +143,34 @@ describe('every renderer places the drawn diagram', () => {
   });
 });
 
+describe('a diagram\'s title and description', () => {
+  // The author's accTitle and accDescr are carried, never written: they
+  // reach the block, stay in the SVG, and become Word's alt text. A diagram
+  // without them gets only its type's name in Word.
+  it('travel from the fence to the block, the SVG and Word\'s alt text', async () => {
+    const described = '```mermaid\nflowchart TD\n  accTitle: Three gates\n  accDescr {\n    A task passes recall,\n    a go-ahead and a read-back.\n  }\n  A --> B\n```';
+    const bare = '```mermaid\nflowchart TD\n  C --> D\n```';
+    const doc = await draw(`${described}\n\n${bare}\n`);
+    const [d, b] = diagrams(doc);
+    expect(d!.title).toBe('Three gates');
+    expect(d!.desc).toBe('A task passes recall,\na go-ahead and a read-back.');
+    expect(d!.svg).toContain('<title id="chart-title-dg0">Three gates</title>');
+    expect(b!.title).toBeUndefined();
+    expect(b!.desc).toBeUndefined();
+    expect(() => validateDoc(doc)).not.toThrow();
+
+    const { docxPart } = await import('../helpers/docx-parts.js');
+    const xml = await docxPart(await renderDocx(doc, theme, { epochSeconds: EPOCH }), 'word/document.xml');
+    const props = [...xml.matchAll(/<wp:docPr\b[^>]*>/g)].map((m) => m[0]);
+    expect(props).toHaveLength(2);
+    expect(props[0]).toMatch(/name="Flowchart"/);
+    expect(props[0]).toMatch(/title="Three gates"/);
+    expect(props[0]).toMatch(/descr="A task passes recall,(&#xA;|&#10;|\n)a go-ahead and a read-back."/);
+    expect(props[1]).toMatch(/name="Flowchart"/);
+    expect(props[1]).not.toMatch(/title=|descr="[^"]/);
+  });
+});
+
 describe('types Mermaid colours by itself', () => {
   it('names a source\'s type past frontmatter and comments, and none for frontmatter that never closes', () => {
     expect(kindOf('---\nconfig:\n  layout: elk\n---\n%% c\nflowchart LR\n  A-->B')).toBe('flowchart');

@@ -9,7 +9,7 @@ import { typeByHead } from './registry.js';
 type Code = Extract<Block, { t: 'code' }>;
 
 /** One source as drawn, in the order the sources appear, or why it was not. */
-export type Drawn = { svg: string; png: string; wPx: number; hPx: number; triedDown: boolean } | { error: string };
+export type Drawn = { svg: string; png: string; wPx: number; hPx: number; triedDown: boolean; title: string; desc: string } | { error: string };
 
 /** The drawings swapped in for their sources, each scaled to the page. */
 export function place(doc: Doc, drawn: Drawn[], theme: Theme, colPt: number, maxHPt: number, onWarn: (m: string) => void,
@@ -60,7 +60,10 @@ export function place(doc: Doc, drawn: Drawn[], theme: Theme, colPt: number, max
       onWarn(findingLine(k, type?.id ?? (kindOf(b.text) || b.lang), { code: 'D-SMALL',
         message: `labels print at about ${(theme.type.bodyPt * scale).toFixed(1)}pt against ${theme.type.bodyPt}pt body text; ${advice}` }));
     }
-    return { t: 'diagram', lang: 'mermaid', kind: type?.id ?? '', source: b.text, svg: d.svg, png: d.png, wPt: round(wPt), hPt: round(hPt) };
+    return {
+      t: 'diagram', lang: 'mermaid', kind: type?.id ?? '', source: b.text, svg: d.svg, png: d.png, wPt: round(wPt), hPt: round(hPt),
+      ...(d.title ? { title: d.title } : {}), ...(d.desc ? { desc: d.desc } : {}),
+    };
   });
   return { ...doc, blocks };
 }

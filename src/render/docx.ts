@@ -24,6 +24,10 @@ import { refusedLinkTarget, schemeIsRefused } from './links.js';
 import { normalizeDocx } from './normalize-docx.js';
 import { mixToWhite, readableOn, SCALE_STEPS, STATEMENT_TINT, stepOf, weekLabel } from './tint.js';
 import { MARK_LINE_PT } from './line-mark.js';
+import { REGISTRY } from './diagrams/registry.js';
+
+/** A diagram's name in Word's alt text: its type's label, or "Diagram". */
+const diagramName = (kind: string) => REGISTRY.find((d) => d.id === kind)?.label ?? 'Diagram';
 
 const halfPt = (pt: number): number => Math.round(pt * 2);
 const dxa = (pt: number): number => Math.round(pt * 20);
@@ -637,7 +641,12 @@ function blocks(b: Block, theme: Theme, listRefs: Map<Block, string>, opts: Bloc
     case 'diagram': {
       const bytes = Buffer.from(b.png.slice(b.png.indexOf(',') + 1), 'base64');
       return [new Paragraph({
-        children: [new ImageRun({ data: bytes, type: 'png', transformation: { width: px96(b.wPt), height: px96(b.hPt) } })],
+        // Alt text: the author's accTitle and accDescr. Without them Word
+        // gets only the type's name, which is chrome, never a made-up line.
+        children: [new ImageRun({
+          data: bytes, type: 'png', transformation: { width: px96(b.wPt), height: px96(b.hPt) },
+          altText: { name: diagramName(b.kind), ...(b.title ? { title: b.title } : {}), ...(b.desc ? { description: b.desc } : {}) },
+        })],
         spacing: { before: dxa(4), after: dxa(12) },
         keepLines: true,
       })];

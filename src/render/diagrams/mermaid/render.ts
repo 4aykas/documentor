@@ -77,7 +77,9 @@ export function configFor(kind: string, base: Record<string, unknown>, t: Diagra
   return { ...base, ...(typeByHead(kind)?.mermaid?.config?.(t, vars) ?? {}), themeCSS: diagramCss(t, kind) };
 }
 
-export type Rendered = { svg: string; w: number; h: number } | { error: string };
+/** A drawing trimmed to its ink, with the accTitle and accDescr Mermaid wrote
+ *  into it as <title> and <desc> ("" when the source has none). */
+export type Rendered = { svg: string; w: number; h: number; title: string; desc: string } | { error: string };
 
 export type Recolor = { repaint: Repaint | undefined; series: string[]; paper: string };
 
@@ -152,7 +154,8 @@ export async function renderOne(page: Page, config: object, id: string, source: 
           el.removeAttribute('style');
           el.setAttribute('width', String(w));
           el.setAttribute('height', String(h));
-          return { svg: el.outerHTML, w, h };
+          const own = (tag) => (el.querySelector(':scope > ' + tag)?.textContent ?? '').trim();
+          return { svg: el.outerHTML, w, h, title: own('title'), desc: own('desc') };
         } catch (e) {
           return { error: String(e && e.message ? e.message : e).split('\\n').slice(0, 3).join(' ') };
         }

@@ -186,9 +186,11 @@ then one per phase below:
 5. Every type is a registry record; the canon table above.
 6. Geometry is checked by machine, with fixtures in both directions; findings
    warn, never refuse a Mermaid diagram.
-7. Figures that carry numbers are drawn by documentor from declared values,
+7. A diagram's description is the author's (accTitle/accDescr), carried to
+   the SVG and Word's alt text; a tagged PDF is deferred.
+8. Figures that carry numbers are drawn by documentor from declared values,
    and a fence that does not reconcile is refused.
-8. Axonometric figures are drawn from declared geometry; a Revit export wins
+9. Axonometric figures are drawn from declared geometry; a Revit export wins
    when a model exists.
 
 ## Checks
@@ -411,12 +413,12 @@ Each phase is its own commit, `npm run typecheck` and `npm test` green, and
 1. **Checks.** `checks.ts`, the six findings, `diagram-faults.md`, budget
    counts per type, `:::focus`. ADR 6.
 2. **Accessible figures.** `accTitle`/`accDescr` read out, Word alt text,
-   tagged PDF if it survives, `inspect` count.
+   tagged PDF if it survives, `inspect` count. ADR 7.
 3. **Chart engine.** Parser, layout, SVG for the three types; gallery
    sections; the waterfall re-derivation test; `docs/diagrams/chart.md`.
-   ADR 7.
+   ADR 8.
 4. **Axonometric engine.** Projection, depth sort, the two types; gallery
-   sections; the reprojection test; `docs/diagrams/axonometric.md`. ADR 8.
+   sections; the reprojection test; `docs/diagrams/axonometric.md`. ADR 9.
 5. **Documents.** README's Diagrams section rewritten around the registry
    table, and the skill pointing at both authoring references.
 

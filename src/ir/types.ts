@@ -42,8 +42,11 @@ export type Block =
   // lost; `svg` is what HTML/PDF inline, `png` (a data: URI of the same
   // picture) what Word embeds, both at wPt × hPt on the page. `kind` is the
   // id of the type's record in render/diagrams/registry.ts, or '' for a
-  // header word no record claims.
-  | { t: 'diagram'; lang: 'mermaid'; kind: string; source: string; svg: string; png: string; wPt: number; hPt: number }
+  // header word no record claims. `title` and `desc` are the author's
+  // accTitle and accDescr, as Mermaid wrote them into the SVG; absent when
+  // the fence has none (no description is ever made up).
+  | { t: 'diagram'; lang: 'mermaid'; kind: string; source: string; svg: string; png: string; wPt: number; hPt: number;
+      title?: string; desc?: string }
   | { t: 'quote'; paras: Inline[][] }
   | { t: 'rule' }
   | { t: 'pagebreak' };

@@ -103,7 +103,7 @@ export async function drawDiagrams(doc: Doc, theme: Theme, browser: Browser, onW
       const measured = await page.evaluate(measureScript(counts)) as Measured;
       for (const f of findings(measured, type, kind)) onWarn(findingLine(i + 1, type?.id ?? (kind || b.lang), f));
       const shot = await (await page.$('#host svg'))!.screenshot({ type: 'png', omitBackground: false });
-      drawn.push({ svg: result.svg, png: `data:image/png;base64,${shot.toString('base64')}`, wPx: result.w, hPx: result.h, triedDown });
+      drawn.push({ svg: result.svg, png: `data:image/png;base64,${shot.toString('base64')}`, wPx: result.w, hPx: result.h, triedDown, title: result.title, desc: result.desc });
     }
   } finally {
     await page.close();
