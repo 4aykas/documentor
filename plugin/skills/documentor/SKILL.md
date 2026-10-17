@@ -62,19 +62,23 @@ Know these before promising anything to the user:
   `xychart`, whenever a value can be negative or totals must add up. Copy the
   document's numbers exactly as written; a waterfall whose totals do not
   reconcile is refused with the difference named — report it to the user,
-  never adjust a number to make it fit.
-- **A diagram is drawn from a ```` ```mermaid ```` fence, and only from one.**
+  never adjust a number to make it fit. Write thousands with a comma, an
+  apostrophe or a thin space, never a plain space (`12 500` is refused). A
+  chart describes itself with `title` and `desc` lines, not `accTitle`.
+- **Any other diagram is a ```` ```mermaid ```` fence.**
   Any Mermaid type works (flowchart, sequence, mindmap, timeline, gantt,
   pie, quadrantChart, xychart, sankey, …); the colours and faces come from
   the theme, so never set `%%{init}%%` colours or `style`/`classDef` fills.
   Adding a diagram the source does not have is adding content: draft the
   fence from the document's own words and numbers only, show it to the user
   as a proposed edit to the Markdown, and build after they accept. A build
-  warning "could not be drawn" means a Mermaid syntax error — fix the fence,
-  do not ship the code-block fallback. Prefer `flowchart TD` for more than
+  warning "could not be drawn" names what the fence got wrong — a Mermaid
+  syntax error, or the line a chart could not read or reconcile; fix the
+  fence, do not ship the code-block fallback. Prefer `flowchart TD` for more than
   five steps; a wide `LR` flow is scaled down to the column, labels and all.
-  Give a proposed fence an `accTitle:` and an `accDescr:` taken from the
-  document's own words; they become the diagram's alt text. Mark at most two
+  Give a proposed Mermaid fence an `accTitle:` and an `accDescr:` (a chart:
+  `title` and `desc`) taken from the document's own words; they become the
+  diagram's alt text. Mark at most two
   nodes `:::focus` for the accent. A warning with a `D-`
   code (`D-SMALL`, `D-BUDGET`, `D-COLLIDE`, …) is a finding about the drawn
   diagram: relay it with its advice and propose the edit it names (split
@@ -157,7 +161,8 @@ Read the JSON. The fields that matter:
 - `documents[].counts` — what survived into the document: headings,
   paragraphs, lists, tables, images, code blocks, diagrams, quotes, rules,
   page breaks. `undescribedDiagrams` counts diagrams whose fence has no
-  `accDescr`: offer to add one, drafted from the document's own words.
+  `accDescr` (a chart: no `desc`): offer to add one, drafted from the
+  document's own words.
 - `documents[].dropped` — what could not be carried, named plainly (e.g. a
   `.docx` table, reviewer comments, tracked changes).
 - `documents[].warnings` — things that are not losses but will surprise

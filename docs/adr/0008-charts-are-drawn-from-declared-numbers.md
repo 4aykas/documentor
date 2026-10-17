@@ -53,3 +53,18 @@ geometry from the declarations, failing on any drift.
   declaration a test can re-derive, or it is not a chart this engine draws.
 - `xychart` stays available for what it draws honestly (lines, all-positive
   bars), and is not corrected.
+
+## Amendments
+
+**2026-10-17 (review of d266e48).** "Refused rather than misdrawn" did not
+hold: a dumbbell's scale ignored negative values and a waterfall could run
+below zero, both drawn off the chart with no warning. A dumbbell's scale now
+runs through zero like a bar chart's, and a waterfall below zero is refused.
+Thousands with a plain space (`12 500`) were read as a label digit and a
+value; such a row is refused. Text was measured without the tabular figures
+it is drawn with, so dark-theme ticks clipped; widths are now measured as SVG
+text set exactly as drawn. `D-COVER` now covers charts: a text on any
+declared bar or dot. Tick labels for a 2.5 step printed wrong values; they
+now carry the step's decimals. Generated charts are tested in a light and a
+dark theme with marks, axes, focus rows, negative dumbbells and decreases
+that reach the axis.

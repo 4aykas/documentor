@@ -19,6 +19,9 @@ export type Measured = {
   nodes: Box[];
   /** Edge-label boxes (`g.edgeLabel`) that hold something. */
   edgeLabels: (Box & { s: string })[];
+  /** A chart's declared marks (`[data-role]`: bars and dots), which no text
+   *  may sit on. Empty for a Mermaid drawing. */
+  bars?: Box[];
   /** Matches per budget key, by the selector its record names. */
   counts: Record<string, number>;
   /** Elements marked as the focus (`.focus`). */
@@ -62,6 +65,11 @@ export function collide(m: Measured): Finding[] {
 }
 
 export function cover(m: Measured): Finding[] {
+  const onBar = m.texts.filter((tx) => (m.bars ?? []).some((b) => meets(tx, b)));
+  if (onBar.length) {
+    return [{ code: 'D-COVER', message: `${some(onBar.map((tx) => quote(tx.s)))} ${onBar.length === 1 ? 'sits' : 'sit'} on a bar; `
+      + 'a shorter label, or fewer rows or columns, would give it room' }];
+  }
   const hit = m.edgeLabels.filter((l) => m.nodes.some((n) => meets(l, n)));
   return hit.length === 0 ? [] : [{ code: 'D-COVER',
     message: `the edge ${hit.length === 1 ? 'label' : 'labels'} ${some(hit.map((l) => quote(l.s)))} ${hit.length === 1 ? 'sits' : 'sit'} on a box; more room between the boxes or a shorter label would clear it` }];
@@ -78,7 +86,7 @@ export function budget(m: Measured, t: DiagramType | undefined): Finding[] {
 export function focus(m: Measured, t: DiagramType | undefined): Finding[] {
   const max = t?.focusMax ?? 2;
   return m.focus <= max ? [] : [{ code: 'D-FOCUS',
-    message: `${m.focus} elements are marked :::focus against ${max}; the accent reads only when it is kept for what the diagram is about` }];
+    message: `${m.focus} elements are marked as the focus against ${max}; the accent reads only when it is kept for what the diagram is about` }];
 }
 
 export function unrecorded(t: DiagramType | undefined, head: string): Finding[] {
@@ -120,6 +128,7 @@ export function measureScript(counts: Record<string, string>): string {
     const sel = ${JSON.stringify(counts)};
     const counts = {};
     for (const k of Object.keys(sel)) counts[k] = svg.querySelectorAll(sel[k]).length;
-    return { w: r0.width, h: r0.height, texts, nodes, edgeLabels, counts, focus: svg.querySelectorAll('.focus').length };
+    const bars = [...svg.querySelectorAll('[data-role]')].map(box).filter(filled);
+    return { w: r0.width, h: r0.height, texts, nodes, edgeLabels, bars, counts, focus: svg.querySelectorAll('.focus').length };
   })()`;
 }

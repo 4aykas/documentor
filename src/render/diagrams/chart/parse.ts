@@ -47,6 +47,8 @@ export const SETTINGS: Readonly<Record<ChartKind, readonly string[]>> = {
   dumbbell: ['title', 'desc', 'unit', 'axis', 'before', 'after'],
   waterfall: ['title', 'desc', 'unit', 'axis'],
 };
+const ALL_SETTINGS = new Set(Object.values(SETTINGS).flat());
+
 /** Row keywords a type takes (a bar or dumbbell row has none). */
 export const ROW_WORDS: Readonly<Record<ChartKind, readonly string[]>> = {
   bar: [], dumbbell: [], waterfall: ['total', 'step'],
@@ -64,6 +66,9 @@ export function parseNumber(token: string): Num | null {
   const digits = int!.split(sep || '\u0000').join('') + frac;
   const negative = sign === '-' || sign === MINUS;
   const exact = BigInt(digits) * (negative ? -1n : 1n);
+  // Beyond 15 significant digits a value cannot be placed on a scale
+  // exactly; it is refused like any number this chart cannot read.
+  if (digits.replace(/^0+/, '').length > 15) return null;
   return { text: token, value: Number(exact) / 10 ** frac.length, exact, decimals: frac.length, signed: sign !== undefined, sep };
 }
 
@@ -93,6 +98,7 @@ export function parseChart(source: string): Parsed {
   }
   const kind = head as ChartKind;
   const chart: Chart = { kind, marks: [], rows: [] };
+  const seen = new Set<string>();
   for (let n = i + 1; n < lines.length; n++) {
     const line = lines[n]!;
     if (skip(line)) continue;
@@ -101,7 +107,12 @@ export function parseChart(source: string): Parsed {
     const rest = line.trim().slice(word.length).trim();
     // A setting word at the start of a line is a setting, before or after the
     // rows; a row's label therefore never begins with one.
+    if (!(SETTINGS[kind] as readonly string[]).includes(word) && ALL_SETTINGS.has(word)) {
+      return fail(n, `${word} is not a ${kind} setting; a ${kind} takes ${SETTINGS[kind].join(', ')}`);
+    }
     if ((SETTINGS[kind] as readonly string[]).includes(word)) {
+      if (word !== 'mark' && seen.has(word)) return fail(n, `${word} is set twice`);
+      seen.add(word);
       if (word === 'axis') {
         const v = parseNumber(rest);
         if (v === null) return fail(n, `axis takes one number, got ${JSON.stringify(rest)}`);
@@ -136,6 +147,13 @@ export function parseChart(source: string): Parsed {
         ? `${JSON.stringify(bad)} is not a number this chart can read (digits, an optional sign, thousands in groups of three, a point for decimals)`
         : `a ${kind} row needs a label and ${want === 2 ? 'two numbers' : 'a number'}`);
     }
+    // "Personnel 12 500" is a label and 500, or 12,500 written with a plain
+    // space: refused rather than guessed. A thin space or a comma says which.
+    const before = t[t.length - want - 1];
+    if (before !== undefined && /^[+\-\u2212]?\d{1,3}$/.test(before) && /^\d{3}(\.\d+)?$/.test(t[t.length - want]!)) {
+      return fail(n, `is "${before} ${t[t.length - want]}" one number? Write thousands with a comma, an apostrophe or a thin space, `
+        + 'or end the label with a word');
+    }
     chart.rows.push({ label, values: nums as Num[], ...(role ? { role } : {}), focus, line: n });
   }
   if (chart.rows.length === 0) return fail(lines.length - 1, `a ${kind} needs at least one row`);
@@ -146,6 +164,9 @@ export function parseChart(source: string): Parsed {
   if (kind === 'waterfall') {
     const err = reconcile(chart);
     if (err) return { ok: false, error: err };
+    if (runningLevels(chart).some((v) => v < 0)) {
+      return fail(i, 'a waterfall that runs below zero is not drawn: its totals would stand on a baseline the steps cross');
+    }
   }
   const levels = kind === 'waterfall' ? runningLevels(chart) : chart.rows.flatMap((r) => r.values.map((v) => v.value));
   if (chart.axis && levels.some((v) => v < chart.axis!.value)) {

@@ -26,7 +26,13 @@ skipped. Anything else that cannot be read refuses the whole fence: it
 prints as its source, and the build names the line and why.
 
 A row's **label is everything before its trailing numbers**, so labels need
-no quotes and may contain digits ("Phase 2 delivery 1,000"). Ending a row
+no quotes and may contain digits ("Phase 2 delivery 1,000"). A label that
+ends in a 1–3 digit number right before a 3-digit value ("Phase 2 500") is
+refused: it could be 2,500 written with a plain space. A dumbbell row needs
+both its values; one missing reads the label's last number as a value.
+
+A setting is given once (`mark` up to twice); a setting of another chart type
+(`axis` in a bar chart) is refused. Ending a row
 with `focus` gives it the accent; one row at most.
 
 | Keyword | Types | Meaning |
@@ -51,9 +57,13 @@ Printed exactly as you write them; documentor never reformats them. Read
 under one convention: an optional sign (`+`, `-` or `−`), digits with
 thousands in groups of three separated by one of `,` `'` or a thin space,
 and a `.` before decimals. `1,5` is not a number here and refuses the fence
-rather than being guessed at. Sums are exact.
+rather than being guessed at, and so does a plain space between thousands
+(`12 500`). More than 15 significant digits cannot be placed exactly and is
+refused. Sums are exact.
 
-Axis ticks are computed, in the convention of the chart's first number.
+Axis ticks are computed, in the convention of the chart's first number,
+with one number of decimals along the axis (`0.0, 2.5, 5.0`). A bar chart's
+and a dumbbell's scale runs through zero unless `axis` starts it higher.
 
 ## A waterfall must add up
 
@@ -71,10 +81,12 @@ total Booked         2,848
 
 The fence is refused when a total is not the exact running sum (the build
 says by how much), a step has no sign or is zero, the chart does not open
-and close on a total, or `axis` lies above a level the chart must show.
+and close on a total, `axis` lies above a level the chart must show, or a
+level runs below zero.
 
 ## What the build may say
 
 The chart is checked like every diagram (README, "Every drawing is
 checked"): `D-BUDGET` above 12 bars, 10 dumbbell rows or 8 waterfall bars;
-`D-FOCUS` above one focus row.
+`D-FOCUS` above one focus row; `D-COVER` when a label lands on a bar or dot;
+`D-COLLIDE` when values are too wide for their columns.

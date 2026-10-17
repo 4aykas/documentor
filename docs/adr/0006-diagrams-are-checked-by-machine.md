@@ -59,3 +59,7 @@ pair. `D-SMALL`'s tall advice offers a left-to-right direction only to a
 top-down source, and the limit is compared with a tolerance, since the width
 cap lands exactly on it. The focus rule paints a node's outline only, not
 the rows of an entity or the members of a class.
+
+**2026-10-17 (review of d266e48).** `D-COVER` also judges documentor's own
+charts: any text on a declared bar or dot (`[data-role]`). For charts it is
+no longer synthetic-only; generated charts are held to it.

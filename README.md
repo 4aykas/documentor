@@ -311,9 +311,10 @@ mindmap
   block, and the build warns which diagram it was and what the parser said.
 - **Never wider than the column.** A diagram is scaled down to the text
   column and to most of a page's height, never cropped.
-- **Described by the author.** A fence's own `accTitle:` and `accDescr:`
-  (a line, or an `accDescr { … }` block) stay in the SVG as its title and
-  description for screen readers, and become the picture's alt text in Word.
+- **Described by the author.** A Mermaid fence's own `accTitle:` and
+  `accDescr:` (a line, or an `accDescr { … }` block), or a chart's `title` and
+  `desc`, stay in the SVG as its title and description for screen readers,
+  and become the picture's alt text in Word.
   A diagram without them is named in Word by its type only; `inspect`
   counts it under `undescribedDiagrams`. PDFs are not tagged yet
   (`docs/adr/0007`).

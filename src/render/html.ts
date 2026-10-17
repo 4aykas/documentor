@@ -199,8 +199,9 @@ function block(b: Block, size: ColSizing): string {
       return imageMarkup(b.src, b.alt, b.widthPt);
     case 'code':
       return `<pre><code>${escapeHtml(b.text)}</code></pre>`;
-    // The SVG is Mermaid's own output, drawn under securityLevel 'strict' by
-    // render/diagrams/, so it is inlined as markup rather than escaped.
+    // The SVG is Mermaid's own output, drawn under securityLevel 'strict', or
+    // documentor's chart engine's, which escapes every text it writes; both
+    // come from render/diagrams/, so it is inlined as markup, not escaped.
     // Sized by a cap rather than a width: a layout whose column is narrower
     // than the theme's (a grid track, a sidebar) shrinks it, and a fixed
     // width would push that column wider than the page instead.

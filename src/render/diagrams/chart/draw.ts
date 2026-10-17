@@ -17,7 +17,7 @@ export type DrawOptions = { widthPx: number; bodyPx: number; family: string; tok
 
 /** The strings a chart may draw, for the page to measure in one pass. */
 export function stringsOf(c: Chart): { regular: string[]; bold: string[] } {
-  const words = (s: string) => s.split(/\s+/);
+  const words = (s: string) => s.split(' ');
   const regular = new Set<string>([' ']);
   const bold = new Set<string>();
   for (const r of c.rows) {
@@ -47,7 +47,7 @@ export function ticksOf(c: Chart): { lo: number; hi: number; values: number[]; l
   const vals = c.kind === 'waterfall' ? runningLevels(c) : c.rows.flatMap((r) => r.values.map((v) => v.value));
   const all = [...vals, ...c.marks.map((m) => m.value.value)];
   const floor = c.axis ? c.axis.value : 0;
-  let lo = c.kind === 'bar' ? Math.min(0, ...all) : floor;
+  let lo = c.axis ? floor : Math.min(0, ...all);
   let hi = Math.max(c.kind === 'bar' ? 0 : floor, ...all);
   if (hi === lo) hi = lo + 1;
   const step = niceStep(hi - lo, 5);
@@ -55,9 +55,11 @@ export function ticksOf(c: Chart): { lo: number; hi: number; values: number[]; l
   hi = Math.ceil(hi / step - 1e-9) * step;
   const values: number[] = [];
   for (let v = c.axis ? Math.ceil(lo / step - 1e-9) * step : lo; v <= hi + step * 1e-9; v += step) values.push(Math.round(v / step) * step);
-  if (c.axis && values[0] !== lo) values.unshift(lo);
+  // An axis start off the step gets its own label; a tick too close above it
+  // would print on top of it, so that tick goes.
+  if (c.axis && values[0] !== lo) values.splice(0, values[0]! - lo < step * 0.6 ? 1 : 0, lo);
   const first = c.rows[0]!.values[0]!;
-  const decimals = Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
+  const decimals = (String(+step.toPrecision(12)).split('.')[1] ?? '').length;
   return { lo, hi, values, labels: values.map((v) => (c.axis && v === lo ? c.axis.text : formatLike(v, decimals, first))) };
 }
 
@@ -75,11 +77,16 @@ function formatLike(v: number, decimals: number, like: Num): string {
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const r1 = (n: number) => Math.round(n * 10) / 10;
 
+/** The widest single word of any row label: a label column narrower would push it onto the plot. */
+function widestWord(c: Chart, w: Widths): number {
+  return Math.max(0, ...c.rows.flatMap((r) => r.label.split(' ').map((word) => w(word))));
+}
+
 /** Greedy word wrap to `max` px; a single word wider than `max` keeps its own line. */
 export function wrap(s: string, max: number, w: Widths, bold = false): string[] {
   const out: string[] = [];
   let line = '';
-  for (const word of s.split(/\s+/)) {
+  for (const word of s.split(' ')) {
     const next = line ? `${line} ${word}` : word;
     if (line && w(line, bold) + w(' ', bold) + w(word, bold) > max) { out.push(line); line = word; } else line = next;
   }
@@ -134,13 +141,13 @@ function drawBar(c: Chart, x: Ctx): string {
   const t = o.tokens;
   const top = titleBlock(c, x);
   const ticks = ticksOf(c);
-  const labelCol = Math.min(Math.max(...c.rows.map((r) => w(r.label))), o.widthPx * 0.4);
+  const labelCol = Math.max(Math.min(Math.max(...c.rows.map((r) => w(r.label))), o.widthPx * 0.4), widestWord(c, w));
   const gap = F * 0.8;
   const valueW = Math.max(...c.rows.map((r) => w(r.values[0]!.text, true))) + F * 0.45;
   const hasNeg = c.rows.some((r) => r.values[0]!.value < 0), hasPos = c.rows.some((r) => r.values[0]!.value > 0);
   const half = Math.max(...ticks.labels.map((l) => w(l))) / 2;
   const x0 = labelCol + gap + Math.max(hasNeg ? valueW : 0, half);
-  const x1 = o.widthPx - Math.max(hasPos ? valueW : 0, half, c.unit ? 0 : 0);
+  const x1 = o.widthPx - Math.max(hasPos ? valueW : 0, half);
   const sx = (v: number) => x0 + ((v - ticks.lo) / (ticks.hi - ticks.lo)) * (x1 - x0);
   const markBand = c.marks.length ? lineH * 1.1 : 0;
   const barH = F * 1.15, rowGap = F * 0.55;
@@ -202,7 +209,7 @@ function drawDumbbell(c: Chart, x: Ctx): string {
   x.parts.push(text(lx + rDot * 2 + F * 0.35, ly + F * 0.35, c.after!, { fill: t.textSec, cls: 'legend' }));
   top += lineH * 1.4;
   const ticks = ticksOf(c);
-  const labelCol = Math.min(Math.max(...c.rows.map((r) => w(r.label))), o.widthPx * 0.36);
+  const labelCol = Math.max(Math.min(Math.max(...c.rows.map((r) => w(r.label))), o.widthPx * 0.36), widestWord(c, w));
   const valueW = Math.max(...c.rows.flatMap((r) => r.values.map((v) => w(v.text, true)))) + rDot + F * 0.45;
   const half = Math.max(...ticks.labels.map((l) => w(l))) / 2;
   const x0 = labelCol + F * 0.8 + Math.max(valueW, half), x1 = o.widthPx - Math.max(valueW, half);
@@ -280,12 +287,13 @@ function drawWaterfall(c: Chart, x: Ctx): string {
     if (r.role === 'total' && c.axis) x.parts.push(breakMark(bx + barW / 2, base - F * 0.9, t, F));
     // value: totals and increases above, decreases below
     const down = r.role === 'step' && v.value < 0;
-    const vy = down ? Math.min(yBot + F * 1.15, base - F * 0.25) : yTop - F * 0.4;
+    const below = down && yBot + F * 1.15 <= base - F * 0.25;
+    const vy = below ? yBot + F * 1.15 : yTop - F * 0.4;
     x.parts.push(text(bx + barW / 2, vy, v.text, { anchor: 'middle', bold: true, fill: r.focus ? t.brand : t.ink, cls: 'value' }));
     // carry: the level after this bar, across the gap to the next
     if (i < n - 1) {
       const level = r.role === 'step' ? to : to;
-      x.parts.push(`<line x1="${r1(bx + barW)}" y1="${r1(sy(level))}" x2="${r1(bx + pitch)}" y2="${r1(sy(level))}" stroke="${t.line}" stroke-width="1" data-carry="${level}"/>`);
+      x.parts.push(`<line x1="${r1(bx + barW)}" y1="${r1(sy(level))}" x2="${r1(bx + pitch)}" y2="${r1(sy(level))}" stroke="${t.line}" stroke-width="1" data-carry="${+level.toPrecision(12)}"/>`);
     }
     const lines = wrap(r.label, pitch - F * 0.3, w);
     lines.forEach((l, j) => x.parts.push(text(bx + barW / 2, base + F * 1.25 + j * lineH, l, { anchor: 'middle', fill: t.ink, cls: 'label' })));

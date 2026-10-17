@@ -1,14 +1,32 @@
 // Text widths for a chart's layout, measured in the diagram page with the
-// theme's own faces (already decoded there), regular and semibold.
+// theme's own faces (already decoded there), regular and semibold. Measured
+// as SVG text set exactly as the chart sets it — tabular figures included,
+// which a canvas cannot do: in Inter, "1,111,111" is 40.7 px proportional
+// and 63.6 px tabular, and the layout must reserve the drawn width.
 
 import type { Page } from 'playwright-core';
 import type { Widths } from './draw.js';
 
 export async function measureWidths(page: Page, strings: { regular: string[]; bold: string[] }, family: string, px: number): Promise<Widths> {
   const got = await page.evaluate(`(() => {
-    const c = document.createElement('canvas').getContext('2d');
-    const measure = (list, weight) => { c.font = weight + ' ' + ${JSON.stringify(`${px}px `)} + ${JSON.stringify(family)}; return list.map((s) => c.measureText(s).width); };
-    return { regular: measure(${JSON.stringify(strings.regular)}, '400'), bold: measure(${JSON.stringify(strings.bold)}, '600') };
+    // The SVG namespace, a name and not an address: nothing is fetched.
+    const ns = 'http' + '://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('style', 'position:absolute;left:-10000px;top:0;width:1px;height:1px;overflow:visible');
+    document.body.appendChild(svg);
+    const measure = (list, weight) => list.map((s) => {
+      const t = document.createElementNS(ns, 'text');
+      t.setAttribute('style', 'font-family:' + ${JSON.stringify(family)} + ';font-size:' + ${JSON.stringify(`${px}px`)}
+        + ';font-weight:' + weight + ';font-variant-numeric:tabular-nums;white-space:pre');
+      t.textContent = s;
+      svg.appendChild(t);
+      const w = t.getComputedTextLength();
+      t.remove();
+      return w;
+    });
+    const out = { regular: measure(${JSON.stringify(strings.regular)}, '400'), bold: measure(${JSON.stringify(strings.bold)}, '600') };
+    svg.remove();
+    return out;
   })()`) as { regular: number[]; bold: number[] };
   const reg = new Map(strings.regular.map((s, i) => [s, got.regular[i]!]));
   const bold = new Map(strings.bold.map((s, i) => [s, got.bold[i]!]));

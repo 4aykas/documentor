@@ -42,6 +42,20 @@ describe('parseChart', () => {
     expect(refused('dumbbell\nA 1 2\n')).toMatch(/before <name>/);
   });
 
+  it('refuses what the review found it misread (2026-10-17)', () => {
+    // Thousands with a plain space: a label and 500, or 12,500?
+    expect(refused('bar\nPersonnel 12 500\n')).toMatch(/is "12 500" one number\?/);
+    expect(refused('bar\nC 3 000\n')).toMatch(/is "3 000" one number\?/);
+    ok('bar\nPersonnel 12 500\n');
+    // A setting twice, or one this type does not take.
+    expect(refused('bar\ntitle A\ntitle B\nX 1\n')).toMatch(/title is set twice/);
+    expect(refused('bar\naxis 5\nX 1\n')).toMatch(/axis is not a bar setting/);
+    // Too many digits to place exactly.
+    expect(refused('bar\nX 1234567890123456\n')).toMatch(/is not a number/);
+    // A waterfall below zero.
+    expect(refused('waterfall\ntotal A 10\nstep B -30\ntotal C -20\n')).toMatch(/runs below zero/);
+  });
+
   it('reconciles a waterfall exactly, in decimals', () => {
     ok('waterfall\ntotal A 0.1\nstep B +0.2\ntotal C 0.3\n');
     expect(refused('waterfall\ntotal A 100\nstep B +10\ntotal C 111\n')).toMatch(/line 4: the total 111 does not equal the running sum 110 \(difference 1\)/);
@@ -71,9 +85,12 @@ describe('a drawn chart', () => {
     const page = await browser.newPage();
     try {
       await page.setContent(`<div id="host">${d!.svg}</div>`);
-      const drawnText = await page.evaluate(`document.querySelector('#host svg').textContent`) as string;
+      // Drawn text only: <title>, <desc> and <style> are not on the page.
+      const drawnText = await page.evaluate(`[...document.querySelectorAll('#host svg text')].map((t) => t.textContent).join(' ')`) as string;
       const keywords = new Set(['waterfall', 'title', 'desc', 'unit', 'axis', 'total', 'step', 'focus']);
-      for (const word of WATERFALL.split(/\s+/).filter((w) => !keywords.has(w))) expect(drawnText, word).toContain(word);
+      const descWords = new Set('From plan to booked.'.split(' '));
+      for (const word of WATERFALL.split(/\s+/).filter((w) => !keywords.has(w) && !descWords.has(w))) expect(drawnText, word).toContain(word);
+      expect(d!.svg).toContain('<desc id="chart-desc-dg0">From plan to booked.</desc>');
       expect(d!.title).toBe('Hours');
       expect(d!.desc).toBe('From plan to booked.');
     } finally {
@@ -83,8 +100,12 @@ describe('a drawn chart', () => {
 
   // diagram-design's verify-waterfall.py, as a test: the drawing is
   // re-derived from its own declarations and must agree with them.
-  it('draws a waterfall its declarations reconcile with', async () => {
-    const [d] = await draw([WATERFALL]);
+  it.each([
+    [WATERFALL, 2000, ['total', 'delta', 'delta', 'delta', 'total']],
+    // No axis, decimals at two scales, a subtotal.
+    ['waterfall\ntotal Start 10.5\nstep Up +2.25\ntotal Mid 12.75\nstep Down -0.5\ntotal End 12.25', 0, ['total', 'delta', 'subtotal', 'delta', 'total']],
+  ] as const)('draws a waterfall its declarations reconcile with (%#)', async (fence, floor, roles) => {
+    const [d] = await draw([fence]);
     const page = await browser.newPage();
     try {
       await page.setContent(`<div id="host">${d!.svg}</div>`);
@@ -95,8 +116,8 @@ describe('a drawn chart', () => {
       const num = (s: string) => Number(s.replace(/[,' ]/g, '').replace('−', '-'));
       // Scale from the first total: its top is at its level, its foot at the axis.
       const base = bars[0]!.y + bars[0]!.h;
-      const k = bars[0]!.h / (num(bars[0]!.value) - 2000);
-      const yOf = (v: number) => base - (v - 2000) * k;
+      const k = bars[0]!.h / (num(bars[0]!.value) - floor);
+      const yOf = (v: number) => base - (v - floor) * k;
       let run = 0;
       bars.forEach((b, i) => {
         const v = num(b.value);
@@ -116,7 +137,7 @@ describe('a drawn chart', () => {
           expect(carries[i]!.y, `carry ${i} height`).toBeCloseTo(yOf(run), 0);
         }
       });
-      expect(bars.map((b) => b.role)).toEqual(['total', 'delta', 'delta', 'delta', 'total']);
+      expect(bars.map((b) => b.role)).toEqual(roles);
     } finally {
       await page.close();
     }
@@ -147,31 +168,71 @@ describe('a drawn chart', () => {
   });
 });
 
-// Generated charts across the grammar: labels long and short, values small
-// and large, signs mixed. The layout must keep every label whole and apart.
-describe('charts the parser accepts', () => {
+describe('layout the review found wrong (2026-10-17)', () => {
+  it('labels a tick of 2.5 as 2.5, with one number of decimals along the axis', async () => {
+    const [d] = await draw(['bar\nA 11\nB 3']);
+    const ticks = [...d!.svg.matchAll(/class="tick">([^<]*)</g)].map((m) => m[1]);
+    expect(ticks).toEqual(['0.0', '2.5', '5.0', '7.5', '10.0', '12.5']);
+  });
+
+  it('keeps a negative dumbbell value inside the drawing, on a scale through zero', async () => {
+    const warn: string[] = [];
+    const [d] = await draw(['dumbbell\nbefore Plan\nafter Actual\nMargin -5 3\nCost 4 -2'], warn);
+    const xs = [...d!.svg.matchAll(/<circle cx="([-\d.]+)"/g)].map((m) => Number(m[1]));
+    const w = Number(/width="(\d+)"/.exec(d!.svg)![1]);
+    for (const x of xs) { expect(x).toBeGreaterThanOrEqual(0); expect(x).toBeLessThanOrEqual(w); }
+    expect(warn.filter((m) => / D-/.test(m))).toEqual([]);
+  });
+
+  it('prints a decrease that ends near the axis above its bar, not on it', async () => {
+    const warn: string[] = [];
+    await draw(['waterfall\ntotal Budget 1,000\nstep Cut -980\ntotal Left 20'], warn);
+    expect(warn.filter((m) => / D-/.test(m))).toEqual([]);
+  });
+});
+
+// Generated charts across the grammar — labels long and short, signs mixed,
+// marks, axes, focus rows, negative dumbbells, decreases that reach the axis
+// — in a light theme and a dark one with another face. The layout must keep
+// every label whole, apart, and off the bars.
+describe.each(['plain', 'lionfocus'])('charts the parser accepts, under %s', (themeId) => {
   it('draw no clipped, colliding or covered label', async () => {
-    let seed = 7;
+    let seed = themeId.length * 7919;
     const rnd = () => { seed = (seed * 1103515245 + 12345) % 2 ** 31; return seed / 2 ** 31; };
-    const words = ['Design', 'Coordination', 'Mechanical services', 'Electrical', 'Fire safety and alarms', 'Civil', 'BIM', 'Structural steel works'];
+    const words = ['Design', 'Coordination', 'Mechanical services', 'Electrical', 'Fire safety and alarms', 'Civil', 'BIM',
+      'Structural steel works', 'Interdisciplinary', 'Commissioning support'];
     const label = () => words[Math.floor(rnd() * words.length)]!;
     const n = (lo: number, hi: number) => Math.round(lo + rnd() * (hi - lo));
-    const fmt = (v: number) => v.toLocaleString('en-US');
+    const fmt = (v: number) => (v < 0 ? '-' : '') + Math.abs(v).toLocaleString('en-US');
+    const focus = () => (rnd() < 0.2 ? '  focus' : '');
     const fences: string[] = [];
-    for (let k = 0; k < 6; k++) {
-      const rows = Array.from({ length: n(2, 8) }, () => `${label()} ${(rnd() < 0.3 ? '-' : '+')}${fmt(n(1, 900))}`);
+    for (let k = 0; k < 8; k++) {
+      const rows = Array.from({ length: n(2, 8) }, () => `${label()} ${(rnd() < 0.35 ? '-' : '+')}${fmt(n(1, 90_000))}`);
+      const mark = rnd() < 0.5 ? `mark +${fmt(n(1, 60_000))} Limit\n` : '';
       // Units as long as real ones: a one-letter unit never reaches a tick.
-      fences.push(`bar\ntitle Generated bar ${k}\nunit hours of design work\n${rows.join('\n')}`);
-      const pairs = Array.from({ length: n(2, 6) }, () => `${label()} ${fmt(n(100, 5000))} ${fmt(n(100, 5000))}`);
+      fences.push(`bar\ntitle Generated bar ${k}\nunit hours of design work\n${mark}${rows.join('\n')}`);
+      const pairs = Array.from({ length: n(2, 6) }, () => `${label()} ${fmt(n(-3000, 5000))} ${fmt(n(-3000, 5000))}`);
       fences.push(`dumbbell\ntitle Generated dumbbell ${k}\nunit hours of design work\nbefore Plan\nafter Actual\n${pairs.join('\n')}`);
-      let run = n(5000, 20000);
-      const steps = Array.from({ length: n(1, 5) }, () => { const v = n(-900, 900) || 1; run += v; return `step ${label()} ${v > 0 ? '+' : '-'}${fmt(Math.abs(v))}`; });
-      fences.push(`waterfall\ntitle Generated waterfall ${k}\ntotal Start ${fmt(run - steps.reduce((s, l) => s + Number(l.split(' ').at(-1)!.replace(/,/g, '')), 0))}\n${steps.join('\n')}\ntotal End ${fmt(run)}`);
+      const start = n(5_000, 200_000);
+      let run = start;
+      const steps = Array.from({ length: n(1, 5) }, () => {
+        // Sometimes a decrease that takes the level close to zero.
+        const v = rnd() < 0.2 ? -Math.max(1, run - n(0, 50)) : (n(-9_000, 9_000) || 1);
+        if (run + v < 0) return null;
+        run += v;
+        return `step ${label()} ${v > 0 ? '+' : '-'}${fmt(Math.abs(v))}${focus()}`;
+      }).filter((s): s is string => s !== null);
+      if (steps.length === 0) continue;
+      const lowest = Math.min(start, ...steps.reduce<number[]>((acc, s) => [...acc, (acc.at(-1) ?? start) + Number(s.split(' ').find((t) => /^[+-]\d/.test(t))!.replace(/,/g, ''))], []));
+      const axis = rnd() < 0.4 && lowest > 1000 ? `axis ${fmt(Math.floor(lowest / 2))}\n` : '';
+      fences.push(`waterfall\ntitle Generated waterfall ${k}\nunit hours\n${axis}total Start ${fmt(start)}\n${steps.join('\n')}\ntotal End ${fmt(run)}`);
     }
     const warn: string[] = [];
-    const drawn = await draw(fences, warn);
+    const md = fences.map((f) => `\`\`\`chart\n${f}\n\`\`\``).join('\n\n') + '\n';
+    if (process.env['DUMP_CHARTS']) (await import('node:fs')).writeFileSync(`${process.env['DUMP_CHARTS']}-${themeId}.md`, md);
+    const doc = await drawDiagrams(ingestMarkdown(md).doc, await loadTheme(themeId), browser, (m) => warn.push(m));
     expect(warn.filter((w) => /could not be drawn/.test(w))).toEqual([]);
-    expect(drawn).toHaveLength(fences.length);
+    expect(doc.blocks.filter((b) => b.t === 'diagram')).toHaveLength(fences.length);
     expect(warn.filter((w) => / D-(CLIP|COLLIDE|COVER):/.test(w))).toEqual([]);
-  }, 120_000);
+  }, 180_000);
 });

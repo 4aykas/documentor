@@ -94,7 +94,7 @@ src/render/diagrams/
   place.ts          scale to the column, size caps from the registry
   checks.ts         geometry, budget and focus findings over a drawn SVG
   mermaid/          engine: headerLine, kindOf, drawable, leftToRight, renderOne
-  chart/            engine: parse.ts, layout.ts, svg.ts
+  chart/            engine: parse.ts, draw.ts (layout and SVG), measure.ts
   axonometric/      engine: parse.ts, project.ts, depth.ts, layout.ts, svg.ts
 ```
 
