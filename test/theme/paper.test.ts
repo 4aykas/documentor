@@ -13,7 +13,7 @@ describe('a theme\'s paper', () => {
   });
 
   it('colours the sheet only for a theme that asks, so a white theme\'s stylesheet is untouched', async () => {
-    const { doc } = await ingestMarkdown('# A note\n\nOne paragraph.\n');
+    const { doc } = ingestMarkdown('# A note\n\nOne paragraph.\n');
     const cream = await buildHtml(doc, await loadTheme('haskoning'));
     expect(cream).toContain('--paper: #FAF2E3');
     expect(cream).toMatch(/html\{ background: var\(--paper\)/);

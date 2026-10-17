@@ -28,12 +28,13 @@
   ],
   "scripts": {
     "prepare": "npm run build",
-    "prepublishOnly": "npm run typecheck && npm test",
+    "prepublishOnly": "npm run typecheck && npm run lint && npm test",
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
     "test": "vitest run --exclude test/baseline/local-only-pixels.test.ts",
     "test:pixels": "vitest run test/baseline/local-only-pixels.test.ts",
     "test:watch": "vitest --exclude test/baseline/local-only-pixels.test.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.check.json",
+    "lint": "eslint .",
     "documentor": "tsx src/bin/documentor.ts",
     "theme:tebin": "tsx src/theme/generate-tebin.ts",
     "diagrams:proof": "tsx scripts/diagrams-proof.mts",
@@ -60,9 +61,11 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "eslint": "^10.13.0",
     "pdf-to-img": "^5.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
+    "typescript-eslint": "^8.71.2",
     "vitest": "^4.1.10"
   },
   "overrides": {

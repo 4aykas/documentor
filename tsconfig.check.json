@@ -1,0 +1,11 @@
+{
+  // The typecheck of everything, not only what ships: src/ is built by
+  // tsconfig.json; test/, scripts/ and the templates are checked here too.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.mts", "templates/**/*.mts", "vitest.config.ts"]
+}

@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"require('fs').existsSync('node_modules')||console.log('This is a fresh clone of documentor: node_modules is not installed yet. Before anything else, offer the person the First hour in CONTRIBUTING.md (install, one build, one proof, the three checks), and walk them through it if they want.')\""
+          }
+        ]
+      }
+    ]
+  }
+}

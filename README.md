@@ -78,7 +78,8 @@ Word substitutes a serif. The `plain` and `tebin` themes
 use Arial, which every machine has.
 
 From a clone, `npm install` and then `npm run documentor -- build report.md`
-runs the same code without installing anything.
+runs the same code without installing anything. To change documentor
+itself, start with `CONTRIBUTING.md`.
 
 ## What it does
 

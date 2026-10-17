@@ -1,0 +1,20 @@
+{
+  // The commands CONTRIBUTING.md names, as tasks (Terminal → Run Task).
+  "version": "2.0.0",
+  "tasks": [
+    { "label": "install", "type": "shell", "command": "npm ci && npm run documentor -- setup", "problemMatcher": [] },
+    { "label": "typecheck", "type": "npm", "script": "typecheck", "problemMatcher": ["$tsc"], "group": "build" },
+    { "label": "lint", "type": "npm", "script": "lint", "problemMatcher": ["$eslint-stylish"] },
+    { "label": "test", "type": "npm", "script": "test", "problemMatcher": [], "group": { "kind": "test", "isDefault": true } },
+    {
+      "label": "build this file to PDF and proof it",
+      "type": "shell",
+      "command": "npm run documentor -- build \"${file}\" --to pdf --theme ${input:theme} --out .cache/proof && npm run documentor -- proof \".cache/proof/${fileBasenameNoExtension}.${input:theme}.pdf\"",
+      "problemMatcher": []
+    },
+    { "label": "diagram gallery proof", "type": "npm", "script": "diagrams:proof", "problemMatcher": [] }
+  ],
+  "inputs": [
+    { "id": "theme", "type": "pickString", "description": "Theme", "options": ["plain", "tebin", "tebin-ua", "haskoning", "rams"], "default": "tebin" }
+  ]
+}

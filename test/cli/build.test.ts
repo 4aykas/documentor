@@ -295,7 +295,8 @@ describe('runBuild', () => {
     const afterChange = await readFile(join(out, 'report.plain.pdf'));
 
     const { ingestMarkdown } = await import('../../src/ingest/md.js');
-    const { validateDoc } = await import('../../src/ir/validate.js');
+    // An assertion function needs its type spelled out to be called.
+    const validateDoc: typeof import('../../src/ir/validate.js').validateDoc = (await import('../../src/ir/validate.js')).validateDoc;
     const { renderPdf } = await import('../../src/render/pdf.js');
     const { loadTheme } = await import('../../src/theme/resolve.js');
     const { resolveEpoch } = await import('../../src/cli/timestamp.js');
@@ -326,7 +327,8 @@ describe('runBuild', () => {
     const withoutFlag = await readFile(join(outA, 'report.plain.pdf'));
 
     const { ingestMarkdown } = await import('../../src/ingest/md.js');
-    const { validateDoc } = await import('../../src/ir/validate.js');
+    // An assertion function needs its type spelled out to be called.
+    const validateDoc: typeof import('../../src/ir/validate.js').validateDoc = (await import('../../src/ir/validate.js')).validateDoc;
     const { renderPdf } = await import('../../src/render/pdf.js');
     const { loadTheme } = await import('../../src/theme/resolve.js');
     const { resolveEpoch } = await import('../../src/cli/timestamp.js');

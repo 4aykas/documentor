@@ -285,6 +285,7 @@ function inlinesOf(b: Block): Inline[] {
     case 'list': return b.items.flat();
     case 'table': return [...b.head.flat(), ...b.rows.flat().flat()];
     case 'quote': return b.paras.flat();
-    case 'code': case 'rule': case 'pagebreak': case 'image': return [];
+    case 'code': case 'rule': case 'pagebreak': case 'image': case 'diagram': case 'heatmap': return [];
+    default: { const never: never = b; return never; }
   }
 }

@@ -157,7 +157,7 @@ describe('ingestPdf', () => {
     ]);
     const { doc } = await ingestPdf(bytes);
     const levelOf = (v: string) => {
-      const b = doc.blocks.find((b) => b.text.some((n) => n.t === 'text' && n.v === v));
+      const b = doc.blocks.find((b) => (b.t === 'heading' || b.t === 'para') && b.text.some((n) => n.t === 'text' && n.v === v));
       return b === undefined ? undefined : b.t === 'heading' ? b.level : b.t === 'para' ? 'para' : 'other';
     };
     expect(levelOf('RankOne')).toBe(1);
@@ -193,8 +193,8 @@ describe('ingestPdf', () => {
     const table = back.blocks.find((b) => b.t === 'table');
     expect(table, 'the table was not recognised').toBeDefined();
     const text = (cs: { t: string; v?: string }[][]) => cs.map((c) => c.map((n) => ('v' in n ? n.v : '')).join(''));
-    expect(text(table!.t === 'table' ? table.head : [])).toEqual(['Item', '2024', '2025']);
-    expect(table!.t === 'table' ? table.rows.map((r) => text(r)) : []).toEqual([
+    expect(text(table?.t === 'table' ? table.head : [])).toEqual(['Item', '2024', '2025']);
+    expect(table?.t === 'table' ? table.rows.map((r) => text(r)) : []).toEqual([
       ['Turnover', '3253', '4387'],
       ['Labor', '1536', '2004'],
     ]);
@@ -256,7 +256,7 @@ describe('ingestPdf', () => {
       colXs,
     );
     const { doc: back } = await ingestPdf(bytes);
-    const tables = back.blocks.filter((b) => b.t === 'table');
+    const tables = back.blocks.filter((b): b is Extract<typeof back.blocks[number], { t: 'table' }> => b.t === 'table');
     expect(tables).toHaveLength(1);
     const table = tables[0]!;
     expect(table.t === 'table' ? table.head.map((c) => c[0]).map((n) => (n?.t === 'text' ? n.v : '')) : []).toEqual(['Item', 'Value']);
@@ -284,7 +284,7 @@ describe('ingestPdf', () => {
       colXs,
     );
     const { doc: back } = await ingestPdf(bytes);
-    const tables = back.blocks.filter((b) => b.t === 'table');
+    const tables = back.blocks.filter((b): b is Extract<typeof back.blocks[number], { t: 'table' }> => b.t === 'table');
     expect(tables).toHaveLength(2);
   });
 
@@ -320,9 +320,9 @@ describe('ingestPdf', () => {
       colXs,
     );
     const { doc: back, dropped } = await ingestPdf(bytes);
-    const tables = back.blocks.filter((b) => b.t === 'table');
+    const tables = back.blocks.filter((b): b is Extract<typeof back.blocks[number], { t: 'table' }> => b.t === 'table');
     expect(tables).toHaveLength(1);
-    expect(tables[0]!.t === 'table' ? tables[0].rows.length : 0).toBe(40);
+    expect(tables[0]!.rows.length).toBe(40);
     // Printed once — its first occurrence, on page 1, before the join had
     // anything to join to yet.
     const letterheadParas = back.blocks.filter(
@@ -370,7 +370,7 @@ describe('ingestPdf', () => {
       colXs,
     );
     const { doc: back } = await ingestPdf(bytes);
-    const tables = back.blocks.filter((b) => b.t === 'table');
+    const tables = back.blocks.filter((b): b is Extract<typeof back.blocks[number], { t: 'table' }> => b.t === 'table');
     expect(tables).toHaveLength(2);
   });
 
@@ -417,9 +417,9 @@ describe('ingestPdf', () => {
       colXs,
     );
     const { doc: back } = await ingestPdf(bytes);
-    const tables = back.blocks.filter((b) => b.t === 'table');
+    const tables = back.blocks.filter((b): b is Extract<typeof back.blocks[number], { t: 'table' }> => b.t === 'table');
     expect(tables).toHaveLength(1);
-    expect(tables[0]!.t === 'table' ? tables[0].rows.length : 0).toBe(2);
+    expect(tables[0]!.rows.length).toBe(2);
   });
 
   it('does not join when a one-off footnote — never observed to repeat — sits between two table halves', async () => {
@@ -438,7 +438,7 @@ describe('ingestPdf', () => {
       colXs,
     );
     const { doc: back } = await ingestPdf(bytes);
-    const tables = back.blocks.filter((b) => b.t === 'table');
+    const tables = back.blocks.filter((b): b is Extract<typeof back.blocks[number], { t: 'table' }> => b.t === 'table');
     expect(tables).toHaveLength(2);
   });
 
@@ -459,7 +459,7 @@ describe('ingestPdf', () => {
       [50, 250, 400],
     );
     const { doc: back } = await ingestPdf(bytes);
-    const tables = back.blocks.filter((b) => b.t === 'table');
+    const tables = back.blocks.filter((b): b is Extract<typeof back.blocks[number], { t: 'table' }> => b.t === 'table');
     expect(tables).toHaveLength(2);
   });
 
@@ -478,10 +478,10 @@ describe('ingestPdf', () => {
       colXs,
     );
     const { doc: back } = await ingestPdf(bytes);
-    const tables = back.blocks.filter((b) => b.t === 'table');
+    const tables = back.blocks.filter((b): b is Extract<typeof back.blocks[number], { t: 'table' }> => b.t === 'table');
     expect(tables).toHaveLength(1);
-    expect(tables[0]!.t === 'table' ? tables[0].rows.length : 0).toBe(30);
-    const values = tables[0]!.t === 'table'
+    expect(tables[0]!.rows.length).toBe(30);
+    const values = tables[0] !== undefined
       ? tables[0].rows.map((r) => r[1]!.map((n) => (n.t === 'text' ? n.v : '')).join(''))
       : [];
     expect(values).toEqual(Array.from({ length: 30 }, (_, i) => String(i)));

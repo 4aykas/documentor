@@ -1,0 +1,8 @@
+{
+  "recommendations": [
+    "anthropic.claude-code",
+    "vitest.explorer",
+    "dbaeumer.vscode-eslint",
+    "editorconfig.editorconfig"
+  ]
+}

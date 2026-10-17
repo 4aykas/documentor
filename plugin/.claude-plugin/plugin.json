@@ -1,6 +1,6 @@
 {
   "name": "documentor",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Re-issue an existing Markdown, Word, Excel or PDF document as a well-typeset PDF, Word, or Markdown file, and assemble proposals and contracts from data.",
   "author": {
     "name": "4aykas"

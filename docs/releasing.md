@@ -54,4 +54,6 @@ the one a human runs before publishing.
 The version is the promise. `0.x` says the interfaces may still move, which is
 true — the ingesters' `dropped` vocabulary and the theme file's shape are both
 young. Bump the minor for a new capability, the patch for a fix, and say in the
-commit what a consumer would notice.
+commit what a consumer would notice. `plugin/.claude-plugin/plugin.json`
+carries the same version (`test/guardrails/agent-files.test.ts`): an
+installed plugin learns there is something new from its version.

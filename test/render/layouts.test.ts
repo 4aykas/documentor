@@ -86,7 +86,7 @@ describe('a theme\'s layout', () => {
 
 describe('taking a cover apart', () => {
   it('puts every cover block in exactly one piece', async () => {
-    const { doc } = await ingestMarkdown(PROGRAMME, { cover: true });
+    const { doc } = ingestMarkdown(PROGRAMME, { cover: true });
     const p = coverParts(doc);
     expect(p.title).toBe('DELIVERY APPROACH');
     expect(p.lines.map(plain)).toEqual(['COASTAL PROGRAMME', 'Phase 2 — Adaptive design']);
@@ -101,7 +101,7 @@ describe('taking a cover apart', () => {
 
 describe('the gate figure', () => {
   it('recognises a short table of gate codes and places dated gates in months', async () => {
-    const { doc } = await ingestMarkdown(PROGRAMME);
+    const { doc } = ingestMarkdown(PROGRAMME);
     const table = doc.blocks.find((b) => b.t === 'table' && !b.head.every((h) => h.length === 0))!;
     const g = asGates(table, layoutKit(await loadTheme('rams')))!;
     expect(g.rows.map((r) => r.code)).toEqual(['G0', 'G1', 'G2']);
@@ -109,14 +109,14 @@ describe('the gate figure', () => {
   });
 
   it('leaves an ordinary table a table', async () => {
-    const { doc } = await ingestMarkdown('| Item | Qty |\n|---|---|\n| Widget | 1 |\n| Gadget | 2 |\n');
+    const { doc } = ingestMarkdown('| Item | Qty |\n|---|---|\n| Widget | 1 |\n| Gadget | 2 |\n');
     expect(asGates(doc.blocks[0]!, layoutKit(await loadTheme('rams')))).toBeNull();
   });
 });
 
 describe.each(LAYOUT_IDS)('the %s layout', (id) => {
   it('sets every word of a covered programme document', async () => {
-    const { doc } = await ingestMarkdown(PROGRAMME, { cover: true });
+    const { doc } = ingestMarkdown(PROGRAMME, { cover: true });
     const html = visible(await buildHtml(doc, await loadTheme(id)));
     const missing = [doc.meta.title, ...words(doc.blocks)].filter((w) => !html.includes(w));
     expect(missing).toEqual([]);
@@ -124,14 +124,14 @@ describe.each(LAYOUT_IDS)('the %s layout', (id) => {
 
   it('sets every word of a document with no cover, and of the cover fixture', async () => {
     for (const [src, opts] of [[PROGRAMME, {}], [COVER, { cover: true }]] as const) {
-      const { doc } = await ingestMarkdown(src, opts);
+      const { doc } = ingestMarkdown(src, opts);
       const html = visible(await buildHtml(doc, await loadTheme(id)));
       expect([doc.meta.title, ...words(doc.blocks)].filter((w) => !html.includes(w))).toEqual([]);
     }
   });
 
   it('fetches nothing', async () => {
-    const { doc } = await ingestMarkdown(PROGRAMME, { cover: true });
+    const { doc } = ingestMarkdown(PROGRAMME, { cover: true });
     const html = await buildHtml(doc, await loadTheme(id));
     expect(html).not.toMatch(/(?:src|href)="https?:|url\((?!data:)['"]?https?:/);
   });
