@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 import { arimoFaceCss } from '../render/fonts.js';
 import { bundledThemeIds, loadTheme } from '../theme/resolve.js';
+import { selfCommand } from './preflight.js';
 
 // `advisory` marks a check that cannot stop a build: it prints as a note and
 // never turns Ready into "need attention".
@@ -69,7 +70,7 @@ export async function runDoctor(io: { log: (s: string) => void }): Promise<numbe
       name: 'Chromium',
       ok: false,
       detail: (e as Error).message.split('\n')[0] ?? 'failed to launch',
-      fix: 'documentor setup',
+      fix: selfCommand('setup'),
     });
   }
 

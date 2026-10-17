@@ -5,8 +5,14 @@ Code open beside it. README is for using it.
 
 ## First hour
 
+Node 22 or later, and npm 11. Node 22 comes with npm 10, and then `npm ci`
+stops with `EBADDEVENGINES`: run `npm install -g npm@11` first (`npm -v`
+tells you which you have). Chromium, which prints the PDFs, is downloaded
+once, by `setup` or by the first command that needs it; that takes a
+network that can reach Playwright's CDN, and about 700 MB of disk.
+
 ```bash
-npm ci                                  # Node 22 or later, npm 11
+npm ci
 npm run documentor -- setup             # the Chromium the PDFs are printed in, once
 npm run documentor -- build README.md --to pdf --theme tebin --out .cache/first-hour
 npm run documentor -- proof .cache/first-hour/README.tebin.pdf
@@ -54,7 +60,8 @@ In Claude Code, ask "how do I start?" and it walks you through the same.
    `npm run diagrams:hash -- --out before.json` then `-- --compare
    before.json` for a change that must not alter any drawing, and
    `npm run pixels:diff -- before.pdf after.pdf --strip review.png` for one
-   that must not alter a document.
+   that must not alter a document. `npm run at -- <commit> -- <command>`
+   runs a command on an older commit, to see whether a difference is new.
 4. **Run the three checks**, then commit. CI runs them on Linux, macOS and
    Windows (`.github/workflows/ci.yml`; `gh workflow run ci.yml --ref
    <branch>` runs it on any branch).

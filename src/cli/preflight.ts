@@ -1,3 +1,5 @@
+import { existsSync, readdirSync, statSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
 import { chromium, type Browser } from 'playwright-core';
 import { runSetup } from './setup.js';
 import { missingSystemFonts, systemFontDirs } from './doctor.js';
@@ -81,9 +83,43 @@ export async function launchBrowser(io: Io, deps: BrowserDeps = realDeps): Promi
   }
   throw new Error(
     'Chromium is not installed, and installing it just now did not succeed.\n'
-    + '  fix: check the network (a proxy or a blocked download is the usual cause), then run `documentor setup`;\n'
-    + '       `documentor doctor` lists everything else a build needs',
+    + `  fix: check the network (a proxy or a blocked download is the usual cause), then run \`${selfCommand('setup')}\`;\n`
+    + `       \`${selfCommand('doctor')}\` lists everything else a build needs`,
   );
+}
+
+/**
+ * In a clone, the built copy (dist/) can fall behind the source: another
+ * repository that runs dist/bin/documentor.js then runs yesterday's code
+ * with nothing to say so (2026-10-17). Names the newest source file when a
+ * file under src/ is newer than the running dist/ entry; undefined for an
+ * installed copy, which ships no src/, and for one run from src/ itself.
+ */
+export function staleBuild(entry: string): string | undefined {
+  const at = entry.lastIndexOf(`${sep}dist${sep}`);
+  if (at === -1) return undefined;
+  const src = join(entry.slice(0, at), 'src');
+  if (!existsSync(src)) return undefined;
+  const built = statSync(entry).mtimeMs;
+  let newest = { file: '', t: 0 };
+  const walk = (d: string) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const p = join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.name.endsWith('.ts')) { const t = statSync(p).mtimeMs; if (t > newest.t) newest = { file: p, t }; }
+    }
+  };
+  walk(src);
+  return newest.t > built ? `this built copy is older than ${relative(entry.slice(0, at), newest.file)}; run \`npm run build\` in ${entry.slice(0, at)}` : undefined;
+}
+
+/**
+ * How the person running this would type `documentor <sub>`: in a clone it
+ * runs as `npm run documentor`, and the bare command a fix names is not on
+ * their PATH (a fresh clone on 2026-10-17 was told `documentor setup`).
+ */
+export function selfCommand(sub: string, env: NodeJS.ProcessEnv = process.env): string {
+  return env['npm_lifecycle_event'] === 'documentor' ? `npm run documentor -- ${sub}` : `documentor ${sub}`;
 }
 
 const fontNoteGiven = new Set<string>();

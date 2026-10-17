@@ -19,6 +19,9 @@
   and `npm test`. Pixel baselines are a
   separate, machine-bound instrument: `npm run test:pixels`, then
   `pixels:diff` to look and `pixels:approve` to accept (see its header).
+- **Run something on an older commit** ("did the old code do this too?")
+  with `npm run at -- <commit> [--keep] -- <command…>`; never a hand-made
+  worktree with a linked node_modules.
 - **Compare two renderings** (PDFs, PNGs, folders of PNGs) with
   `npm run pixels:diff -- <a> <b> [--strip <png>]`.
 - **Review rules** live in `CODING_STANDARDS.md`; designed layouts and themes

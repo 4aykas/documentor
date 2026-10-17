@@ -1,6 +1,38 @@
 import { describe, expect, it } from 'vitest';
 import type { Browser } from 'playwright-core';
-import { launchBrowser, nodeTooOld, resetWordFontNotes, wordFontNote, type BrowserDeps } from '../../src/cli/preflight.js';
+import { launchBrowser, nodeTooOld, resetWordFontNotes, selfCommand, staleBuild, wordFontNote, type BrowserDeps } from '../../src/cli/preflight.js';
+import { mkdir, utimes } from 'node:fs/promises';
+
+describe('a built copy in a clone', () => {
+  it('is named stale when a source file is newer than it, and only then', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'documentor-stale-'));
+    await mkdir(join(root, 'dist', 'bin'), { recursive: true });
+    await mkdir(join(root, 'src', 'cli'), { recursive: true });
+    const entry = join(root, 'dist', 'bin', 'documentor.js');
+    await writeFile(join(root, 'src', 'cli', 'a.ts'), '');
+    await writeFile(entry, '');
+    const past = new Date(Date.now() - 60_000), now = new Date();
+    await utimes(join(root, 'src', 'cli', 'a.ts'), past, past);
+    expect(staleBuild(entry)).toBeUndefined();
+    await utimes(join(root, 'src', 'cli', 'a.ts'), now, now);
+    await utimes(entry, past, past);
+    expect(staleBuild(entry)).toMatch(/older than src[\\/]cli[\\/]a\.ts; run `npm run build`/);
+  });
+
+  it('is not judged for an installed copy, which ships no src/', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'documentor-installed-'));
+    await mkdir(join(root, 'dist', 'bin'), { recursive: true });
+    await writeFile(join(root, 'dist', 'bin', 'documentor.js'), '');
+    expect(staleBuild(join(root, 'dist', 'bin', 'documentor.js'))).toBeUndefined();
+  });
+});
+
+describe('the command a fix names', () => {
+  it('is `npm run documentor -- …` in a clone, where `documentor` is not on the PATH', () => {
+    expect(selfCommand('setup', { npm_lifecycle_event: 'documentor' })).toBe('npm run documentor -- setup');
+    expect(selfCommand('setup', {})).toBe('documentor setup');
+  });
+});
 import { loadTheme } from '../../src/theme/resolve.js';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

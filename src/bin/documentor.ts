@@ -6,7 +6,8 @@ import { runInspect } from '../cli/inspect.js';
 import { runProposal } from '../cli/proposal.js';
 import { runContract } from '../cli/contract.js';
 import { runTheme, THEME_USAGE_LINE } from '../cli/theme.js';
-import { nodeTooOld } from '../cli/preflight.js';
+import { fileURLToPath } from 'node:url';
+import { nodeTooOld, staleBuild } from '../cli/preflight.js';
 import { runProof, PROOF_USAGE_LINE } from '../cli/proof.js';
 import { runDiagram, DIAGRAM_USAGE_LINE } from '../cli/diagram.js';
 
@@ -99,6 +100,17 @@ names the command that fixes whatever is missing.`;
 
 const io = { log: (s: string) => console.log(s), err: (s: string) => console.error(s) };
 const [command, ...rest] = process.argv.slice(2);
+
+// Run as `npm run documentor`, from a clone or with `npm run --prefix
+// <clone>` from somewhere else, this starts in the package's own folder, and
+// every relative path the person typed would be read against it: a --theme
+// path given from a document's folder pointed into the clone (2026-10-17).
+// npm passes the folder the command was typed in as INIT_CWD.
+const stale = staleBuild(fileURLToPath(import.meta.url));
+if (stale !== undefined) io.err(`documentor: note — ${stale}`);
+
+const typedIn = process.env['INIT_CWD'];
+if (process.env['npm_lifecycle_event'] === 'documentor' && typedIn !== undefined && typedIn !== '') process.chdir(typedIn);
 
 // Before anything runs: on a Node older than engines.node promises, the first
 // thing to break would be a dependency, with a message about syntax rather

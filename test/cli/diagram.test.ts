@@ -35,7 +35,9 @@ describe('documentor diagram', () => {
     expect(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg" ')).toBe(true);
     expect(svg).toContain('300');
     expect(existsSync(join(dir, 'chart.png'))).toBe(true);
-    expect(out).toHaveLength(2);
+    // The paths it wrote; on a machine without Chromium yet, the install's
+    // own lines come first (a fresh clone, 2026-10-17).
+    expect(out.slice(-2)).toEqual([join(dir, 'chart.svg'), join(dir, 'chart.png')]);
   }, 60_000);
 
   it('exits 3 and writes nothing when the fence is refused', async () => {

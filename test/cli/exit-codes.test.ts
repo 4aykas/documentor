@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FORMATS } from '../../src/cli/build.js';
@@ -62,5 +64,23 @@ describe('the exit-code contract', () => {
     const r = run('build', 'no-such-file.md');
     expect(r.status).toBe(1);
     expect(r.stderr).not.toContain('    at '); // a message, not a stack trace
+  });
+
+  it('reads relative paths from where `npm run documentor` was typed, not from the package', () => {
+    // npm starts the script in the package's folder; INIT_CWD is where the
+    // person stood. A --theme path given from a document's folder used to
+    // point into the clone.
+    const dir = mkdtempSync(join(tmpdir(), 'documentor-initcwd-'));
+    writeFileSync(join(dir, 'note.md'), '# Note\n\nHello.\n');
+    // ROOT ends in a separator, and on Windows a trailing \ before the quote
+    // would escape the quote.
+    const root = ROOT.replace(/[\\/]+$/, '');
+    const r = spawnSync('npm', ['run', '-s', '--prefix', process.platform === 'win32' ? `"${root}"` : root, 'documentor', '--', 'build', 'note.md', '--to', 'md'],
+      // npm reads INIT_CWD and its npm_config_* settings from the environment
+      // it inherits, and this suite runs under npx, which set them: the
+      // child must start as one typed in a shell would.
+      { cwd: dir, encoding: 'utf8', shell: process.platform === 'win32', env: Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'INIT_CWD' && !/^npm_/i.test(k))) });
+    expect(r.status, r.stderr).toBe(0);
+    expect(existsSync(join(dir, 'note.plain.md'))).toBe(true);
   });
 });

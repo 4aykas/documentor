@@ -34,6 +34,7 @@
     "test:pixels": "vitest run test/baseline/local-only-pixels.test.ts",
     "pixels:diff": "tsx scripts/pixels-diff.mts",
     "pixels:approve": "tsx scripts/pixels-approve.mts",
+    "at": "tsx scripts/at.mts",
     "test:watch": "vitest --exclude test/baseline/local-only-pixels.test.ts",
     "typecheck": "tsc -p tsconfig.check.json",
     "lint": "eslint .",
