@@ -30,3 +30,9 @@ size.
 - A diagram is never cropped and never wider than the column.
 - Warnings are advice, not refusals: the author decides whether to split the
   diagram or shorten its labels.
+
+## Amendments
+
+**2026-10-17 (review of 794efef).** The first wording said "below 85 % of the
+column"; the code measures the fit to the column and to the page height
+together. The decision is unchanged, its statement now says what the code does.
