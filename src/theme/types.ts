@@ -4,13 +4,25 @@ export type PageSize = 'A4' | 'Letter';
  *  itself, or through the face it names as its Cyrillic stand-in. */
 export type FaceId = 'arimo' | 'manrope' | 'jetbrains-mono' | 'urbanist' | 'roboto-condensed' | 'pixelify-sans' | 'inter';
 
+/** One file of a face: a weight, and for a built-in face the unicode-range
+ *  of the subset the file holds. */
+export type FaceFile = { weight: number; file: string; range?: string };
+
+/**
+ * A face as a theme uses it: a built-in one (render/fonts.ts) or one a theme
+ * folder declares and ships in its own fonts/ (ADR 0011), every file's path
+ * absolute. `standIn` is the face that carries its Cyrillic, when it carries
+ * none of its own.
+ */
+export type ResolvedFace = { id: string; family: string; weights: readonly number[]; files: readonly FaceFile[]; standIn: ResolvedFace | null };
+
 /**
  * A designed layout a theme can ask the PDF to be set in, instead of the
  * ordinary letterhead-and-flow page — see render/layouts/. Each is drawn by
  * hand from one designer's or one house's language, and lays out any
  * document's own blocks; it adds chrome and figures, never text.
  */
-export const LAYOUT_IDS = ['rams', 'rodchenko', 'haskoning', 'dreamscape', 'blueprint', 'lionfocus'] as const;
+export const LAYOUT_IDS = ['rams', 'rodchenko', 'haskoning', 'dreamscape', 'blueprint'] as const;
 export type LayoutId = (typeof LAYOUT_IDS)[number];
 
 /** Trim size in points, portrait. Chromium is given millimetres; see toMm. */
@@ -69,20 +81,22 @@ export type Theme = {
   font: {
     /** The family name written into DOCX, where fonts are not embedded. */
     document: string;
-    /** The body face embedded into PDFs — see render/fonts.ts for the set. */
-    embed: FaceId;
+    /** The body face embedded into PDFs: a built-in one (render/fonts.ts)
+     *  or one of the theme's own. `face` is it resolved. */
+    embed: string;
+    face: ResolvedFace;
     /**
      * Headings and the document title. Defaults to the body face at 700 —
      * see resolveTheme — which is exactly what every theme drew before this
      * existed, so a theme that says nothing about it renders unchanged.
      */
-    heading: { document: string; embed: FaceId; weight: number };
+    heading: { document: string; embed: string; face: ResolvedFace; weight: number };
     /**
      * The small furniture — letterhead lines, table header cells, the running
      * header — set apart from the text in a face of its own, the way a Swiss
      * layout sets its labels in a monospace. Null keeps them in the body face.
      */
-    label: { document: string; embed: FaceId; uppercase: boolean } | null;
+    label: { document: string; embed: string; face: ResolvedFace; uppercase: boolean } | null;
   };
   logo: Logo | null;
   /**
@@ -132,8 +146,11 @@ export type Theme = {
    * layout (cover, first page, section openings, running foot, the gate
    * figure); Word keeps the ordinary page, in the theme's colours and faces,
    * because a designed page in Word would be a picture of one.
+   *
+   * A built-in layout's id, or the absolute path of a layout module in the
+   * theme's folder (ADR 0011), which loadTheme has imported.
    */
-  layout: LayoutId | null;
+  layout: LayoutId | string | null;
 };
 
 export const PT_TO_MM = 0.352778;

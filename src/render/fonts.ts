@@ -15,7 +15,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import type { FaceId, Theme } from '../theme/types.js';
+import type { FaceFile, FaceId, ResolvedFace, Theme } from '../theme/types.js';
 
 const require = createRequire(import.meta.url);
 
@@ -52,67 +52,85 @@ export const FACES: Record<FaceId, Face> = {
   'roboto-condensed': { family: 'Roboto Condensed', pkg: '@fontsource/roboto-condensed', weights: [400, 700, 900] },
   // A screen-pixel display face, for the dreamscape layout's titles.
   'pixelify-sans': { family: 'Pixelify Sans', pkg: '@fontsource/pixelify-sans', weights: [400, 700] },
-  // The neutral grotesque the lionfocus layout sets its body in.
+  // A neutral grotesque, for a body face that should not be noticed.
   inter: { family: 'Inter', pkg: '@fontsource/inter', weights: [400, 600, 700] },
 };
 
 export const FACE_IDS = Object.keys(FACES) as FaceId[];
 
-const cached = new Map<FaceId, string>();
+const builtIn = new Map<FaceId, ResolvedFace>();
 
-async function oneFaceCss(id: FaceId): Promise<string> {
-  const hit = cached.get(id);
+/** A built-in face, its files found in the package that ships it. */
+export function builtInFace(id: FaceId): ResolvedFace {
+  const hit = builtIn.get(id);
   if (hit !== undefined) return hit;
-  const { family, pkg, weights, subsets = SUBSETS } = FACES[id];
-
+  const { family, pkg, weights, subsets = SUBSETS, cyrillicFrom } = FACES[id];
   // unicode.json ships with the package and is the authority on the ranges;
   // hard-coding them here would rot the day the package re-subsets.
   const ranges = require(`${pkg}/unicode.json`) as Record<string, string>;
   const filesDir = require.resolve(`${pkg}/unicode.json`).replace(/unicode\.json$/, 'files');
-
-  const faces: string[] = [];
+  const files: FaceFile[] = [];
   for (const subset of subsets) {
     const range = ranges[subset];
     if (!range) throw new Error(`${pkg} declares no unicode-range for ${subset}`);
-    for (const weight of weights) {
-      const file = `${filesDir}/${id}-${subset}-${weight}-normal.woff2`;
-      const b64 = (await readFile(file)).toString('base64');
-      faces.push(
-        `@font-face{font-family:${family.includes(' ') ? `'${family}'` : family};font-style:normal;font-weight:${weight};font-display:block;` +
-          `src:url(data:font/woff2;base64,${b64}) format('woff2');unicode-range:${range}}`,
-      );
-    }
+    for (const weight of weights) files.push({ weight, file: `${filesDir}/${id}-${subset}-${weight}-normal.woff2`, range });
   }
-  const css = faces.join('');
-  cached.set(id, css);
+  const face: ResolvedFace = { id, family, weights, files, standIn: cyrillicFrom === undefined ? null : builtInFace(cyrillicFrom) };
+  builtIn.set(id, face);
+  return face;
+}
+
+const FORMAT: Record<string, { mime: string; format: string }> = {
+  woff2: { mime: 'font/woff2', format: 'woff2' },
+  woff: { mime: 'font/woff', format: 'woff' },
+  ttf: { mime: 'font/ttf', format: 'truetype' },
+  otf: { mime: 'font/otf', format: 'opentype' },
+};
+export const FACE_FILE_EXTENSIONS = Object.keys(FORMAT);
+
+const cssFamily = (family: string) => (family.includes(' ') ? `'${family}'` : family);
+
+// Keyed by file, not by face id: two theme folders may each call a face of
+// their own "brand".
+const cached = new Map<string, string>();
+
+async function fileCss(family: string, f: FaceFile): Promise<string> {
+  const key = `${family}\n${f.file}`;
+  const hit = cached.get(key);
+  if (hit !== undefined) return hit;
+  const { mime, format } = FORMAT[f.file.slice(f.file.lastIndexOf('.') + 1).toLowerCase()]!;
+  const b64 = (await readFile(f.file)).toString('base64');
+  const css = `@font-face{font-family:${cssFamily(family)};font-style:normal;font-weight:${f.weight};font-display:block;` +
+    `src:url(data:${mime};base64,${b64}) format('${format}')${f.range === undefined ? '' : `;unicode-range:${f.range}`}}`;
+  cached.set(key, css);
   return css;
 }
 
+async function oneFaceCss(face: ResolvedFace): Promise<string> {
+  return (await Promise.all(face.files.map((f) => fileCss(face.family, f)))).join('');
+}
+
 export async function arimoFaceCss(): Promise<string> {
-  return oneFaceCss('arimo');
+  return oneFaceCss(builtInFace('arimo'));
 }
 
 /** Every face a theme uses, each once, body first. */
 export async function themeFaceCss(theme: Theme): Promise<string> {
-  const ids = new Set<FaceId>([theme.font.embed, theme.font.heading.embed]);
-  if (theme.font.label !== null) ids.add(theme.font.label.embed);
+  const faces = new Map<string, ResolvedFace>();
+  const add = (f: ResolvedFace) => { if (!faces.has(f.id)) faces.set(f.id, f); };
+  add(theme.font.face);
+  add(theme.font.heading.face);
+  if (theme.font.label !== null) add(theme.font.label.face);
   // A face's Cyrillic stand-in is inlined with it, so the stack below always
   // finds the face it names.
-  for (const id of [...ids]) {
-    const from = FACES[id].cyrillicFrom;
-    if (from !== undefined) ids.add(from);
-  }
-  return (await Promise.all([...ids].map(oneFaceCss))).join('');
+  for (const f of [...faces.values()]) if (f.standIn !== null) add(f.standIn);
+  return (await Promise.all([...faces.values()].map(oneFaceCss))).join('');
 }
-
-const cssFamily = (family: string) => (family.includes(' ') ? `'${family}'` : family);
 
 /** A CSS font-family value: the embedded face, its Cyrillic stand-in when it
  *  has one, then the theme's document name as the fallback a reader's
  *  system might have. */
-export function familyStack(face: { embed: FaceId; document: string }, generic = 'sans-serif'): string {
-  const own = FACES[face.embed];
-  const from = own.cyrillicFrom;
-  const standIn = from === undefined ? '' : `${cssFamily(FACES[from].family)}, `;
-  return `${cssFamily(own.family)}, ${standIn}${face.document}, ${generic}`;
+export function familyStack(slot: { face: ResolvedFace; document: string }, generic = 'sans-serif'): string {
+  const standIn = slot.face.standIn === null ? '' : `${cssFamily(slot.face.standIn.family)}, `;
+  return `${cssFamily(slot.face.family)}, ${standIn}${slot.document}, ${generic}`;
 }

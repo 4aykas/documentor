@@ -308,6 +308,16 @@ describe('precedence: --flag > sidecar > the document\'s own metadata', () => {
     expect(await readdir(join(file2, '..'))).toEqual(expect.arrayContaining(['report2.plain.md']));
   });
 
+  it('theme: a sidecar\'s theme path is relative to the sidecar, wherever the build starts', async () => {
+    const { dir, file } = await fixture('# Report\n\nHello.\n');
+    await mkdir(join(dir, '.raw', 'themes', 'house'), { recursive: true });
+    await writeFile(join(dir, '.raw', 'themes', 'house', 'theme.json'), JSON.stringify({ colors: { brandOnLight: '#DA291C' } }));
+    await sidecarFor(file, { theme: './.raw/themes/house' });
+    const { io } = collect();
+    expect(await runBuild([file, '--to', 'md'], io)).toBe(0);
+    expect(await readdir(dir)).toEqual(expect.arrayContaining(['report.house.md']));
+  });
+
   it('to: the sidecar\'s formats apply when no --to is given, and --to overrides it', async () => {
     const { file } = await fixture('# Report\n\nHello.\n');
     await sidecarFor(file, { to: ['md'] });

@@ -27,7 +27,8 @@ directory), never in the repo.
   matched elements with computed colours.
 - `npm run -s documentor -- build <file.md> --theme <id> --to pdf --out <dir>`,
   then `npm run -s documentor -- proof <pdf>`, and read the PNG. Look at
-  plain, tebin, and the dark lionfocus; rodchenko and rams for odd palettes.
+  plain, tebin, and the dark sheet `test/fixtures/themes/dark-sheet` (a
+  theme path); rodchenko and rams for odd palettes.
 - `npm run red -- <file> --find "<exact text>" --replace "<text>" -- <vitest args>`:
   whether a test the commit claims as a guard fails when its defect is put
   back. For strings with backslashes or quotes, call

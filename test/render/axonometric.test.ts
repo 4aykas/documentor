@@ -158,7 +158,7 @@ describe.each([['exploded', EXPLODED], ['plan', PLAN]])('a drawn %s', (_, fence)
   });
 });
 
-describe.each(['plain', 'lionfocus'])('the faces under %s', (themeId) => {
+describe.each(['plain', 'dark-sheet'])('the faces under %s', (themeId) => {
   // Light from above: the top is the lightest face and the right the
   // darkest, on a dark sheet as on a light one.
   it('shade top lightest, right darkest', async () => {
@@ -213,7 +213,7 @@ describe('an exploded figure\'s leaders', () => {
 
 // Generated figures: plans on a grid of rooms with furniture, and stacks of
 // parts with some side by side, in a light and a dark theme.
-describe.each(['plain', 'lionfocus'])('figures the parser accepts, under %s', (themeId) => {
+describe.each(['plain', 'dark-sheet'])('figures the parser accepts, under %s', (themeId) => {
   it('draw no clipped, colliding or covered label', async () => {
     let seed = themeId.length * 104729;
     const rnd = () => { seed = (seed * 1103515245 + 12345) % 2 ** 31; return seed / 2 ** 31; };

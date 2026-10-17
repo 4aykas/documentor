@@ -56,9 +56,9 @@ describe('the hostile fences', () => {
     }
   });
 
-  it.each(cases.map((c) => [c.head, c] as const))('under lionfocus: %s', async (_, c) => {
+  it.each(cases.map((c) => [c.head, c] as const))('under dark-sheet: %s', async (_, c) => {
     const want = expect_(c.head);
-    const got = await outcome(c.fence, 'lionfocus');
+    const got = await outcome(c.fence, 'dark-sheet');
     if (want.kind === 'refused') {
       expect(got.drawn).toBe(false);
       expect(got.text).toContain(want.detail);

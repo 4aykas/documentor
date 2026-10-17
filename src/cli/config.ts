@@ -21,8 +21,8 @@
 // check a `--to` flag would have to pass.
 
 import { stat } from 'node:fs/promises';
-import { resolve as resolvePath } from 'node:path';
-import { loadTheme } from '../theme/resolve.js';
+import { dirname, resolve as resolvePath } from 'node:path';
+import { isThemePath, loadTheme } from '../theme/resolve.js';
 import { readSidecar, sidecarPathFor, type PdfChromeRule, type SidecarData } from './sidecar.js';
 
 /** The subset of a command's own parsed flags this function needs for one
@@ -142,7 +142,12 @@ export async function resolveConfig(input: string, flags: ConfigFlags): Promise<
   const date = flags.date ?? data.date;
   const entity = flags.entity ?? data.entity;
   const reference = data.reference; // a fact about one document, so no flag, like subtitle
-  const theme = flags.theme ?? data.theme ?? DEFAULT_THEME;
+  // A sidecar's theme path is relative to the sidecar, not to wherever the
+  // build was started (ADR 0011); a flag's is relative to the shell's.
+  const fromSidecar = sidecarPath !== undefined && data.theme !== undefined && isThemePath(data.theme)
+    ? resolvePath(dirname(sidecarPath), data.theme)
+    : data.theme;
+  const theme = flags.theme ?? fromSidecar ?? DEFAULT_THEME;
   // No CLI flag, unlike title/date/entity: the design's own words for this
   // are "write two numbers into a config", and a per-document geometric fact
   // read off one run's advisory belongs recorded beside that document, not

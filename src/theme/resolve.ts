@@ -1,9 +1,10 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { dirname, join, sep } from 'node:path';
+import { basename, delimiter, dirname, isAbsolute, join, resolve as resolvePath, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { FACE_IDS, FACES } from '../render/fonts.js';
-import { LAYOUT_IDS, PAGE_PT, type FaceId, type PageSize, type Theme } from './types.js';
+import { builtInFace, FACE_FILE_EXTENSIONS, FACE_IDS, FACES } from '../render/fonts.js';
+import { loadLayoutModule } from '../render/layouts/external.js';
+import { LAYOUT_IDS, PAGE_PT, type FaceId, type PageSize, type ResolvedFace, type Theme } from './types.js';
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const PAGE_SIZES = new Set<PageSize>(['A4', 'Letter']);
@@ -61,7 +62,71 @@ function num(v: unknown, where: string, fallback: number): number {
   return v;
 }
 
-export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme {
+const LAYOUT_MODULE = /\.(mts|mjs|ts|js)$/;
+
+/**
+ * A path a theme names for a file of its own, made absolute: relative to the
+ * theme's folder and inside it (ADR 0011). A theme with no folder — one handed
+ * to resolveTheme as data — names no files.
+ */
+function inFolder(rel: string, where: string, dir: string | undefined, exts?: readonly string[]): string {
+  if (dir === undefined) bad(where, `${JSON.stringify(rel)} is a path, and only a theme loaded from its folder names files`);
+  if (isAbsolute(rel) || rel.split(/[\\/]/).includes('..')) bad(where, `${JSON.stringify(rel)} leaves the theme's folder; name a file inside it, relative to theme.json`);
+  const file = resolvePath(dir, rel);
+  if (exts !== undefined && !exts.some((e) => file.toLowerCase().endsWith(e))) bad(where, `${JSON.stringify(rel)} is not a ${exts.join(' or ')} file`);
+  if (!existsSync(file)) bad(where, `${JSON.stringify(rel)} is not in the theme's folder (looked for ${file})`);
+  return file;
+}
+
+/** A mark's svg and png, read from the theme's folder when given as paths. */
+function markSources(m: Record<string, unknown>, where: string, dir: string | undefined): { svg: unknown; png: unknown } {
+  let svg = m['svg'], png = m['png'];
+  if (typeof svg === 'string' && !svg.includes('<svg')) svg = readFileSync(inFolder(svg, `${where}.svg`, dir, ['.svg']), 'utf8');
+  if (typeof png === 'string' && !png.startsWith('data:')) {
+    png = `data:image/png;base64,${readFileSync(inFolder(png, `${where}.png`, dir, ['.png'])).toString('base64')}`;
+  }
+  return { svg, png };
+}
+
+/**
+ * The faces a theme folder declares and ships (ADR 0011). Each names its
+ * licence, since every PDF embeds it, and where its Cyrillic comes from,
+ * since a Ukrainian word must not fall to whatever the reader's system has.
+ */
+function ownFaces(raw: unknown, dir: string | undefined): Map<string, ResolvedFace> {
+  const faces = new Map<string, ResolvedFace>();
+  if (raw === undefined || raw === null) return faces;
+  if (typeof raw !== 'object' || Array.isArray(raw)) bad('faces', 'expected an object of faces by id');
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    const where = `faces.${id}`;
+    if ((FACE_IDS as readonly string[]).includes(id)) bad(where, `${id} is a built-in face; give the theme's own face another id`);
+    const f = (v ?? {}) as Record<string, unknown>;
+    if (typeof f['family'] !== 'string' || f['family'] === '') bad(`${where}.family`, 'expected the face\'s family name');
+    if (typeof f['license'] !== 'string' || f['license'] === '') bad(`${where}.license`, 'expected the licence the face is embedded under, such as "OFL-1.1": every PDF embeds it');
+    const rawFiles = f['files'];
+    if (typeof rawFiles !== 'object' || rawFiles === null || Object.keys(rawFiles).length === 0) bad(`${where}.files`, 'expected { "400": "fonts/<file>.woff2", … }');
+    const files = Object.entries(rawFiles as Record<string, unknown>).map(([w, p]) => {
+      const weight = Number(w);
+      if (!Number.isInteger(weight) || weight < 100 || weight > 900 || weight % 100 !== 0) bad(`${where}.files`, `${JSON.stringify(w)} is not a weight from 100 to 900`);
+      if (typeof p !== 'string') bad(`${where}.files.${w}`, 'expected a path');
+      return { weight, file: inFolder(p, `${where}.files.${w}`, dir, FACE_FILE_EXTENSIONS.map((e) => `.${e}`)) };
+    });
+    const cyr = f['cyrillic'];
+    let standIn: ResolvedFace | null = null;
+    if (typeof cyr === 'string') {
+      if (!(FACE_IDS as readonly string[]).includes(cyr) || FACES[cyr as FaceId].cyrillicFrom !== undefined) {
+        bad(`${where}.cyrillic`, `expected true, or the built-in face that carries its Cyrillic (${FACE_IDS.filter((x) => FACES[x].cyrillicFrom === undefined).join(', ')}), got ${JSON.stringify(cyr)}`);
+      }
+      standIn = builtInFace(cyr as FaceId);
+    } else if (cyr !== true) {
+      bad(`${where}.cyrillic`, 'expected true when the face carries Cyrillic, or the built-in face that stands in for it');
+    }
+    faces.set(id, { id, family: f['family'], weights: files.map((x) => x.weight).sort((a, b) => a - b), files, standIn });
+  }
+  return faces;
+}
+
+export function resolveTheme(input: unknown, opts: { id?: string; dir?: string } = {}): Theme {
   if (typeof input !== 'object' || input === null) bad('theme', 'expected an object');
   const t = input as Record<string, unknown>;
   const colors = (t['colors'] ?? {}) as Record<string, unknown>;
@@ -79,27 +144,29 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
     bad('page.marginPt', `${marginPt}pt margins leave no usable column on ${size}`);
   }
 
+  const own = ownFaces(t['faces'], opts.dir);
   // An unknown face is refused rather than skipped: a PDF that silently
   // printed in the body face would look finished while being wrong.
-  const face = (v: unknown, where: string, fallback: FaceId): FaceId => {
+  const face = (v: unknown, where: string, fallback: string): { embed: string; face: ResolvedFace } => {
     const id = v ?? fallback;
+    if (typeof id === 'string' && own.has(id)) return { embed: id, face: own.get(id)! };
     if (typeof id !== 'string' || !(FACE_IDS as readonly string[]).includes(id)) {
-      bad(where, `expected one of ${FACE_IDS.join(', ')}, got ${JSON.stringify(id)}`);
+      bad(where, `expected one of ${[...own.keys(), ...FACE_IDS].join(', ')}, got ${JSON.stringify(id)}`);
     }
-    return id as FaceId;
+    return { embed: id, face: builtInFace(id as FaceId) };
   };
-  const embed = face(font['embed'], 'font.embed', 'arimo');
+  const body = face(font['embed'], 'font.embed', 'arimo');
   const document = String(font['document'] ?? 'Arial');
   const rawHeading = (font['heading'] ?? {}) as Record<string, unknown>;
   const headingWeight = rawHeading['weight'] ?? 700;
   const heading = {
     document: String(rawHeading['document'] ?? document),
-    embed: face(rawHeading['embed'], 'font.heading.embed', embed),
+    ...face(rawHeading['embed'], 'font.heading.embed', body.embed),
     weight: headingWeight as number,
   };
   // Checked against the heading face itself: a weight it does not ship would
   // print as a synthetic bold that looks finished while being wrong.
-  const shipped = FACES[heading.embed]?.weights ?? [];
+  const shipped = heading.face.weights;
   if (!shipped.includes(headingWeight as number)) {
     bad('font.heading.weight', `${heading.embed} is inlined at ${shipped.join(', ')}, got ${JSON.stringify(headingWeight)}`);
   }
@@ -110,7 +177,7 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
     if (typeof l['document'] !== 'string') bad('font.label.document', 'expected a family name');
     label = {
       document: l['document'],
-      embed: face(l['embed'], 'font.label.embed', embed),
+      ...face(l['embed'], 'font.label.embed', body.embed),
       uppercase: l['uppercase'] === true,
     };
   }
@@ -118,9 +185,9 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
   let logo: Theme['logo'] = null;
   const rawLogo = t['logo'];
   if (rawLogo !== undefined && rawLogo !== null) {
-    const l = rawLogo as Record<string, unknown>;
+    const l: Record<string, unknown> = { ...(rawLogo as Record<string, unknown>), ...markSources(rawLogo as Record<string, unknown>, 'logo', opts.dir) };
     if (typeof l['svg'] !== 'string' || !l['svg'].includes('<svg')) {
-      bad('logo.svg', 'expected inline SVG markup');
+      bad('logo.svg', 'expected inline SVG markup, or the path of an .svg in the theme\'s folder');
     }
     // A logo paints by class only: every colour comes from the host
     // stylesheet's custom properties, and a path that should not be filled
@@ -134,7 +201,7 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
     }
     const rawPng = l['png'];
     if (rawPng !== undefined && rawPng !== null && (typeof rawPng !== 'string' || !PNG_DATA_URI.test(rawPng))) {
-      bad('logo.png', 'expected an inline "data:image/png;base64,…" URI, or null — a theme is one file, so a path to a raster beside it is not accepted');
+      bad('logo.png', 'expected an inline "data:image/png;base64,…" URI, the path of a .png in the theme\'s folder, or null');
     }
     logo = {
       svg: l['svg'],
@@ -146,9 +213,9 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
   let cornerMark: Theme['cornerMark'] = null;
   const rawCornerMark = t['cornerMark'];
   if (rawCornerMark !== undefined && rawCornerMark !== null) {
-    const m = rawCornerMark as Record<string, unknown>;
+    const m: Record<string, unknown> = { ...(rawCornerMark as Record<string, unknown>), ...markSources(rawCornerMark as Record<string, unknown>, 'cornerMark', opts.dir) };
     if (typeof m['svg'] !== 'string' || !m['svg'].includes('<svg')) {
-      bad('cornerMark.svg', 'expected inline SVG markup');
+      bad('cornerMark.svg', 'expected inline SVG markup, or the path of an .svg in the theme\'s folder');
     }
     // Same rule as logo.svg, for the same reason — see its comment above.
     const paint = findInlinePaint(m['svg']);
@@ -157,7 +224,7 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
     }
     const rawPng = m['png'];
     if (rawPng !== undefined && rawPng !== null && (typeof rawPng !== 'string' || !PNG_DATA_URI.test(rawPng))) {
-      bad('cornerMark.png', 'expected an inline "data:image/png;base64,…" URI, or null');
+      bad('cornerMark.png', 'expected an inline "data:image/png;base64,…" URI, the path of a .png in the theme\'s folder, or null');
     }
     cornerMark = {
       svg: m['svg'],
@@ -197,7 +264,7 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
         title: hex(colors['title'], 'colors.title', ink),
       };
     })(),
-    font: { document, embed, heading, label },
+    font: { document, ...body, heading, label },
     logo,
     cornerMark,
     page: { size, marginPt },
@@ -229,10 +296,10 @@ export function resolveTheme(input: unknown, opts: { id?: string } = {}): Theme 
     })(),
     layout: (() => {
       const v = t['layout'] ?? null;
-      if (v !== null && !(LAYOUT_IDS as readonly unknown[]).includes(v)) {
-        bad('layout', `expected one of ${LAYOUT_IDS.join(', ')} or null, got ${JSON.stringify(v)}`);
-      }
-      return v as Theme['layout'];
+      if (v === null || (LAYOUT_IDS as readonly unknown[]).includes(v)) return v as Theme['layout'];
+      // A layout module in the theme's folder; loadTheme imports it.
+      if (typeof v === 'string' && LAYOUT_MODULE.test(v)) return inFolder(v, 'layout', opts.dir);
+      return bad('layout', `expected one of ${LAYOUT_IDS.join(', ')}, the path of a layout module in the theme's folder ("./layout.mts"), or null, got ${JSON.stringify(v)}`);
     })(),
   };
 }
@@ -283,16 +350,53 @@ export function bundledThemeIds(): string[] {
     .sort();
 }
 
-export async function loadTheme(idOrPath: string): Promise<Theme> {
-  const looksLikePath = idOrPath.endsWith('.json') || idOrPath.includes('/') || idOrPath.includes(sep);
-  const file = looksLikePath ? idOrPath : join(packageRoot(), 'themes', idOrPath, 'theme.json');
+/** The folders DOCUMENTOR_THEMES lists, where a theme id is looked up after
+ *  the package's own themes/ (ADR 0011). */
+export function externalThemeDirs(env: NodeJS.ProcessEnv = process.env): string[] {
+  return (env['DOCUMENTOR_THEMES'] ?? '').split(delimiter).filter((d) => d.trim() !== '').map((d) => resolvePath(d));
+}
+
+/**
+ * The theme.json a --theme value names. A path (a slash, or .json) is a
+ * theme folder or its theme.json, relative to `base`; an id is a folder in
+ * the package's themes/ or in one of DOCUMENTOR_THEMES, and an id found in
+ * more than one of them is refused rather than one silently standing in for
+ * the other.
+ */
+export const isThemePath = (v: string): boolean => v.endsWith('.json') || v.includes('/') || v.includes(sep);
+
+export function locateTheme(idOrPath: string, base = process.cwd()): string {
+  if (isThemePath(idOrPath)) {
+    const p = resolvePath(base, idOrPath);
+    const isDir = existsSync(p) && statSync(p).isDirectory();
+    return isDir ? join(p, 'theme.json') : p;
+  }
+  const places = [join(packageRoot(), 'themes'), ...externalThemeDirs()];
+  const found = places.map((d) => join(d, idOrPath, 'theme.json')).filter((f) => existsSync(f));
+  if (found.length > 1) throw new Error(`theme ${JSON.stringify(idOrPath)} is in more than one place (${found.join(', ')}); rename one, or name it by path`);
+  if (found.length === 0) throw new Error(`theme ${JSON.stringify(idOrPath)} not found (looked in ${places.join(', ')}; DOCUMENTOR_THEMES lists more folders)`);
+  return found[0]!;
+}
+
+export async function loadTheme(idOrPath: string, opts: { base?: string } = {}): Promise<Theme> {
+  const file = locateTheme(idOrPath, opts.base);
   let raw: string;
   try {
     raw = await readFile(file, 'utf8');
   } catch {
     throw new Error(`theme ${JSON.stringify(idOrPath)} not found (looked in ${file})`);
   }
-  return resolveTheme(JSON.parse(raw), { id: idOrPath });
+  // A theme.json is its folder's theme, and the folder's name is its id; any
+  // other .json is a theme of its own, named by its file.
+  const folderTheme = basename(file) === 'theme.json';
+  const id = folderTheme ? basename(dirname(file)) : basename(file, '.json');
+  const json = JSON.parse(raw) as Record<string, unknown>;
+  if (folderTheme && json['id'] !== undefined && json['id'] !== id) {
+    bad('id', `${JSON.stringify(json['id'])} is not the name of its folder, ${JSON.stringify(id)}`);
+  }
+  const theme = resolveTheme(json, { id, dir: dirname(file) });
+  if (theme.layout !== null && !(LAYOUT_IDS as readonly string[]).includes(theme.layout)) await loadLayoutModule(theme.layout);
+  return theme;
 }
 
 export type { Theme } from './types.js';

@@ -190,7 +190,7 @@ describe('a grouped bar\'s series fills', () => {
   // A bar is a graphic a reader must see: 3:1 against the sheet, and no two
   // series alike, in every theme with a palette that could fail it.
   // A brand as pale as rams' series steps, so the 3:1 rule has work to do.
-  it.each(['plain', 'tebin', 'haskoning', 'rams', 'rodchenko', 'lionfocus', 'pale brand'])('stand 3:1 and apart under %s', async (themeId) => {
+  it.each(['plain', 'tebin', 'haskoning', 'rams', 'rodchenko', 'dark-sheet', 'pale brand'])('stand 3:1 and apart under %s', async (themeId) => {
     const t = diagramTokens(themeId === 'pale brand' ? resolveTheme({ id: 'pale', colors: { brandOnLight: '#F3E2BA' } }) : await loadTheme(themeId));
     const fills = seriesFills(t, 4);
     const ratio = (a: string, b: string) => { const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number]; return (hi + 0.05) / (lo + 0.05); };
@@ -202,9 +202,9 @@ describe('a grouped bar\'s series fills', () => {
 describe('text in another script', () => {
   // Cyrillic is its own subset of a face, loaded on first use: measured
   // before it arrives, the first of two identical charts drew differently.
-  it('draws two identical fences identically under lionfocus', async () => {
+  it('draws two identical fences identically under dark-sheet', async () => {
     const fence = '```chart\nbar\nМеханіка трубопроводів шахти 1,200\nЕлектрика 800\n```';
-    const doc = await drawDiagrams(ingestMarkdown(`${fence}\n\n${fence}\n`).doc, await loadTheme('lionfocus'), browser, () => {});
+    const doc = await drawDiagrams(ingestMarkdown(`${fence}\n\n${fence}\n`).doc, await loadTheme('dark-sheet'), browser, () => {});
     const [a, b] = doc.blocks.flatMap((x) => (x.t === 'diagram' ? [x.svg.replace(/dg\d+/g, 'dg')] : []));
     expect(a).toBe(b);
   });
@@ -258,7 +258,7 @@ describe('layout the review found wrong (2026-10-17)', () => {
 // marks, axes, focus rows, negative dumbbells, decreases that reach the axis
 // — in a light theme and a dark one with another face. The layout must keep
 // every label whole, apart, and off the bars.
-describe.each(['plain', 'lionfocus'])('charts the parser accepts, under %s', (themeId) => {
+describe.each(['plain', 'dark-sheet'])('charts the parser accepts, under %s', (themeId) => {
   it('draw no clipped, colliding or covered label', async () => {
     let seed = themeId.length * 7919;
     const rnd = () => { seed = (seed * 1103515245 + 12345) % 2 ** 31; return seed / 2 ** 31; };

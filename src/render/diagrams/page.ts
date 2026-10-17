@@ -6,7 +6,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve, sep } from 'node:path';
 import type { Browser, Page } from 'playwright-core';
 import type { Theme } from '../../theme/types.js';
-import { FACES, themeFaceCss } from '../fonts.js';
+import { themeFaceCss } from '../fonts.js';
 import { blockNonDataRequests } from '../pdf.js';
 
 /** Pixels Word and the screenshot are taken at, per CSS pixel. Three keeps a
@@ -52,7 +52,7 @@ export async function openDiagramPage(browser: Browser, theme: Theme): Promise<P
     await page.goto(`${ORIGIN}/`);
     // Mermaid measures every label as it lays the diagram out, so the faces
     // must be decoded first or the boxes are sized for the fallback font.
-    const families = [...new Set([theme.font.embed, theme.font.heading.embed].map((id) => FACES[id].family))];
+    const families = [...new Set([theme.font.face, theme.font.heading.face].map((f) => f.family))];
     await page.evaluate(`Promise.all(${JSON.stringify(families)}.map((f) => document.fonts.load('16px "' + f + '"'))).then(() => document.fonts.ready)`);
     await page.evaluate(`(async () => {
       const m = (await import('${ORIGIN}/mermaid/mermaid.esm.min.mjs')).default;

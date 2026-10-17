@@ -17,7 +17,7 @@ export async function loadFaces(page: Page, family: string, px: number, text: st
 export async function measureWidths(page: Page, strings: { regular: string[]; bold: string[] }, family: string, px: number): Promise<Widths> {
   // A face's weights load on first use, and the page has only asked for the
   // regular one; measured before its semibold is in, a label is measured in
-  // a stand-in face and drawn wider (Inter in lionfocus, 2026-10-17).
+  // a stand-in face and drawn wider (Inter, on a dark sheet, 2026-10-17).
   // A face also comes in script subsets (unicode-range), each loaded only for
   // text that needs it: loading with the chart's own text brings Cyrillic in
   // as well as Latin (the review of 2e20fc5).

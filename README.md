@@ -498,13 +498,50 @@ needs; it is not a promise of a byte-for-byte match across operating systems.
 
 ## Themes
 
-The default theme, `plain`, carries no brand. A theme is one JSON file:
+The default theme, `plain`, carries no brand. A theme is a folder, built
+into this package under `themes/` or anywhere on disk (ADR 0011):
 
-```bash
-documentor build report.md --theme ./my-brand/theme.json
+```
+my-brand/
+  theme.json      colours, faces, sizes, marks; see themes/plain/theme.json
+  layout.mts      optional: a designed layout for the PDF
+  fonts/          optional: faces of its own, declared in theme.json
+  logo.svg        optional: the logo and corner mark, by path
+  SOURCE.md       optional: where the design came from, for whom, licences
 ```
 
-See `themes/plain/theme.json` for the shape.
+```bash
+documentor build report.md --theme ./my-brand              # by path
+DOCUMENTOR_THEMES=~/themes documentor build report.md --theme my-brand
+```
+
+An id is looked up in the package's `themes/` and then in each folder
+`DOCUMENTOR_THEMES` lists (separated like `PATH`); an id found in two places
+is refused, so one theme never stands in for another. A sidecar's relative
+theme path is relative to the sidecar. Every path inside a theme is
+relative to its folder and stays inside it.
+
+- **Faces of its own.** `"faces": { "acme": { "family": "Acme Sans",
+  "license": "OFL-1.1", "files": { "400": "fonts/acme-400.woff2" },
+  "cyrillic": "manrope" } }`, then `"embed": "acme"` in any font role.
+  `license` is required, because every PDF embeds the face. `cyrillic` is
+  `true` when the face has Cyrillic, or else the built-in face that stands
+  in for it. Files may be `.woff2`, `.woff`, `.ttf` or `.otf`. Word is given
+  the `document` name only, as with any face: install the face where the
+  Word file is opened.
+- **Marks by path.** `"logo": { "svg": "logo.svg", "png": "logo.png",
+  "heightPt": 12 }`, and the same for `cornerMark`. A file is held to the
+  rules inline markup is: an SVG paints by class only.
+- **A layout of its own.** `"layout": "./layout.mts"`. The module exports
+  `layoutApi = 1` and a default function that takes the layout kit and
+  returns the layout; `src/render/layouts/api.ts` is the contract, and
+  `templates/theme-example/` the smallest working one to copy. It runs
+  with your rights, like any script in the folder. `.mts` needs Node 22.18
+  or later; `.mjs` runs anywhere.
+
+A theme made for one job lives beside that job's documents, in its
+`.raw/themes/`, and is built into this package only when it should serve
+everyone.
 
 ### A theme modelled on a design you like
 
@@ -562,7 +599,7 @@ installed; anywhere else Word substitutes its own.
 
 A theme sets colours and faces on the ordinary page. A layout replaces the
 page itself with one drawn by hand from a single designer's or house's
-language. Seven themes come with one:
+language. Five themes come with one:
 
 ```bash
 documentor build approach.md --theme rams --to pdf
@@ -570,9 +607,9 @@ documentor build approach.md --theme rodchenko --to pdf
 documentor build approach.md --theme haskoning --to pdf
 documentor build approach.md --theme dreamscape --to pdf
 documentor build approach.md --theme blueprint --to pdf
-documentor build approach.md --theme lionfocus --to pdf
-documentor build approach.md --theme lionfocus-light --to pdf
 ```
+
+A theme outside the package may bring a layout of its own (see Themes).
 
 - **`rams`**, after Dieter Rams. The cover is a Braun front panel: a speaker
   grille, a tuning wheel, one coloured switch, and a tuning scale whose
@@ -609,17 +646,6 @@ documentor build approach.md --theme lionfocus-light --to pdf
   dimension ticks, numbered items sit in bubbles, a quote is a boxed note
   under a revision triangle, and gates stand on a dimension line. TEBIN red
   is the one accent; codes and labels are set in JetBrains Mono.
-- **`lionfocus`** and **`lionfocus-light`**, in the language of
-  lionfocus.ai, one layout on a near-black sheet (the site's default) and on
-  white. The cover is a radar scope drawn from the title on a magenta
-  graph-paper grid: rings, a tick ring, a fading sweep, and blips, the
-  brightest three in reticles. The title is set in JetBrains Mono in two
-  tones, split at its colon, with an index of the sections beside the scope.
-  Sections open on a number in corner brackets over a magenta rule.
-  Numbered steps are joined by a line, diagrams and code sit in cards with
-  corner brackets, and quotes and the close are a magenta gradient band
-  standing on diagonal hatching. Body in Inter. No logo, photograph or
-  illustration of the company is used.
 
 A layout places the document's own blocks and writes no text. A
 `meta.cover` document (`"cover": true` in the sidecar) gets the full cover.

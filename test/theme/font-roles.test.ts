@@ -15,7 +15,8 @@ const { doc } = ingestMarkdown(
 describe('font roles in a theme', () => {
   it('default to the body face at 700 with no label face', () => {
     const t = resolveTheme({ id: 'x' });
-    expect(t.font.heading).toEqual({ document: 'Arial', embed: 'arimo', weight: 700 });
+    expect(t.font.heading).toMatchObject({ document: 'Arial', embed: 'arimo', weight: 700 });
+    expect(t.font.heading.face.family).toBe('Arimo');
     expect(t.font.label).toBeNull();
   });
 

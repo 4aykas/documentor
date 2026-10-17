@@ -1,0 +1,29 @@
+{
+  "id": "dark-sheet",
+  "name": "Dark sheet (test)",
+  "$source": {
+    "by": "written by hand, 2026-10-17",
+    "note": "The suite's dark sheet: a near-black paper, a magenta brand that has its own shade for dark, Inter body and JetBrains Mono headings and labels. The colours, faces and sizes of the lionfocus theme the diagram tests ran under until it left the package (ADR 0011), so the results pinned under it hold; the ordinary page, no designed layout."
+  },
+  "colors": {
+    "brandOnLight": "#9F2B92",
+    "brandOnDark": "#F0A3E5",
+    "paper": "#0F0E0F",
+    "ink": "#F4EFF3",
+    "muted": "#A0979E",
+    "rule": "#3A3339",
+    "title": "#F4EFF3"
+  },
+  "font": {
+    "document": "Inter",
+    "embed": "inter",
+    "heading": { "document": "JetBrains Mono", "embed": "jetbrains-mono", "weight": 700 },
+    "label": { "document": "JetBrains Mono", "embed": "jetbrains-mono", "uppercase": true }
+  },
+  "logo": null,
+  "page": { "size": "A4", "marginPt": 48 },
+  "type": { "bodyPt": 9.4, "leading": 1.58, "titlePt": 40, "h1Pt": 17, "h2Pt": 12, "h3Pt": 9.4, "smallPt": 7.2 },
+  "letterhead": [],
+  "coverStatement": "tint",
+  "layout": null
+}

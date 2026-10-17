@@ -1,0 +1,23 @@
+{
+  "id": "theme-example",
+  "name": "Theme example",
+  "$source": {
+    "by": "written by hand, 2026-10-17",
+    "note": "The smallest theme folder that carries one of everything ADR 0011 allows: a face of its own in fonts/, a logo read from a file, and a layout module. Copy the folder, rename it, and change what you need. The suite tests this folder, so it stays working. See SOURCE.md for the face's licence."
+  },
+  "faces": {
+    "example-mono": {
+      "family": "Example Mono",
+      "license": "OFL-1.1",
+      "files": { "400": "fonts/example-mono-400.woff2" },
+      "cyrillic": "manrope"
+    }
+  },
+  "font": {
+    "document": "Arial",
+    "embed": "arimo",
+    "label": { "document": "Courier New", "embed": "example-mono", "uppercase": true }
+  },
+  "logo": { "svg": "logo.svg", "heightPt": 12 },
+  "layout": "./layout.mts"
+}
