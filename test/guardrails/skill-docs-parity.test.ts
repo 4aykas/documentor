@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { READABLE_EXTS, parseArgs } from '../../src/cli/build.js';
 import { parseInspectArgs } from '../../src/cli/inspect.js';
 import { parseThemeArgs } from '../../src/cli/theme.js';
 import { SIDECAR_KEYS } from '../../src/cli/sidecar.js';
+import { expectExit, runCli } from '../helpers/cli.js';
 
 // Guardrail for the Claude Code skill, in the spirit of
 // test/guardrails/docs-parity.test.ts (see that file's own module comment on
@@ -189,16 +189,8 @@ describe('SKILL.md tells the assistant to read fields inspect --json actually em
     const named = new Set([...SKILL.matchAll(/documents\[\]\.(\w+)/g)].map((m) => m[1]!));
     expect(named.size, 'expected the skill to name at least one documents[].<field>').toBeGreaterThan(0);
 
-    const bin = join(ROOT, 'src', 'bin', 'documentor.ts');
-    const fixture = join(ROOT, 'test', 'fixtures', 'kitchen-sink.md');
-    const quotedBin = process.platform === 'win32' ? `"${bin}"` : bin;
-    const quotedFixture = process.platform === 'win32' ? `"${fixture}"` : fixture;
-    const r = spawnSync(
-      'npx',
-      ['tsx', quotedBin, 'inspect', quotedFixture, '--json'],
-      { encoding: 'utf8', shell: process.platform === 'win32' },
-    );
-    expect(r.status, `inspect --json exited ${r.status}, stderr: ${r.stderr}`).toBe(0);
+    const r = runCli(['inspect', join(ROOT, 'test', 'fixtures', 'kitchen-sink.md'), '--json']);
+    expectExit(r, 0);
     const parsed = JSON.parse(r.stdout) as { documents: { status: string; [k: string]: unknown }[] };
     const ok = parsed.documents.find((d) => d.status === 'ok');
     expect(ok, 'expected an "ok" document in the fixture inspection').toBeDefined();

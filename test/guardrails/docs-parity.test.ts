@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FORMATS, READABLE_EXTS, parseArgs } from '../../src/cli/build.js';
@@ -12,6 +11,7 @@ import { parseThemeArgs } from '../../src/cli/theme.js';
 import { ENGINE_LANG, REGISTRY } from '../../src/render/diagrams/registry.js';
 import { CHART_KINDS, ROW_WORDS, SETTINGS } from '../../src/render/diagrams/chart/parse.js';
 import { AXO_ELEMENTS, AXO_KINDS, AXO_OPTIONS, AXO_SETTINGS } from '../../src/render/diagrams/axonometric/parse.js';
+import { expectExit, runCli } from '../helpers/cli.js';
 
 // Guardrail for a defect this project has shipped three times in one week:
 // documentation that outlived the code it described (README claiming .docx
@@ -254,13 +254,8 @@ describe('CLI flags named in the docs are flags the parser actually accepts', ()
     // because src/bin/documentor.ts calls process.exit() at module scope —
     // importing it would kill the test process. test/cli/exit-codes.test.ts
     // uses the same tsx-subprocess approach for the same reason.
-    const bin = join(ROOT, 'src', 'bin', 'documentor.ts');
-    const quotedBin = process.platform === 'win32' ? `"${bin}"` : bin;
-    const r = spawnSync('npx', ['tsx', quotedBin, '--help'], {
-      encoding: 'utf8',
-      shell: process.platform === 'win32',
-    });
-    expect(r.status, `--help exited ${r.status}, stderr: ${r.stderr}`).toBe(0);
+    const r = runCli(['--help']);
+    expectExit(r, 0);
     assertFlagsKnown('--help usage text', extractFlags(r.stdout));
   });
 });
