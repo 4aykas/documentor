@@ -71,3 +71,15 @@ describe.each(['plain', 'tebin', 'haskoning'])('the diagram gallery under %s', (
     }
   });
 });
+
+describe('the diagram gallery, drawn twice', () => {
+  // rough.js places the control points of a cylinder's or a stadium's
+  // straight edges with Math.random, so without the seeded generator in
+  // renderOne every build of such a diagram had different bytes. Two pages,
+  // as two builds would have.
+  it('comes out byte-identical', async () => {
+    const theme = await loadTheme('plain');
+    const once = async () => diagrams(await drawDiagrams(ingestMarkdown(GALLERY).doc, theme, browser, () => {})).map((d) => d.svg);
+    expect(await once()).toEqual(await once());
+  });
+});
