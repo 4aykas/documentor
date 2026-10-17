@@ -11,8 +11,10 @@ export type Box = { x: number; y: number; w: number; h: number };
 export type Measured = {
   w: number;
   h: number;
-  /** Every text with area: Mermaid writes some empty, zero-size ones. */
-  texts: (Box & { s: string })[];
+  /** Every text with area: Mermaid writes some empty, zero-size ones.
+   *  `owner` numbers the label group the text belongs to (-1: none), so the
+   *  lines of one label never count as two labels overlapping. */
+  texts: (Box & { s: string; owner?: number })[];
   /** Node boxes (`g.node`). */
   nodes: Box[];
   /** Edge-label boxes (`g.edgeLabel`) that hold something. */
@@ -49,9 +51,14 @@ export function clip(m: Measured): Finding[] {
 
 export function collide(m: Measured): Finding[] {
   const pairs: string[] = [];
-  m.texts.forEach((a, i) => m.texts.slice(i + 1).forEach((b) => { if (meets(a, b)) pairs.push(`${quote(a.s)} and ${quote(b.s)}`); }));
-  return pairs.length === 0 ? [] : [{ code: 'D-COLLIDE',
-    message: `${some(pairs, 2)} overlap; moving them apart or shortening one would make both readable` }];
+  const same = (a: { owner?: number }, b: { owner?: number }) => a.owner !== undefined && a.owner >= 0 && a.owner === b.owner;
+  m.texts.forEach((a, i) => m.texts.slice(i + 1).forEach((b) => {
+    if (!same(a, b) && meets(a, b)) pairs.push(`${quote(a.s)} with ${quote(b.s)}`);
+  }));
+  if (pairs.length === 0) return [];
+  const named = pairs.length <= 2 ? pairs.join(', ') : `${pairs.slice(0, 2).join(', ')} and ${pairs.length - 2} more pairs`;
+  return [{ code: 'D-COLLIDE',
+    message: `labels overlap: ${named}; shorter labels, or fewer and larger items (merged small slices, grouped months), would make them readable` }];
 }
 
 export function cover(m: Measured): Finding[] {
@@ -98,8 +105,15 @@ export function measureScript(counts: Record<string, string>): string {
     const box = (el) => { const r = el.getBoundingClientRect(); return { x: r.x - r0.x, y: r.y - r0.y, w: r.width, h: r.height }; };
     const shown = (el) => { const s = getComputedStyle(el); return s.display !== 'none' && s.visibility !== 'hidden'; };
     const filled = (b) => b.w > 0.5 && b.h > 0.5;
+    const owners = new Map();
+    const ownerOf = (t) => {
+      const g = t.closest('g.label, g.edgeLabel, g.node, g.cluster');
+      if (!g) return -1;
+      if (!owners.has(g)) owners.set(g, owners.size);
+      return owners.get(g);
+    };
     const texts = [...svg.querySelectorAll('text')].filter((t) => t.textContent.trim() && shown(t))
-      .map((t) => ({ ...box(t), s: t.textContent.trim().replace(/\\s+/g, ' ') })).filter(filled);
+      .map((t) => ({ ...box(t), s: t.textContent.trim().replace(/\\s+/g, ' '), owner: ownerOf(t) })).filter(filled);
     const nodes = [...svg.querySelectorAll('g.node')].filter(shown).map(box).filter(filled);
     const edgeLabels = [...svg.querySelectorAll('g.edgeLabel')].filter((g) => g.textContent.trim() && shown(g))
       .map((g) => ({ ...box(g), s: g.textContent.trim().replace(/\\s+/g, ' ') })).filter(filled);

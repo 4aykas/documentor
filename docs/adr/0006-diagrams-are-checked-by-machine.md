@@ -47,3 +47,15 @@ adversarial fixtures.
   diagram, or the selector test fails.
 - Budget limits start from diagram-design's and are tuned after real
   documents; changing one is a registry edit, not an amendment here.
+
+## Amendments
+
+**2026-10-17 (review of 5bcf342).** A selector must count exactly what its
+key names, and a test now pins exact counts, not only "more than zero": a
+class diagram's notes are `g.node` too (classes now match `[id*="-classId-"]`),
+and a fork or choice is an unlabelled `statediagram-state` (states now need a
+label). Two lines of one label share an owner and are never a `D-COLLIDE`
+pair. `D-SMALL`'s tall advice offers a left-to-right direction only to a
+top-down source, and the limit is compared with a tolerance, since the width
+cap lands exactly on it. The focus rule paints a node's outline only, not
+the rows of an entity or the members of a class.

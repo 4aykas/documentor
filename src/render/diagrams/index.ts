@@ -87,7 +87,7 @@ export async function drawDiagrams(doc: Doc, theme: Theme, browser: Browser, onW
         triedDown = true;
         const down = await renderOne(page, cfg, `dg${i}`, drawable(across), recolor);
         if (!('error' in down) && fitOf(down) > fitOf(result) * 1.15) {
-          onWarn(`diagram ${i + 1} (${b.lang}) is drawn top-down: left to right it would print its labels at about `
+          onWarn(`diagram ${i + 1} (${typeByHead(kind)?.id ?? (kind || b.lang)}) is drawn top-down: left to right it would print its labels at about `
             + `${(theme.type.bodyPt * fitOf(result)).toFixed(1)}pt, top-down at ${(theme.type.bodyPt * fitOf(down)).toFixed(1)}pt`);
           result = down;
         } else {

@@ -36,6 +36,12 @@ describe('the rules, on synthetic boxes', () => {
     expect(collide({ ...base, texts: [a, { ...a, x: 59.5, s: 'b' }] })).toEqual([]);
   });
 
+  it('D-COLLIDE: two lines of one label are one label', () => {
+    const a = { x: 10, y: 10, w: 50, h: 12, s: 'first line', owner: 3 };
+    expect(collide({ ...base, texts: [a, { ...a, y: 18, s: 'second line' }] })).toEqual([]);
+    expect(collide({ ...base, texts: [a, { ...a, y: 18, s: 'other label', owner: 4 }] })).toHaveLength(1);
+  });
+
   it('D-COVER: an edge label on a node, not one beside it', () => {
     const node = { x: 0, y: 0, w: 80, h: 40 };
     expect(cover({ ...base, nodes: [node], edgeLabels: [{ x: 70, y: 10, w: 30, h: 14, s: 'yes' }] })).toHaveLength(1);
@@ -76,7 +82,75 @@ describe('the fault fixtures', () => {
   });
 });
 
+describe('D-SMALL advice', () => {
+  // The tall branch must not tell a flow written left to right (and turned
+  // top-down by documentor) to go left to right.
+  it('offers a left-to-right direction only to a top-down flow', async () => {
+    const steps = (dir: string) => `\`\`\`mermaid\nflowchart ${dir}\n${Array.from({ length: 14 }, (_, i) =>
+      `  S${i}[Step ${i}: a step whose label runs to a whole sentence of words] --> S${i + 1}[Step ${i + 1}: a step whose label runs to a whole sentence of words]`).join('\n')}\n\`\`\`\n`;
+    const small = async (md: string) => {
+      const warn: string[] = [];
+      await drawDiagrams(ingestMarkdown(md).doc, await loadTheme('plain'), browser, (m) => warn.push(m));
+      return warn.find((w) => / D-SMALL:/.test(w)) ?? '';
+    };
+    expect(await small(steps('TD'))).toMatch(/too tall.*left-to-right direction/);
+    const lr = await small(steps('LR'));
+    expect(lr).toMatch(/D-SMALL/);
+    expect(lr).not.toMatch(/left-to-right direction/);
+  });
+});
+
+describe('budget selectors count what their key names', () => {
+  it('counts classes without notes, and named states without forks and choices', async () => {
+    const md = [
+      '```mermaid\nclassDiagram\n  class Project\n  class Task\n  Project --> Task\n  note for Task "a note"\n  note "free note"\n```',
+      '```mermaid\nstateDiagram-v2\n  [*] --> Draft\n  state fork1 <<fork>>\n  state ch <<choice>>\n  Draft --> fork1\n  fork1 --> Review\n  fork1 --> Check\n  Review --> ch\n  ch --> Done\n```',
+    ].join('\n\n') + '\n';
+    const doc = await drawDiagrams(ingestMarkdown(md).doc, await loadTheme('plain'), browser, () => {});
+    const page = await browser.newPage();
+    try {
+      await page.setContent('<div id="host"></div>');
+      const got: Record<string, number> = {};
+      for (const b of doc.blocks) {
+        if (b.t !== 'diagram') continue;
+        const t = REGISTRY.find((d) => d.id === b.kind)!;
+        await page.evaluate(`document.getElementById('host').innerHTML = ${JSON.stringify(b.svg)}`);
+        const m = await page.evaluate(measureScript(Object.fromEntries(Object.entries(t.budget).map(([k, v]) => [k, v.count])))) as Measured;
+        Object.assign(got, m.counts);
+      }
+      expect(got).toEqual({ classes: 2, states: 4 });
+    } finally {
+      await page.close();
+    }
+  });
+});
+
 describe(':::focus', () => {
+  it('outlines every marked shape in the brand, and not the rows inside an entity', async () => {
+    const theme = await loadTheme('tebin');
+    const md = [
+      '```mermaid\nflowchart TD\n  A[Box]:::focus --> B{Decide}:::focus\n  B --> C[(Store)]:::focus\n  C --> D([Stadium]):::focus\n  D --> E((Circle)):::focus\n  E --> F[Plain]\n```',
+      '```mermaid\nerDiagram\n  PROJECT ||--o{ TASK : has\n  PROJECT:::focus {\n    string code\n    date start\n  }\n```',
+    ].join('\n\n') + '\n';
+    const doc = await drawDiagrams(ingestMarkdown(md).doc, theme, browser, () => {});
+    const n = parseInt(diagramTokens(theme).brand.slice(1), 16);
+    const brand = `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+    const page = await browser.newPage();
+    try {
+      await page.setContent(`<div id="host">${doc.blocks.map((b) => (b.t === 'diagram' ? b.svg : '')).join('')}</div>`);
+      const painted = await page.evaluate(`[...document.querySelectorAll('#host g.node')].map((g) => ({
+        focus: g.classList.contains('focus'),
+        outline: [...g.querySelectorAll('rect, polygon, circle, ellipse, path')].some((s) => getComputedStyle(s).stroke === ${JSON.stringify(brand)}),
+        rows: [...g.querySelectorAll('[class*="row-rect"] *, [class*="row-rect"]')].filter((s) => getComputedStyle(s).stroke === ${JSON.stringify(brand)}).length,
+      }))`) as { focus: boolean; outline: boolean; rows: number }[];
+      expect(painted.filter((p) => p.focus).map((p) => p.outline)).toEqual([true, true, true, true, true, true]);
+      expect(painted.filter((p) => !p.focus).map((p) => p.outline)).not.toContain(true);
+      expect(painted.reduce((s, p) => s + p.rows, 0)).toBe(0);
+    } finally {
+      await page.close();
+    }
+  });
+
   it('outlines the marked node in the brand, and only that one', async () => {
     const theme = await loadTheme('tebin');
     const doc = await drawDiagrams(ingestMarkdown('```mermaid\nflowchart TD\n  A[One]:::focus --> B[Two]\n```\n').doc, theme, browser, () => {});

@@ -29,7 +29,7 @@ rect.actor { stroke-width: 1px; rx: 4px; ry: 4px; }
 .note { stroke-width: 1px; rx: 2px; ry: 2px; }
 .labelBox { stroke-width: 1px; }
 .messageLine0, .messageLine1 { stroke-width: 1px; }
-.node.focus rect, .node.focus polygon, .node.focus circle, .node.focus ellipse, .node.focus path { stroke: ${t.brand}; stroke-width: 1.5px; fill: ${t.tint(0.1)}; }
+.node.focus > :is(rect, polygon, circle, ellipse, path), .node.focus > :is(g.basic, g.outer-path) path { stroke: ${t.brand}; stroke-width: 1.5px; fill: ${t.tint(0.1)}; }
 `;
   // A type that draws with hard-coded colours rather than theme variables
   // carries its own rules in its registry record.

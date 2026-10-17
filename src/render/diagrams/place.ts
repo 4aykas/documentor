@@ -39,14 +39,19 @@ export function place(doc: Doc, drawn: Drawn[], theme: Theme, colPt: number, max
     // on the page.
     const scale = wPt / (d.wPx * 0.75);
     const type = typeByHead(kindOf(b.text));
-    if (scale < 0.75) {
+    // The cap can set the scale to exactly 0.75, which floating point puts a
+    // hair below; that is the limit, not past it.
+    if (scale < 0.75 - 1e-9) {
       // The advice follows what binds. Too wide: top-down helps only a flow
       // not already tried that way, otherwise fewer boxes side by side. Too
       // tall (the three-gates chain, 2026-10-17): a chain that long reads
-      // better split, or across the page where its type can turn.
+      // better split, or across the page — but only a top-down flowchart or
+      // state diagram can still turn; one written left to right is tall
+      // because it was already turned.
       const tall = maxHPt / (d.hPx * 0.75) < colPt / (d.wPx * 0.75);
+      const canTurn = (type?.id === 'flowchart' || type?.id === 'state') && leftToRight(b.text) === null;
       const advice = tall
-        ? (type?.id === 'flowchart' || type?.id === 'state'
+        ? (canTurn
           ? 'it is too tall for the page: splitting the chain in two or a left-to-right direction would keep them readable'
           : 'it is too tall for the page: splitting it in two would keep them readable')
         : leftToRight(b.text) !== null && !d.triedDown

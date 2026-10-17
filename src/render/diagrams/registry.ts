@@ -54,9 +54,12 @@ export const REGISTRY: readonly DiagramType[] = [
   { id: 'sequence', engine: 'mermaid', heads: ['sequenceDiagram'], label: 'Sequence',
     budget: { lifelines: { max: 5, count: 'line.actor-line' } }, focusMax: 2 },
   { id: 'class', engine: 'mermaid', heads: ['classDiagram', 'classDiagram-v2'], label: 'Class',
-    budget: { classes: { max: 7, count: 'g.node' } }, focusMax: 2 },
+    // Notes are g.node too; a class's id carries "classId".
+    budget: { classes: { max: 7, count: 'g.node[id*="-classId-"]' } }, focusMax: 2 },
   { id: 'state', engine: 'mermaid', heads: ['stateDiagram-v2', 'stateDiagram'], label: 'State',
-    budget: { states: { max: 9, count: 'g.node.statediagram-state' } }, focusMax: 2 },
+    // A fork or a choice is a statediagram-state with no label; a named
+    // state is the one with one.
+    budget: { states: { max: 9, count: 'g.node.statediagram-state:has(> g.label)' } }, focusMax: 2 },
   { id: 'er', engine: 'mermaid', heads: ['erDiagram'], label: 'Entity relationship',
     budget: { entities: { max: 8, count: 'g.node' } }, focusMax: 2 },
   { id: 'mindmap', engine: 'mermaid', heads: ['mindmap'], label: 'Mind map',
