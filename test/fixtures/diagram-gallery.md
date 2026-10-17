@@ -159,7 +159,6 @@ journey
     Proposal: 3: Sales
   section Start
     Kick-off: 4: Client, PM
-    First invoice: 2: Client
 ```
 
 ## Sankey
