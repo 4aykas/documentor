@@ -5,7 +5,9 @@
 - **Judge a diagram change** with `npm run diagrams:proof [-- themes…]`: the
   gallery (`test/fixtures/diagram-gallery.md`, one section per type in
   `src/render/diagrams/registry.ts`) drawn per theme, a table of each
-  diagram's printed label size, and one proof sheet each.
+  diagram's printed label size, and one proof sheet each. A change that must
+  not alter any drawing: `npm run diagrams:hash -- --out before.json` first,
+  `-- --compare before.json` after.
 - **Decisions** are ADRs in `docs/adr/`; read the one a change touches.
 - **Checks:** `npm run typecheck` and `npm test`. Pixel baselines are a
   separate, machine-bound instrument: `npm run test:pixels` (see its header).

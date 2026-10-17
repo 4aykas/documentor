@@ -237,6 +237,25 @@ describe('runBuild', () => {
     expect(Buffer.compare(first, second)).toBe(0);
   });
 
+  // The README promises byte-identical output for the same input, and the
+  // test above holds it only for a paragraph. Diagrams broke that promise
+  // unseen (rough.js placed control points with Math.random, dc76c62), so the
+  // whole gallery — every type, every shape — is built twice, as two builds
+  // with their own browser, to PDF and to Word.
+  it('produces identical bytes on two runs of a document with every diagram type', async () => {
+    const gallery = await readFile(new URL('../fixtures/diagram-gallery.md', import.meta.url), 'utf8');
+    const file = await fixture(gallery);
+    const { io } = collect();
+    const build = async () => {
+      expect(await runBuild([file, '--to', 'pdf,docx'], io)).toBe(0);
+      return Promise.all(['pdf', 'docx'].map((f) => readFile(join(file, '..', `report.plain.${f}`))));
+    };
+    const [pdf1, docx1] = await build();
+    const [pdf2, docx2] = await build();
+    expect(Buffer.compare(pdf1!, pdf2!), 'pdf').toBe(0);
+    expect(Buffer.compare(docx1!, docx2!), 'docx').toBe(0);
+  }, 240_000);
+
   it('carries --date and --entity all the way into the rendered document', async () => {
     // How meta.entity/meta.date print under the letterhead is already covered
     // by test/render/html.test.ts and test/render/docx.test.ts — this only

@@ -23,6 +23,15 @@ comes back to that.
   caption that the source does not contain is invented content, even when it
   looks like decoration.
 
+## Tests that guard
+
+- **A guard test is shown red once.** A test added for a defect or a branch
+  fails when that defect is put back or that branch is cut, and the commit
+  message says how that was checked. A fixture the code refuses before it
+  reaches the branch proves nothing: two such tests passed review in the
+  diagram registry work (an unrecorded type Mermaid refused anyway; a
+  determinism test whose shapes used no randomness).
+
 ## Recorded decisions
 
 - **A change that moves a recorded decision amends or supersedes its ADR in
