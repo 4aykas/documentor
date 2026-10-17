@@ -52,7 +52,9 @@ In Claude Code, ask "how do I start?" and it walks you through the same.
    `npm run documentor -- proof <pdf>` for a document,
    `npm run diagrams:proof` for the diagram gallery, and
    `npm run diagrams:hash -- --out before.json` then `-- --compare
-   before.json` for a change that must not alter any drawing.
+   before.json` for a change that must not alter any drawing, and
+   `npm run pixels:diff -- before.pdf after.pdf --strip review.png` for one
+   that must not alter a document.
 4. **Run the three checks**, then commit. CI runs them on Linux, macOS and
    Windows (`.github/workflows/ci.yml`; `gh workflow run ci.yml --ref
    <branch>` runs it on any branch).

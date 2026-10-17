@@ -17,6 +17,9 @@
 - **Decisions** are ADRs in `docs/adr/`; read the one a change touches.
 - **Checks:** `npm run typecheck` (src, test and scripts), `npm run lint`
   and `npm test`. Pixel baselines are a
-  separate, machine-bound instrument: `npm run test:pixels` (see its header).
+  separate, machine-bound instrument: `npm run test:pixels`, then
+  `pixels:diff` to look and `pixels:approve` to accept (see its header).
+- **Compare two renderings** (PDFs, PNGs, folders of PNGs) with
+  `npm run pixels:diff -- <a> <b> [--strip <png>]`.
 - **Review rules** live in `CODING_STANDARDS.md`; designed layouts and themes
   are described in README "Designed layouts".

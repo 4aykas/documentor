@@ -1,0 +1,20 @@
+{
+  "platform": "win32",
+  "arch": "x64",
+  "chromium": "151.0.7922.34",
+  "approved": "2026-10-17",
+  "images": [
+    "marine-cover-01.png",
+    "marine-page-01.png",
+    "page-01.png",
+    "page-02.png",
+    "page-03.png",
+    "page-04.png",
+    "plain-cover-01.png",
+    "plain-heatmap-01.png",
+    "rams-cover-01.png",
+    "rams-page-01.png",
+    "tebin-cover-01.png",
+    "tebin-page-01.png"
+  ]
+}

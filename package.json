@@ -32,6 +32,8 @@
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
     "test": "vitest run --exclude test/baseline/local-only-pixels.test.ts",
     "test:pixels": "vitest run test/baseline/local-only-pixels.test.ts",
+    "pixels:diff": "tsx scripts/pixels-diff.mts",
+    "pixels:approve": "tsx scripts/pixels-approve.mts",
     "test:watch": "vitest --exclude test/baseline/local-only-pixels.test.ts",
     "typecheck": "tsc -p tsconfig.check.json",
     "lint": "eslint .",

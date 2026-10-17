@@ -1,6 +1,6 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser } from 'playwright-core';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +10,7 @@ import { renderPdf } from '../../src/render/pdf.js';
 import { loadTheme } from '../../src/theme/resolve.js';
 import { rasterPages } from '../helpers/raster.js';
 import { resetPdfjsWorkerGlobal } from '../helpers/pdfjs-worker.js';
+import { readApproval, stampMismatch, stampOf } from '../helpers/pixel-stamp.js';
 
 // Everything in this file is a byte comparison of a rasterised PNG against a
 // committed baseline, and none of it runs in CI. A PNG produced from the
@@ -25,7 +26,10 @@ import { resetPdfjsWorkerGlobal } from '../helpers/pdfjs-worker.js';
 //
 // So these images are a local, human-approved instrument: run them here
 // (`npm run test:pixels`; `npm test` leaves them out, as CI does), look at
-// the result yourself, and commit the baseline once you agree it's right.
+// the result yourself (`npm run pixels:diff`), and approve with `npm run
+// pixels:approve` once you agree it's right; that records the platform and
+// Chromium build in __baseline__/approved.json, and a run on another one
+// fails once, saying so, instead of on every image.
 // They pass only on the machine and Chromium build that approved them, so a
 // red run anywhere else says nothing about the code until you have looked. They are deliberately kept in their own file, separate from
 // kitchen-sink.test.ts and tebin.test.ts, so that the checks in those two
@@ -38,13 +42,31 @@ const BASELINE = join(HERE, '__baseline__');
 const ACTUAL = join(HERE, '__actual__');
 const EPOCH = 1_000_000_000;
 
-let browser: Browser;
-let source: string;
-beforeAll(async () => {
-  browser = await chromium.launch();
-  source = await readFile(join(HERE, '..', 'fixtures', 'kitchen-sink.md'), 'utf8');
-});
+// Launched at collection, not in a hook: whether the images can be compared
+// at all depends on this Chromium's version, and that decides what runs.
+const browser: Browser = await chromium.launch();
+const source = await readFile(join(HERE, '..', 'fixtures', 'kitchen-sink.md'), 'utf8');
 afterAll(async () => { await browser.close(); });
+// Emptied first, so what is there to review is this run's and nothing older.
+await rm(ACTUAL, { recursive: true, force: true });
+await mkdir(ACTUAL, { recursive: true });
+const MISMATCH = stampMismatch(stampOf(browser), await readApproval(join(BASELINE, 'approved.json')));
+
+describe('the pixel baselines', () => {
+  it('were approved on this platform and Chromium build', () => {
+    expect(MISMATCH, MISMATCH ?? '').toBeNull();
+  });
+});
+
+/** Writes `png` for review and, where the baselines were approved, holds it
+ *  to its baseline. Elsewhere the one test above has already said why not. */
+async function matches(name: string, png: Buffer): Promise<void> {
+  await writeFile(join(ACTUAL, name), png);
+  if (MISMATCH !== null) return;
+  const golden = join(BASELINE, name);
+  expect(existsSync(golden), `no baseline for ${name} — review test/baseline/__actual__/${name}, then npm run pixels:approve`).toBe(true);
+  expect(png.equals(await readFile(golden)), `${name} differs from its baseline; npm run pixels:diff -- test/baseline/__baseline__ test/baseline/__actual__ --strip <png>`).toBe(true);
+}
 
 describe('kitchen sink baseline (local pixels only)', () => {
   it('every page matches its committed image', async () => {
@@ -57,15 +79,9 @@ describe('kitchen sink baseline (local pixels only)', () => {
     // one loop, and the first mismatch threw — so the later pages were never
     // written at all, and re-approving a change meant running the test once
     // per page. What you review has to be the whole document.
-    await mkdir(ACTUAL, { recursive: true });
     const names = pages.map((_, i) => `page-${String(i + 1).padStart(2, '0')}.png`);
     for (const [i, png] of pages.entries()) await writeFile(join(ACTUAL, names[i]!), png);
-    for (const [i, png] of pages.entries()) {
-      const name = names[i]!;
-      const golden = join(BASELINE, name);
-      expect(existsSync(golden), `no baseline for ${name} — review test/baseline/__actual__/${name} and copy it into __baseline__ if it is correct`).toBe(true);
-      expect(png.equals(await readFile(golden)), `${name} differs from its baseline; compare it with test/baseline/__actual__/${name}`).toBe(true);
-    }
+    for (const [i, png] of pages.entries()) await matches(names[i]!, png);
   });
 });
 
@@ -107,11 +123,7 @@ async function expectPageOneMatches(doc: Doc, themeId: string, name: string): Pr
   const theme = await loadTheme(themeId);
   resetPdfjsWorkerGlobal();
   const pages = await rasterPages(await renderPdf(doc, theme, { epochSeconds: EPOCH, browser }));
-  await mkdir(ACTUAL, { recursive: true });
-  await writeFile(join(ACTUAL, name), pages[0]!);
-  const golden = join(BASELINE, name);
-  expect(existsSync(golden), `no baseline yet — review test/baseline/__actual__/${name} and copy it into __baseline__ if it is correct`).toBe(true);
-  expect(pages[0]!.equals(await readFile(golden)), `${name} differs from its baseline; compare it with test/baseline/__actual__/${name}`).toBe(true);
+  await matches(name, pages[0]!);
 }
 
 describe('a TEBIN cover page (local pixels only)', () => {
@@ -178,14 +190,6 @@ for (const layout of ['rams', 'marine']) {
 
 describe('the TEBIN theme (local pixels only)', () => {
   it('page one matches its committed image', async () => {
-    const theme = await loadTheme('tebin');
-    const { doc } = ingestMarkdown(source);
-    resetPdfjsWorkerGlobal();
-    const pages = await rasterPages(await renderPdf(doc, theme, { epochSeconds: EPOCH, browser }));
-    await mkdir(ACTUAL, { recursive: true });
-    await writeFile(join(ACTUAL, 'tebin-page-01.png'), pages[0]!);
-    const golden = join(BASELINE, 'tebin-page-01.png');
-    expect(existsSync(golden), 'no baseline yet — review test/baseline/__actual__/tebin-page-01.png and copy it into __baseline__ if it is correct').toBe(true);
-    expect(pages[0]!.equals(await readFile(golden))).toBe(true);
+    await expectPageOneMatches(ingestMarkdown(source).doc, 'tebin', 'tebin-page-01.png');
   });
 });
