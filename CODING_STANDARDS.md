@@ -23,6 +23,15 @@ comes back to that.
   caption that the source does not contain is invented content, even when it
   looks like decoration.
 
+## Recorded decisions
+
+- **A change that moves a recorded decision amends or supersedes its ADR in
+  the same change.** `docs/adr/` says why the code is as it is; a change that
+  quietly contradicts an ADR leaves the next reader trusting the wrong one.
+- **A new diagram type earns its record.** It is a figure a real document
+  needed and no existing type draws, and its ADR names that document. The
+  tests make a record complete; they cannot say whether it should exist.
+
 ## Designs modelled on someone else
 
 - **Their language, not their artwork.** A theme or layout after a company or

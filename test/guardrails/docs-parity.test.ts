@@ -8,6 +8,7 @@ import { parseInspectArgs } from '../../src/cli/inspect.js';
 import { parseSetupArgs } from '../../src/cli/setup.js';
 import { parseProofArgs } from '../../src/cli/proof.js';
 import { parseThemeArgs } from '../../src/cli/theme.js';
+import { REGISTRY } from '../../src/render/diagrams/registry.js';
 
 // Guardrail for a defect this project has shipped three times in one week:
 // documentation that outlived the code it described (README claiming .docx
@@ -258,5 +259,35 @@ describe('CLI flags named in the docs are flags the parser actually accepts', ()
     });
     expect(r.status, `--help exited ${r.status}, stderr: ${r.stderr}`).toBe(0);
     assertFlagsKnown('--help usage text', extractFlags(r.stdout));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 3. The README's diagram table vs. REGISTRY.
+//
+// What this depends on: the table whose header row is "| Type | Mermaid
+// header |", read until the first line that is not a table row. Each row's
+// first cell is a record's label; its second cell names the record's
+// canonical (first) header word in backticks. Both directions are checked,
+// so a type added to the registry without a README row fails as surely as a
+// row naming a type that no longer exists.
+// ---------------------------------------------------------------------------
+
+function diagramTable(md: string): { label: string; head: string }[] {
+  const lines = md.split('\n');
+  const at = lines.findIndex((l) => /^\|\s*Type\s*\|\s*Mermaid header\s*\|\s*$/.test(l));
+  if (at === -1) throw new Error('could not find the README diagram table (header row "| Type | Mermaid header |")');
+  const rows: { label: string; head: string }[] = [];
+  for (const l of lines.slice(at + 2)) {
+    if (!l.startsWith('|')) break;
+    const [label, head] = l.split('|').slice(1, 3).map((c) => c.trim());
+    rows.push({ label: label!, head: head!.replace(/`/g, '') });
+  }
+  return rows;
+}
+
+describe('README diagram table agrees with the registry', () => {
+  it('has one row per registered type, in registry order, naming its canonical header', () => {
+    expect(diagramTable(README)).toEqual(REGISTRY.map((d) => ({ label: d.label, head: d.heads[0] })));
   });
 });

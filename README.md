@@ -232,10 +232,30 @@ deliberate rather than unfinished:
 
 ## Diagrams
 
-A ```` ```mermaid ```` fence in a Markdown source is drawn, not printed as code:
-flowcharts, sequence, class, state and ER diagrams, mind maps, timelines,
-Gantt charts, pies, quadrant and XY charts, Sankey, journeys, git graphs —
-whatever [Mermaid](https://mermaid.js.org) draws.
+A ```` ```mermaid ```` fence in a Markdown source is drawn, not printed as code,
+by [Mermaid](https://mermaid.js.org). These types are drawn in the theme's own
+colours and proofed in every theme; another type Mermaid knows is drawn with
+the shared settings only.
+
+| Type | Mermaid header |
+|:--|:--|
+| Flowchart | `flowchart` |
+| Sequence | `sequenceDiagram` |
+| Class | `classDiagram` |
+| State | `stateDiagram-v2` |
+| Entity relationship | `erDiagram` |
+| Mind map | `mindmap` |
+| Timeline | `timeline` |
+| Gantt | `gantt` |
+| Pie | `pie` |
+| Quadrant | `quadrantChart` |
+| XY chart | `xychart-beta` |
+| Journey | `journey` |
+| Sankey | `sankey-beta` |
+| Git graph | `gitGraph` |
+| Block | `block-beta` |
+
+Why they look the way they do is recorded in [`docs/adr/`](docs/adr/README.md).
 
 ````markdown
 ```mermaid
