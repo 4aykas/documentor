@@ -147,7 +147,9 @@ Read the JSON. The fields that matter:
   something already supplied them, because neither has a source inside a
   document at all.
 - `documents[].counts` — what survived into the document: headings,
-  paragraphs, lists, tables, images, code blocks, quotes, rules, page breaks.
+  paragraphs, lists, tables, images, code blocks, diagrams, quotes, rules,
+  page breaks. `undescribedDiagrams` counts diagrams whose fence has no
+  `accDescr`: offer to add one, drafted from the document's own words.
 - `documents[].dropped` — what could not be carried, named plainly (e.g. a
   `.docx` table, reviewer comments, tracked changes).
 - `documents[].warnings` — things that are not losses but will surprise

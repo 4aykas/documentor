@@ -25,7 +25,7 @@ import { typeByHead } from './registry.js';
 import { diagramTokens, diagramVars } from './tokens.js';
 
 export { diagramCss } from './mermaid/render.js';
-export { drawable, headerLine, kindOf, leftToRight } from './mermaid/source.js';
+export { drawable, hasDescription, headerLine, kindOf, leftToRight } from './mermaid/source.js';
 export { REGISTRY, typeByHead, typeOf, type DiagramType } from './registry.js';
 export { diagramTokens, diagramVars, distinct, type DiagramTokens } from './tokens.js';
 

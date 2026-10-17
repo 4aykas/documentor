@@ -59,3 +59,12 @@ export function leftToRight(source: string): string | null {
   lines[i] = `${t[1]} TD`;
   return lines.join('\n');
 }
+
+/**
+ * Whether a source carries its own description for readers who cannot see
+ * it: an `accDescr: …` line or an `accDescr { … }` block, which Mermaid
+ * writes into the SVG as `<desc>`.
+ */
+export function hasDescription(source: string): boolean {
+  return /^\s*accDescr\s*[:{]/m.test(source);
+}

@@ -107,6 +107,22 @@ describe('runInspect: single file', () => {
     expect(human).toMatch(/1 heading/);
   });
 
+  it('counts the diagrams whose fence carries no accDescr', async () => {
+    const described = '```mermaid\nflowchart TD\n  accDescr: A task passes three gates.\n  A --> B\n```';
+    const block = '```mermaid\npie\n  accDescr {\n    Hours by discipline\n  }\n  "a" : 1\n```';
+    const bare = '```mermaid\nflowchart TD\n  A --> B\n```';
+    const file = await fixture(`# Report\n\n${described}\n\n${block}\n\n${bare}\n`);
+    const { io, log } = collect();
+    expect(await runInspect([file, '--json'], io)).toBe(0);
+    const doc = parseJson(log).documents[0]!;
+    if (doc.status !== 'ok') throw new Error('unreachable');
+    expect(doc.counts.diagrams).toBe(3);
+    expect(doc.counts.undescribedDiagrams).toBe(1);
+    const { io: ioHuman, log: human } = collect();
+    await runInspect([file], ioHuman);
+    expect(human.join('\n')).toMatch(/3 diagrams, 1 diagram without a description/);
+  });
+
   it('the human and JSON forms carry the same facts', async () => {
     // A source deliberately built with no title, a body heading (so the
     // heading count is not zero even after md.ts's h1-as-title lift), a

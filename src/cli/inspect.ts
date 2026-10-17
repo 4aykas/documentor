@@ -19,7 +19,7 @@
 // exists to prevent (see docs/superpowers/specs/2026-08-12-sidecar-design.md,
 // "Verification": "inspect reads the sidecar too, and by the same rules").
 
-import { isDiagramSource } from '../render/diagrams/index.js';
+import { hasDescription, isDiagramSource } from '../render/diagrams/index.js';
 import { basename, extname, resolve } from 'node:path';
 import { stat } from 'node:fs/promises';
 import { canEmbedInDocx } from '../render/docx.js';
@@ -57,6 +57,9 @@ export type Counts = {
   /** Code fences build will draw as a picture (see render/diagrams/),
    *  counted here instead of under `code`. */
   diagrams: number;
+  /** Of those, the ones whose fence has no `accDescr`: Word's alt text and a
+   *  screen reader can then name only the diagram's type. */
+  undescribedDiagrams: number;
   quotes: number;
   rules: number;
   pagebreaks: number;
@@ -160,7 +163,8 @@ export type InspectResult = {
 
 function emptyCounts(): Counts {
   return {
-    headings: 0, paragraphs: 0, lists: 0, tables: 0, heatmaps: 0, images: 0, code: 0, diagrams: 0, quotes: 0, rules: 0, pagebreaks: 0,
+    headings: 0, paragraphs: 0, lists: 0, tables: 0, heatmaps: 0, images: 0, code: 0, diagrams: 0, undescribedDiagrams: 0,
+    quotes: 0, rules: 0, pagebreaks: 0,
   };
 }
 
@@ -174,8 +178,15 @@ function countBlocks(blocks: readonly Block[]): Counts {
       case 'table': c.tables++; break;
       case 'heatmap': c.heatmaps++; break;
       case 'image': c.images++; break;
-      case 'code': if (isDiagramSource(b)) c.diagrams++; else c.code++; break;
-      case 'diagram': c.diagrams++; break;
+      case 'code':
+        if (!isDiagramSource(b)) { c.code++; break; }
+        c.diagrams++;
+        if (!hasDescription(b.text)) c.undescribedDiagrams++;
+        break;
+      case 'diagram':
+        c.diagrams++;
+        if (!hasDescription(b.source)) c.undescribedDiagrams++;
+        break;
       case 'quote': c.quotes++; break;
       case 'rule': c.rules++; break;
       case 'pagebreak': c.pagebreaks++; break;
@@ -326,6 +337,7 @@ const COUNT_LABELS: { key: keyof Counts; one: string; many: string }[] = [
   { key: 'images', one: 'image', many: 'images' },
   { key: 'code', one: 'code block', many: 'code blocks' },
   { key: 'diagrams', one: 'diagram', many: 'diagrams' },
+  { key: 'undescribedDiagrams', one: 'diagram without a description', many: 'diagrams without a description' },
   { key: 'quotes', one: 'quote', many: 'quotes' },
   { key: 'rules', one: 'rule', many: 'rules' },
   { key: 'pagebreaks', one: 'page break', many: 'page breaks' },
