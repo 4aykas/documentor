@@ -100,6 +100,34 @@ describe('D-SMALL advice', () => {
   });
 });
 
+// docs/adr/0010: a flowchart's edges are right-angled. Every segment of
+// every edge path in the gallery's flowchart and the three-gates chain (two
+// decisions, branches and a loop) runs along x or along y.
+describe('flowchart edges', () => {
+  it('have no diagonal segment', async () => {
+    const fc = /^## Flowchart\n+(```mermaid\n[\s\S]*?\n```)$/m.exec(GALLERY)![1]!;
+    const gates = '```mermaid\nflowchart TD\n  A([New task]) --> B[Recall first]\n  B --> C{Bulk?}\n  C -->|yes| D[Ask]\n  C -->|no| E[Act in batches]\n  D --> E\n  E --> F{Read-back matches?}\n  F -->|no| G[Fix]\n  G -.-> E\n  F -->|yes| H[Report]\n```';
+    const doc = await drawDiagrams(ingestMarkdown(`${fc}\n\n${gates}\n`).doc, await loadTheme('plain'), browser, () => {});
+    const page = await browser.newPage();
+    try {
+      await page.setContent(`<div id="host">${doc.blocks.map((b) => (b.t === 'diagram' ? b.svg : '')).join('')}</div>`);
+      // Read the path data itself: a curve command is a slant, and so is any
+      // straight segment that moves along both axes.
+      const slants = await page.evaluate(`[...document.querySelectorAll('#host path.flowchart-link')].flatMap((p) => {
+        const d = p.getAttribute('d');
+        if (/[CQSTAcqsta]/.test(d)) return [p.id + ' curves'];
+        const pts = [...d.matchAll(/(-?[\\d.]+),(-?[\\d.]+)/g)].map((m) => [+m[1], +m[2]]);
+        return pts.slice(1).flatMap((q, i) => Math.abs(q[0] - pts[i][0]) > 0.3 && Math.abs(q[1] - pts[i][1]) > 0.3 ? [p.id + ' segment ' + i] : []);
+      })`) as string[];
+      const edges = await page.evaluate(`document.querySelectorAll('#host path.flowchart-link').length`) as number;
+      expect(edges).toBeGreaterThan(8);
+      expect(slants).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+});
+
 describe('budget selectors count what their key names', () => {
   it('counts classes without notes, and named states without forks and choices', async () => {
     const md = [

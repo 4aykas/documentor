@@ -18,7 +18,7 @@ existed. Checked against them now:
    by documentor it raises `D-BUDGET` (10 nodes) and `D-SMALL` (too tall),
    both correct: the hand-drawn graphic splits the gates into a side column,
    which a flowchart cannot. Its branches also leave the diamonds on
-   diagonal segments (the first proving note, item 2), still open.
+   diagonal segments (the first proving note, item 2). **Done:** ADR 0010, edges are right-angled.
 3. **No axonometric material in the week.** A plant-room or site plan post
    would exercise `plan`; worth choosing when the topics for the following
    week are drafted.

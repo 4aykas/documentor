@@ -53,8 +53,10 @@ export function mermaidConfig(theme: Theme, vars: Record<string, string>, colPt:
     layout: 'dagre',
     // Mermaid wraps a label at 200px, which stacks an ordinary sentence
     // five lines deep in a narrow box; 260 keeps most labels to two or
-    // three. Straight edges, not the default spline, read as drawn.
-    flowchart: { htmlLabels: false, wrappingWidth: 260, nodeSpacing: 36, rankSpacing: 46, padding: 12, curve: 'linear' },
+    // three. Edges are right-angled elbows (docs/adr/0010): the default
+    // spline reads as sketched, and straight lines leave a decision's corner
+    // on a diagonal to the box beside it.
+    flowchart: { htmlLabels: false, wrappingWidth: 260, nodeSpacing: 36, rankSpacing: 46, padding: 12, curve: 'step' },
     // A message as long as a sentence would otherwise set the gap between
     // two lifelines to its full length; wrapped, the diagram keeps the
     // column and its labels the body size.
@@ -74,7 +76,9 @@ export function mermaidConfig(theme: Theme, vars: Record<string, string>, colPt:
 /** The configuration one source is drawn with: the document's, its type's
  *  own, and the stylesheet. */
 export function configFor(kind: string, base: Record<string, unknown>, t: DiagramTokens, vars: Record<string, string>) {
-  return { ...base, ...(typeByHead(kind)?.mermaid?.config?.(t, vars) ?? {}), themeCSS: diagramCss(t, kind) };
+  const m = typeByHead(kind)?.mermaid;
+  const curve = m?.curve ? { flowchart: { ...(base['flowchart'] as object), curve: m.curve } } : {};
+  return { ...base, ...curve, ...(m?.config?.(t, vars) ?? {}), themeCSS: diagramCss(t, kind) };
 }
 
 /** A drawing trimmed to its ink, with the accTitle and accDescr Mermaid wrote

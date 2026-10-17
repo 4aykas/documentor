@@ -37,6 +37,8 @@ export interface DiagramType {
     widthCap?: number;
     /** A left-to-right drawing too wide for the column may be drawn top-down. */
     turnsDown?: boolean;
+    /** Edge shape when it is not the shared right-angled one (docs/adr/0010). */
+    curve?: 'linear';
   };
 }
 
@@ -59,7 +61,10 @@ export const REGISTRY: readonly DiagramType[] = [
   { id: 'state', engine: 'mermaid', heads: ['stateDiagram-v2', 'stateDiagram'], label: 'State',
     // A fork or a choice is a statediagram-state with no label; a named
     // state is the one with one.
-    budget: { states: { max: 9, count: 'g.node.statediagram-state:has(> g.label)' } }, focusMax: 2 },
+    budget: { states: { max: 9, count: 'g.node.statediagram-state:has(> g.label)' } }, focusMax: 2,
+    // Elbows put a transition's arrowhead on a state's corner and fold its
+    // loops onto each other; a state diagram keeps straight transitions.
+    mermaid: { curve: 'linear' } },
   { id: 'er', engine: 'mermaid', heads: ['erDiagram'], label: 'Entity relationship',
     budget: { entities: { max: 8, count: 'g.node' } }, focusMax: 2 },
   { id: 'mindmap', engine: 'mermaid', heads: ['mindmap'], label: 'Mind map',
