@@ -38,7 +38,7 @@ afterAll(async () => { await browser.close(); });
 
 const diagrams = (doc: Doc) => doc.blocks.filter((b): b is Extract<Block, { t: 'diagram' }> => b.t === 'diagram');
 
-describe.each(['plain', 'tebin', 'haskoning'])('the diagram gallery under %s', (themeId) => {
+describe.each(['plain', 'tebin', 'marine'])('the diagram gallery under %s', (themeId) => {
   it('draws every type, and paints none of them in Mermaid\'s own colours', async () => {
     const theme = await loadTheme(themeId);
     const warn: string[] = [];

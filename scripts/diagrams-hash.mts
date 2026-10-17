@@ -6,7 +6,7 @@
 //   npm run diagrams:hash -- --compare before.json        exit 1 on any difference
 //   npm run diagrams:hash -- --compare before.json rams   themes after the flags
 //
-// Default themes: plain, tebin, haskoning. Records SVG and PNG hashes, the
+// Default themes: plain, tebin, marine. Records SVG and PNG hashes, the
 // placed size and the build's warnings per theme.
 
 import { createHash } from 'node:crypto';
@@ -30,7 +30,7 @@ if (!out && !compare) {
   console.error('diagrams:hash needs --out <file.json> or --compare <file.json>');
   process.exit(2);
 }
-const themes = args.length ? args : ['plain', 'tebin', 'haskoning'];
+const themes = args.length ? args : ['plain', 'tebin', 'marine'];
 const h = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 16);
 const source = await readFile(join(ROOT, 'test', 'fixtures', 'diagram-gallery.md'), 'utf8');
 

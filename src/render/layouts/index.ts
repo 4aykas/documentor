@@ -6,13 +6,11 @@ import type { Block, Doc } from '../../ir/types.js';
 import { PAGE_PT, PT_TO_MM, type LayoutId, type Theme } from '../../theme/types.js';
 import { blueprint } from './blueprint.js';
 import { asGates, coverParts, plain, sectionLevel, sections, type Ctx, type Kit, type Layout } from './common.js';
-import { dreamscape } from './dreamscape.js';
 import { externalLayout } from './external.js';
-import { haskoning } from './haskoning.js';
+import { marine } from './marine.js';
 import { rams } from './rams.js';
-import { rodchenko } from './rodchenko.js';
 
-export const LAYOUTS: Record<LayoutId, Layout> = { rams, rodchenko, haskoning, dreamscape, blueprint };
+export const LAYOUTS: Record<LayoutId, Layout> = { rams, marine, blueprint };
 
 /** The theme's layout: built in, or the module from its folder. */
 function layoutOf(theme: Theme): Layout {

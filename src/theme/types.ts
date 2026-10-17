@@ -22,7 +22,7 @@ export type ResolvedFace = { id: string; family: string; weights: readonly numbe
  * hand from one designer's or one house's language, and lays out any
  * document's own blocks; it adds chrome and figures, never text.
  */
-export const LAYOUT_IDS = ['rams', 'rodchenko', 'haskoning', 'dreamscape', 'blueprint'] as const;
+export const LAYOUT_IDS = ['rams', 'marine', 'blueprint'] as const;
 export type LayoutId = (typeof LAYOUT_IDS)[number];
 
 /** Trim size in points, portrait. Chromium is given millimetres; see toMm. */

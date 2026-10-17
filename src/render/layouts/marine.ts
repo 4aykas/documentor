@@ -33,7 +33,7 @@ export function chart(w: number, h: number, seed: number, coast: number, id: str
 const arrow = (col: string, size = 3.2) => `<svg viewBox="0 0 16 12" style="width:${size}mm;height:${size * 0.75}mm;display:inline-block;vertical-align:middle;flex:none"><path d="M0 6h13M8.5 1.2 13.4 6 8.5 10.8" fill="none" stroke="${col}" stroke-width="1.8"/></svg>`;
 const sq = (left: boolean, col: string) => `<span class="h-sq" style="border-color:${col}">${left ? `<span style="display:inline-flex;transform:scaleX(-1)">${arrow(col, 3.6)}</span>` : arrow(col, 3.6)}</span>`;
 
-export const haskoning: Layout = {
+export const marine: Layout = {
   css(ctx, cover) {
     return `
 @page{ margin: 18mm 16mm 22mm 16mm }

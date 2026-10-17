@@ -190,7 +190,7 @@ describe('a grouped bar\'s series fills', () => {
   // A bar is a graphic a reader must see: 3:1 against the sheet, and no two
   // series alike, in every theme with a palette that could fail it.
   // A brand as pale as rams' series steps, so the 3:1 rule has work to do.
-  it.each(['plain', 'tebin', 'haskoning', 'rams', 'rodchenko', 'dark-sheet', 'pale brand'])('stand 3:1 and apart under %s', async (themeId) => {
+  it.each(['plain', 'tebin', 'marine', 'rams', 'blueprint', 'schweiz', 'dark-sheet', 'pale brand'])('stand 3:1 and apart under %s', async (themeId) => {
     const t = diagramTokens(themeId === 'pale brand' ? resolveTheme({ id: 'pale', colors: { brandOnLight: '#F3E2BA' } }) : await loadTheme(themeId));
     const fills = seriesFills(t, 4);
     const ratio = (a: string, b: string) => { const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number]; return (hi + 0.05) / (lo + 0.05); };

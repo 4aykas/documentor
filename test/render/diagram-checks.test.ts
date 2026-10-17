@@ -202,7 +202,7 @@ describe(':::focus', () => {
   });
 });
 
-describe.each(['plain', 'tebin', 'haskoning'])('the gallery under %s', (themeId) => {
+describe.each(['plain', 'tebin', 'marine'])('the gallery under %s', (themeId) => {
   it('raises no finding', async () => {
     const warn: string[] = [];
     await drawDiagrams(ingestMarkdown(GALLERY).doc, await loadTheme(themeId), browser, (m) => warn.push(m));

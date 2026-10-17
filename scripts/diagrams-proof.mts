@@ -2,8 +2,8 @@
 // named, print how every diagram lands on the page, and lay each PDF out on
 // one proof sheet — the loop a change to render/diagrams/ is judged in.
 //
-//   npm run diagrams:proof                     plain, tebin, haskoning
-//   npm run diagrams:proof -- rams dreamscape  any themes
+//   npm run diagrams:proof                     plain, tebin, marine
+//   npm run diagrams:proof -- rams schweiz     any themes
 //
 // Writes .input/diagrams-proof/<theme>.pdf and <theme>.proof.png.
 
@@ -19,7 +19,7 @@ import { runProof } from '../src/cli/proof.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const OUT = join(ROOT, '.input', 'diagrams-proof');
-const themes = process.argv.slice(2).length ? process.argv.slice(2) : ['plain', 'tebin', 'haskoning'];
+const themes = process.argv.slice(2).length ? process.argv.slice(2) : ['plain', 'tebin', 'marine'];
 const source = await readFile(join(ROOT, 'test', 'fixtures', 'diagram-gallery.md'), 'utf8');
 await mkdir(OUT, { recursive: true });
 

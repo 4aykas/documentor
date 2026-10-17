@@ -9,12 +9,12 @@ describe('a theme\'s paper', () => {
     expect(resolveTheme({}).colors.paper).toBe('#FFFFFF');
     expect(resolveTheme({ colors: { paper: '#FAF2E3' } }).colors.paper).toBe('#FAF2E3');
     expect(() => resolveTheme({ colors: { paper: 'cream' } })).toThrow(/colors\.paper/);
-    expect((await loadTheme('haskoning')).colors.paper).toBe('#FAF2E3');
+    expect((await loadTheme('marine')).colors.paper).toBe('#FAF2E3');
   });
 
   it('colours the sheet only for a theme that asks, so a white theme\'s stylesheet is untouched', async () => {
     const { doc } = ingestMarkdown('# A note\n\nOne paragraph.\n');
-    const cream = await buildHtml(doc, await loadTheme('haskoning'));
+    const cream = await buildHtml(doc, await loadTheme('marine'));
     expect(cream).toContain('--paper: #FAF2E3');
     expect(cream).toMatch(/html\{ background: var\(--paper\)/);
     expect(cream).toContain('.c-paper{ fill: var(--paper); }');

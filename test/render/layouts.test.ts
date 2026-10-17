@@ -75,7 +75,7 @@ describe('a theme\'s layout', () => {
   it('is null unless named, and must be one the renderer has', () => {
     expect(resolveTheme({}).layout).toBeNull();
     expect(resolveTheme({ layout: 'rams' }).layout).toBe('rams');
-    expect(() => resolveTheme({ layout: 'bauhaus' })).toThrow(/layout.*rams, rodchenko, haskoning/);
+    expect(() => resolveTheme({ layout: 'bauhaus' })).toThrow(/layout.*rams, marine, blueprint/);
   });
 
   it('is what each designed theme names', async () => {

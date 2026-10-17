@@ -145,13 +145,12 @@ what is missing and the fix; relay that message to the user as it is, and run
 documentor inspect <file> --json
 ```
 
-When the user asks for a document "in the style of Rams", "constructivist",
-"like Rodchenko", "in the Haskoning style" or for a generative,
-contemporary-art look ("dreamscape"), or for a document set out like a
+When the user asks for a document "in the style of Rams", in a marine
+engineering house style ("marine", once called haskoning), or set out like a
 drawing set ("blueprint", "like a drawing sheet"), the themes `rams`,
-`rodchenko`, `haskoning`, `dreamscape` and `blueprint` set the PDF in a
-designed layout (README,
-"Designed layouts"). A full cover needs `"cover": true` in the sidecar. Word
+`marine` and `blueprint` set the PDF in a designed layout (README,
+"Designed layouts"). Any other designed look is a theme folder of its own,
+made for the job (README, "Themes"). A full cover needs `"cover": true` in the sidecar. Word
 output keeps the ordinary page in those colours.
 
 This renders nothing and writes nothing — it reports what the document

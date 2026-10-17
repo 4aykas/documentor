@@ -165,7 +165,7 @@ describe('the heatmap under the plain theme (local pixels only)', () => {
  * several hundred lines of geometry a markup assertion cannot see. Each gets
  * the shared cover and the kitchen sink's first page.
  */
-for (const layout of ['rams', 'rodchenko', 'haskoning']) {
+for (const layout of ['rams', 'marine']) {
   describe(`the ${layout} layout (local pixels only)`, () => {
     it('the cover matches its committed image', async () => {
       await expectPageOneMatches(COVER, layout, `${layout}-cover-01.png`);

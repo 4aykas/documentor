@@ -15,6 +15,6 @@
     { "label": "diagram gallery proof", "type": "npm", "script": "diagrams:proof", "problemMatcher": [] }
   ],
   "inputs": [
-    { "id": "theme", "type": "pickString", "description": "Theme", "options": ["plain", "tebin", "tebin-ua", "haskoning", "rams"], "default": "tebin" }
+    { "id": "theme", "type": "pickString", "description": "Theme", "options": ["plain", "tebin", "tebin-ua", "marine", "rams", "blueprint", "schweiz"], "default": "tebin" }
   ]
 }

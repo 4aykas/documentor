@@ -50,7 +50,7 @@ export const FACES: Record<FaceId, Face> = {
   urbanist: { family: 'Urbanist', pkg: '@fontsource/urbanist', weights: [400, 700], subsets: ['latin', 'latin-ext'], cyrillicFrom: 'manrope' },
   // The heavy condensed grotesque the constructivist layout builds with.
   'roboto-condensed': { family: 'Roboto Condensed', pkg: '@fontsource/roboto-condensed', weights: [400, 700, 900] },
-  // A screen-pixel display face, for the dreamscape layout's titles.
+  // A screen-pixel display face, for display titles.
   'pixelify-sans': { family: 'Pixelify Sans', pkg: '@fontsource/pixelify-sans', weights: [400, 700] },
   // A neutral grotesque, for a body face that should not be noticed.
   inter: { family: 'Inter', pkg: '@fontsource/inter', weights: [400, 600, 700] },

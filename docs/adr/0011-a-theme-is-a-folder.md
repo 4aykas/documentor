@@ -88,5 +88,15 @@ A theme is a folder. Its name is the theme's id.
   of the documents they were made for. Tests that needed a dark sheet use a
   theme in `test/fixtures/themes/` instead. Inter stays built in: it is a
   general face, not lionfocus's.
-- Which built-in themes stay built in (rams, rodchenko, haskoning,
-  dreamscape, blueprint, schweiz) is decided separately, with naming.
+- Which built-in themes stay built in is decided separately, with naming
+  (see the amendment below).
+
+## Amendments
+
+**2026-10-17.** The owner kept schweiz, rams and blueprint built in, beside
+plain and the tebin themes, and renamed haskoning to `marine` (theme and
+layout; the name may still change). rodchenko and dreamscape left the
+package for the folders of the documents they were made for, as lionfocus
+did; their PDFs rebuilt from there match the in-package builds. Where ADRs
+0003 and 0006 name haskoning, the theme is now marine. Pixelify Sans and
+Roboto Condensed stay built-in faces.

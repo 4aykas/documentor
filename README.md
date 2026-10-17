@@ -71,9 +71,8 @@ machine without the CLI it gives these same three commands.
 **Fonts in Word.** A PDF carries its fonts inside it, so it looks the same
 everywhere. A `.docx` names its fonts and leaves drawing them to Word. The
 `schweiz`, `tebin-schweiz` and `tebin-ua-schweiz` themes use Manrope and
-JetBrains Mono, `haskoning` uses Urbanist, `dreamscape` uses Manrope,
-Pixelify Sans and JetBrains Mono, and `blueprint` uses JetBrains Mono, all
-free on Google Fonts. Install them where the Word files will be opened, or
+JetBrains Mono, `marine` uses Urbanist, and `blueprint` uses JetBrains
+Mono, all free on Google Fonts. Install them where the Word files will be opened, or
 Word substitutes a serif. The `plain` and `tebin` themes
 use Arial, which every machine has.
 
@@ -562,8 +561,8 @@ In the second step a person reads the capture beside the screenshot and
 writes `themes/<id>/theme.json`. The most frequent colour on a page is
 usually its body text, not its brand, so this step is not automated.
 
-`haskoning` is the second theme made this way, modelled on an engineering
-consultancy's site: a cream sheet, dark navy type and rules, a teal accent,
+`marine` is the second theme made this way, modelled on a marine engineering
+consultancy's site (haskoning.com): a cream sheet, dark navy type and rules, a teal accent,
 bold geometric headings in Urbanist and small uppercase labels with a little
 tracking. It uses none of the company's artwork — its corner mark is an
 arrow cut out of a filled square, after the site's own button furniture.
@@ -600,13 +599,11 @@ installed; anywhere else Word substitutes its own.
 
 A theme sets colours and faces on the ordinary page. A layout replaces the
 page itself with one drawn by hand from a single designer's or house's
-language. Five themes come with one:
+language. Three themes come with one:
 
 ```bash
 documentor build approach.md --theme rams --to pdf
-documentor build approach.md --theme rodchenko --to pdf
-documentor build approach.md --theme haskoning --to pdf
-documentor build approach.md --theme dreamscape --to pdf
+documentor build approach.md --theme marine --to pdf
 documentor build approach.md --theme blueprint --to pdf
 ```
 
@@ -617,25 +614,10 @@ A theme outside the package may bring a layout of its own (see Themes).
   stations are the document's gates. Inside there is one grid: a label column
   with each section's number and name, a text column in one quiet size,
   hairlines, and a single orange accent.
-- **`rodchenko`**, after Alexander Rodchenko. The cover is a poster: a red
-  circle, the title on a diagonal band, and the cover's lines on rays from a
-  megaphone, after *Books!*. Each section opens with a black girder and a
-  large red number. Tables have black rules, bullets are arrows, and gates
-  climb a staircase.
-- **`haskoning`**, in the language of haskoning.com. A navy hero band sits
+- **`marine`**, in the language of haskoning.com. A navy hero band sits
   under a drawn bathymetric chart. Sections alternate sky and mint, list
   items are rows ending in an arrow, gates sit on a navy band, and the close
   is navy under a teal strip. No logo or photograph of the company is used.
-- **`dreamscape`**, after a contemporary-art exhibition identity built from
-  generated dreams. The cover is a full-bleed picture drawn from the title:
-  discs that step round into a spiral or sink into a tunnel, in a sunrise
-  ramp from indigo through magenta to orange. The title is set in a pixel
-  face, and the document's own words become snake_case keys and
-  `[ bracketed ]` tags in a monospace. Each section opens on its own dream
-  band. Statements, gates and the close sit in black panels with thin
-  outlined boxes, and the gates are rings round one centre. The same title
-  always draws the same picture. No artwork, mark or name of a museum or
-  agency is used.
 - **`blueprint`**, a sheet of a drawing set. Pages are A4 landscape inside
   a double frame with grid-reference zones (1–8 across, A–D down) and
   centring marks. Every sheet, the first included, carries a title block
@@ -671,9 +653,7 @@ Three things a layout does not do:
 - **A4 only.** The covers are drawn for that sheet, upright, except
   `blueprint`, which turns it landscape.
 - **Some lines change case on the page.** `rams` sets an all-capitals source
-  line in sentence case, `rodchenko` sets its band and rays in capitals, and
-  `dreamscape` repeats section titles and its cover's first line as
-  capitalised snake_case keys.
+  line in sentence case.
   The text in the file is unchanged; only how it is drawn differs, so a copy
   out of the PDF may differ in case from the source.
 
@@ -767,8 +747,7 @@ when someone edits above them. The default is `"band"`.
 | **Internet access** | The install, and `documentor setup` once (about 150 MB of Chromium) | After that, builds run offline. |
 | **Chromium** | Every PDF, and reading a PDF | `documentor setup`. On Linux, `documentor setup --with-deps` also installs the system libraries Chromium needs. |
 | **Manrope and JetBrains Mono** | Only `.docx` files from `schweiz`, `tebin-schweiz` and `tebin-ua-schweiz`, opened in Word | Free on [fonts.google.com](https://fonts.google.com). Install them on each machine that opens those Word files. PDFs don't need them. |
-| **Urbanist** | Only `.docx` files from `haskoning`, opened in Word | The same, from the same place. |
-| **Pixelify Sans** | Only `.docx` files from `dreamscape`, opened in Word, with Manrope and JetBrains Mono | The same, from the same place. |
+| **Urbanist** | Only `.docx` files from `marine`, opened in Word | The same, from the same place. |
 | **Microsoft Word** or another `.docx` reader | Opening Word output | Not needed to build it. |
 | **Claude Code** | Only the skill | See "Getting it" above. |
 
