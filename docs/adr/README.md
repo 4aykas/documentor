@@ -43,3 +43,4 @@ What it costs and what it makes possible; what a later change must respect.
 | [0003](0003-one-grey-system-one-accent.md) | A diagram is one grey system with one accent | accepted |
 | [0004](0004-layout-may-change-words-never.md) | A diagram's layout may change to fit the page; its words never do | accepted |
 | [0005](0005-every-type-is-a-registry-record.md) | Every diagram type is one registry record, and the canon is tested | accepted |
+| [0006](0006-diagrams-are-checked-by-machine.md) | Diagrams are checked by machine, and a finding warns | accepted |

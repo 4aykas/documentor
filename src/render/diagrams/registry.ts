@@ -21,8 +21,9 @@ export interface DiagramType {
   heads: readonly string[];
   /** The name README's Diagrams table and the gallery's heading use. */
   label: string;
-  /** Per-type limits a drawing should stay within (warned about, never refused). */
-  budget: Readonly<Record<string, number>>;
+  /** Per-type limits a drawing should stay within (warned about, never refused):
+   *  the most of each, and the selector that counts them in the drawn SVG. */
+  budget: Readonly<Record<string, { max: number; count: string }>>;
   /** How many elements may be marked as the focus. */
   focusMax: number;
   mermaid?: {
@@ -49,15 +50,15 @@ const xyChart = (t: DiagramTokens, vars: Record<string, string>) => ({ themeVari
 
 export const REGISTRY: readonly DiagramType[] = [
   { id: 'flowchart', engine: 'mermaid', heads: ['flowchart', 'graph'], label: 'Flowchart',
-    budget: { nodes: 9, edges: 12 }, focusMax: 2, mermaid: { turnsDown: true } },
+    budget: { nodes: { max: 9, count: 'g.node' }, edges: { max: 12, count: 'path.flowchart-link' } }, focusMax: 2, mermaid: { turnsDown: true } },
   { id: 'sequence', engine: 'mermaid', heads: ['sequenceDiagram'], label: 'Sequence',
-    budget: { lifelines: 5 }, focusMax: 2 },
+    budget: { lifelines: { max: 5, count: 'line.actor-line' } }, focusMax: 2 },
   { id: 'class', engine: 'mermaid', heads: ['classDiagram', 'classDiagram-v2'], label: 'Class',
-    budget: { classes: 7 }, focusMax: 2 },
+    budget: { classes: { max: 7, count: 'g.node' } }, focusMax: 2 },
   { id: 'state', engine: 'mermaid', heads: ['stateDiagram-v2', 'stateDiagram'], label: 'State',
-    budget: { states: 9 }, focusMax: 2 },
+    budget: { states: { max: 9, count: 'g.node.statediagram-state' } }, focusMax: 2 },
   { id: 'er', engine: 'mermaid', heads: ['erDiagram'], label: 'Entity relationship',
-    budget: { entities: 8 }, focusMax: 2 },
+    budget: { entities: { max: 8, count: 'g.node' } }, focusMax: 2 },
   { id: 'mindmap', engine: 'mermaid', heads: ['mindmap'], label: 'Mind map',
     budget: {}, focusMax: 2 },
   { id: 'timeline', engine: 'mermaid', heads: ['timeline'], label: 'Timeline',
@@ -68,23 +69,23 @@ export const REGISTRY: readonly DiagramType[] = [
       text[font-size="4ex"] { font-size: 1.35em; }`,
     } },
   { id: 'gantt', engine: 'mermaid', heads: ['gantt'], label: 'Gantt',
-    budget: { tasks: 12 }, focusMax: 2, mermaid: {
+    budget: { tasks: { max: 12, count: 'rect.task' } }, focusMax: 2, mermaid: {
       repaint: 'gantt',
       css: (t) => `.grid .tick line { stroke: ${t.faint}; } .grid path { stroke: ${t.stroke}; } .task { stroke-width: 1px; } .today { display: none; }`,
     } },
   { id: 'pie', engine: 'mermaid', heads: ['pie'], label: 'Pie',
-    budget: { slices: 8 }, focusMax: 2, mermaid: { widthCap: 0.6 } },
+    budget: { slices: { max: 8, count: 'path.pieCircle' } }, focusMax: 2, mermaid: { widthCap: 0.6 } },
   { id: 'quadrant', engine: 'mermaid', heads: ['quadrantChart'], label: 'Quadrant',
-    budget: { points: 12 }, focusMax: 2, mermaid: { widthCap: 0.72 } },
+    budget: { points: { max: 12, count: '.data-point' } }, focusMax: 2, mermaid: { widthCap: 0.72 } },
   { id: 'xychart', engine: 'mermaid', heads: ['xychart-beta', 'xychart'], label: 'XY chart',
     budget: {}, focusMax: 2, mermaid: { config: xyChart } },
   { id: 'journey', engine: 'mermaid', heads: ['journey'], label: 'Journey',
-    budget: { stages: 6 }, focusMax: 2, mermaid: {
+    budget: { tasks: { max: 6, count: 'line.task-line' } }, focusMax: 2, mermaid: {
       repaint: 'journey',
       css: (t) => `.task-line { stroke: ${t.stroke}; } .face { stroke: ${t.line}; } .mouth { stroke: ${t.line}; }`,
     } },
   { id: 'sankey', engine: 'mermaid', heads: ['sankey-beta', 'sankey'], label: 'Sankey',
-    budget: { nodes: 8, flows: 12 }, focusMax: 2, mermaid: { repaint: 'sankey' } },
+    budget: { nodes: { max: 8, count: 'g.node' }, flows: { max: 12, count: 'g.link' } }, focusMax: 2, mermaid: { repaint: 'sankey' } },
   { id: 'gitgraph', engine: 'mermaid', heads: ['gitGraph'], label: 'Git graph',
     budget: {}, focusMax: 2, mermaid: {
       config: () => ({ gitGraph: { rotateCommitLabel: false } }),

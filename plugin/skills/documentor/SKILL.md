@@ -67,6 +67,10 @@ Know these before promising anything to the user:
   warning "could not be drawn" means a Mermaid syntax error — fix the fence,
   do not ship the code-block fallback. Prefer `flowchart TD` for more than
   five steps; a wide `LR` flow is scaled down to the column, labels and all.
+  Mark at most two nodes `:::focus` for the accent. A warning with a `D-`
+  code (`D-SMALL`, `D-BUDGET`, `D-COLLIDE`, …) is a finding about the drawn
+  diagram: relay it with its advice and propose the edit it names (split
+  the diagram, shorten labels, turn it); the build itself succeeded.
 - **A spreadsheet has to be a register, not a workbook.** A merge confined to
   one row is flattened and reported by range; a merge spanning more than one
   row refuses the sheet by name, and so does a sheet past 200 rows or 25

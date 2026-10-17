@@ -16,6 +16,7 @@
 import type { Browser } from 'playwright-core';
 import type { Block, Doc } from '../../ir/types.js';
 import { PAGE_PT, type Theme } from '../../theme/types.js';
+import { findingLine, findings, measureScript, type Measured } from './checks.js';
 import { configFor, mermaidConfig, renderOne } from './mermaid/render.js';
 import { drawable, kindOf, leftToRight } from './mermaid/source.js';
 import { openDiagramPage } from './page.js';
@@ -96,6 +97,11 @@ export async function drawDiagrams(doc: Doc, theme: Theme, browser: Browser, onW
         }
       }
       if ('error' in result) { drawn.push(result); continue; }
+      // The kept drawing is in the host: measure it as laid out and judge it.
+      const type = typeByHead(kind);
+      const counts = Object.fromEntries(Object.entries(type?.budget ?? {}).map(([k, b]) => [k, b.count]));
+      const measured = await page.evaluate(measureScript(counts)) as Measured;
+      for (const f of findings(measured, type, kind)) onWarn(findingLine(i + 1, type?.id ?? (kind || b.lang), f));
       const shot = await (await page.$('#host svg'))!.screenshot({ type: 'png', omitBackground: false });
       drawn.push({ svg: result.svg, png: `data:image/png;base64,${shot.toString('base64')}`, wPx: result.w, hPx: result.h, triedDown });
     }

@@ -2,6 +2,7 @@
 
 import type { Block, Doc } from '../../ir/types.js';
 import type { Theme } from '../../theme/types.js';
+import { findingLine } from './checks.js';
 import { kindOf, leftToRight } from './mermaid/source.js';
 import { typeByHead } from './registry.js';
 
@@ -37,16 +38,24 @@ export function place(doc: Doc, drawn: Drawn[], theme: Theme, colPt: number, max
     // at is the size they print at; far below it they are the smallest text
     // on the page.
     const scale = wPt / (d.wPx * 0.75);
+    const type = typeByHead(kindOf(b.text));
     if (scale < 0.75) {
-      // Top-down is advice only for a flow that has not already been tried
-      // that way; a sequence or an already-vertical flow needs fewer boxes.
-      const advice = leftToRight(b.text) !== null && !d.triedDown
-        ? 'a top-down direction or fewer side-by-side boxes would keep them readable'
-        : 'fewer side-by-side boxes or shorter labels would keep them readable';
-      onWarn(`diagram ${k} (${b.lang}) is scaled to fit the page, so its labels print at about ${(theme.type.bodyPt * scale).toFixed(1)}pt `
-        + `against ${theme.type.bodyPt}pt body text; ${advice}`);
+      // The advice follows what binds. Too wide: top-down helps only a flow
+      // not already tried that way, otherwise fewer boxes side by side. Too
+      // tall (the three-gates chain, 2026-10-17): a chain that long reads
+      // better split, or across the page where its type can turn.
+      const tall = maxHPt / (d.hPx * 0.75) < colPt / (d.wPx * 0.75);
+      const advice = tall
+        ? (type?.id === 'flowchart' || type?.id === 'state'
+          ? 'it is too tall for the page: splitting the chain in two or a left-to-right direction would keep them readable'
+          : 'it is too tall for the page: splitting it in two would keep them readable')
+        : leftToRight(b.text) !== null && !d.triedDown
+          ? 'a top-down direction or fewer side-by-side boxes would keep them readable'
+          : 'fewer side-by-side boxes or shorter labels would keep them readable';
+      onWarn(findingLine(k, type?.id ?? (kindOf(b.text) || b.lang), { code: 'D-SMALL',
+        message: `labels print at about ${(theme.type.bodyPt * scale).toFixed(1)}pt against ${theme.type.bodyPt}pt body text; ${advice}` }));
     }
-    return { t: 'diagram', lang: 'mermaid', kind: typeByHead(kindOf(b.text))?.id ?? '', source: b.text, svg: d.svg, png: d.png, wPt: round(wPt), hPt: round(hPt) };
+    return { t: 'diagram', lang: 'mermaid', kind: type?.id ?? '', source: b.text, svg: d.svg, png: d.png, wPt: round(wPt), hPt: round(hPt) };
   });
   return { ...doc, blocks };
 }

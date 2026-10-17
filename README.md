@@ -306,6 +306,19 @@ mindmap
   block, and the build warns which diagram it was and what the parser said.
 - **Never wider than the column.** A diagram is scaled down to the text
   column and to most of a page's height, never cropped.
+- **One focus, marked by the author.** A node marked `:::focus` (in a state
+  diagram, `class X focus`) is outlined in the brand on a faint brand fill.
+  Two at most: the accent reads only when it is kept for what the diagram is
+  about.
+- **Every drawing is checked, and a finding warns.** After drawing, each
+  diagram is measured as the browser lays it out, and the build warns with a
+  code: `D-SMALL` labels print below three quarters of the body size (with
+  advice for what binds, the column or the page height), `D-COLLIDE` two
+  labels overlap, `D-COVER` an edge label sits on a box, `D-CLIP` a label runs
+  past the drawing, `D-BUDGET` more nodes, edges, lifelines or tasks than the
+  type reads well with, `D-FOCUS` more than two focus marks, `D-UNRECORDED` a
+  Mermaid type documentor does not proof. A finding never changes the
+  drawing or fails the build.
 
 ## Proposals
 
